@@ -1,0 +1,22 @@
+services:
+  dev:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.dev
+    command: sleep infinity
+    working_dir: /workspace
+    volumes:
+      - .:/workspace
+      - go-mod-cache:/go/pkg/mod
+      - frontend-node-modules:/workspace/frontend/node_modules
+    ports:
+      - "8080:8080"
+      - "4200:4200"
+    environment:
+      COLLAGEOMAT_SECRET: dev-only-secret
+      COLLAGEOMAT_DATA_DIR: /workspace/data
+      COLLAGEOMAT_COOKIE_SECURE: "false"
+
+volumes:
+  go-mod-cache:
+  frontend-node-modules:

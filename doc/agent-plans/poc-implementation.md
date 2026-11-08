@@ -2,7 +2,7 @@
 
 **Ticket/Source:** `doc/agent-plans/initial_idea.md`
 **Branch:** none
-**Status:** planning
+**Status:** in progress
 
 ## Goal
 
@@ -429,6 +429,17 @@ show a confirm dialog first. Arrangement result is one undo step.
 - **Collage list:** list (name, page size, photo count, last change) + create (name, preset, orientation) /
   rename / delete with confirm. Rejected: thumbnails, duplicate.
 - **Testing:** no automated tests, manual review per step.
+- **UI fonts (step 1):** self-hosted from npm (`@fontsource/roboto` 300/400/500, `material-symbols`
+  outlined), added to `angular.json` `styles`; Google Fonts CDN links from the Material schematic removed —
+  *Rationale:* no external requests, offline build. Note: the Material Symbols font is 3.8 MB (loaded once,
+  cached). Rejected: keep the CDN links.
+- **Forms (step 2):** Angular Reactive Forms (`NonNullableFormBuilder`) — *Rationale:* Signal Forms are still
+  `@experimental` in `@angular/forms` 22.2.5.
+- **Backend module wiring (step 2):** `httpapi` must not import domain packages (import cycle, because domain
+  packages use `httpapi.WriteJSON`). Each domain handler implements `httpapi.Module`
+  (`RegisterRoutes(mux, requireAuth)`); `main.go` calls `httpapi.NewRouter(static, authHandler.RequireAuth,
+  modules...)`. All GORM models are listed in one place: `models()` in `backend/cmd/collageomat/main.go`,
+  passed to `db.Open(path, models...)`. Later steps add their models and modules there.
 - **Defaults (approved):** session 30 days sliding; new collage A4 landscape, 300 DPI, white background,
   default border 0 mm white; presets A5/A4/A3/Letter/30×30 cm/Custom; corner resize = keep aspect, edge
   resize = cover; server does not start without `COLLAGEOMAT_SECRET`.
@@ -441,7 +452,7 @@ results) and the developer reviews before the next step starts.
 ## Steps
 
 ### Step 1 — Dev environment and project skeleton
-- **Status:** open
+- **Status:** done (reviewed 2026-11-08)
 - **What:**
   - `docker/Dockerfile.dev`: base `golang:1.27-bookworm`, Node 26 copied from `node:26-bookworm`
     (`COPY --from=node:26-bookworm /usr/local /usr/local`), `make`, `git`; workdir `/workspace`.
@@ -467,9 +478,26 @@ results) and the developer reviews before the next step starts.
   - `make build` → `./bin/collageomat serve` serves the SPA at `http://localhost:8080/` and a deep link like
     `/collages` returns `index.html`.
 - **Notes:**
+  - Dev image: `golang:1.27-bookworm` + Node from `node:26-bookworm` (node 26.13.0, npm 11.20.0) + `make`,
+    `git`, `sqlite3`. Named volumes `go-mod-cache` and `frontend-node-modules` (the latter hides a host
+    `node_modules` → run `make install` in the container first).
+  - `.gitignore` anchors `/data/` and `/bin/` to the repo root.
+  - `make build` fails unless exactly one `frontend/dist/*/browser` folder exists; it empties
+    `backend/internal/web/dist/` (except `.gitkeep`) before copying. `make` without target prints help.
+    `user-add`/`user-passwd` accept `ADMIN=1|true|yes`.
+  - Static handler (`backend/internal/web/web.go`): missing path with a file extension → plain 404 (no SPA
+    fallback); non-GET/HEAD → 405; `/index.html` → 301 to `/`; no build present → plain-text 404
+    "frontend not built (run 'make build')". Unknown `/api/...` → JSON 404 `{"error":"not found"}`.
+  - Frontend scaffold command: `npx -y @angular/cli@22 new collageomat --directory frontend --standalone
+    --style scss --routing --ssr=false --skip-git --skip-tests --ai-config none --package-manager npm
+    --interactive=false --defaults`, then `ng add @angular/material` and `ng add @angular/localize`
+    (localize is a devDependency, polyfill `@angular/localize/init`). Zoneless, OnPush default.
+    Versions: `@angular/core` 22.2.5, `@angular/material`/`cdk` 22.2.6, TypeScript ~6.0.2.
+  - CLI leftovers kept: `tsconfig.spec.json` and npm script `test` (no test target in `angular.json`).
+  - UI fonts switched to self-hosted (see decision log "UI fonts").
 
 ### Step 2 — Config, database, users and authentication
-- **Status:** open
+- **Status:** done (reviewed 2026-11-08)
 - **What:**
   - Config: all env vars from the table; `serve` fails with a clear message without `COLLAGEOMAT_SECRET`;
     create data dir if missing.
@@ -489,6 +517,27 @@ results) and the developer reviews before the next step starts.
   - Logout removes the session row; reload goes to login. `sqlite3 data/collageomat.db "select * from users"`
     shows a bcrypt hash.
 - **Notes:**
+  - Go deps: `gorm.io/gorm` v1.31.2, `github.com/glebarez/sqlite` v1.11.0, `golang.org/x/crypto` v0.58.0,
+    `golang.org/x/term` v0.47.0.
+  - Backend files: `internal/db/db.go` (DSN pragmas `foreign_keys(1)`, `journal_mode(WAL)`,
+    `busy_timeout(5000)`; `Open` checks the pragmas and fails if not active — the only raw SQL, SQLite-specific;
+    GORM logger level Warn), `internal/auth/{models,password,users,context,session,handler}.go`,
+    `cmd/collageomat/user.go`, `internal/config` (`RequireSecret`, `EnsureDataDir` (mode 0750), `DBPath`),
+    `internal/httpapi` (`DecodeJSON` with 1 MB limit → 413, unknown fields → 400; `RequireJSON` middleware).
+  - CSRF rule (`RequireJSON`, all `/api/` paths): POST/PUT/PATCH always need `Content-Type: application/json`
+    (parameters allowed), also with an empty body; DELETE only when it has a body. Otherwise 415.
+  - Logout is public: deletes the cookie's session if any, clears the cookie, always 204.
+  - Login: username trimmed; dummy bcrypt compare for unknown users; on success also deletes the old cookie's
+    session and the user's expired sessions. `RequireAuth` clears an unknown/expired cookie.
+  - Passwords: 8 characters min, 72 bytes max (bcrypt limit). CLI prompts go to stderr; without a TTY, two
+    lines are read from stdin (scriptable: `printf 'pw\npw\n' | collageomat user add --username x`).
+  - Frontend files: `src/app/core/{models,auth.service,auth.guard,auth.interceptor}.ts`,
+    `src/app/features/login/login.page.{ts,html,scss}`, `src/app/features/home/home.page.ts` (placeholder
+    "Welcome, {username}", replaced by the collage list in step 3). Routes: `login` (`loginGuard`), `''`
+    (`authGuard`), `**` → `''`; pages lazy-loaded. Guards wait for `AuthService.ensureLoaded()` (no app
+    initializer). Interceptor: 401 from `/api/*` (except `/api/auth/me`, `/api/auth/login`) → clear user,
+    go to `/login?returnUrl=...`. `withFetch()` not used (deprecated in 22.2; fetch is default). Admin badge
+    is a styled `<span>`. i18n ids like `@@login.title`, `@@toolbar.logout`.
 
 ### Step 3 — Collage management
 - **Status:** open
@@ -644,7 +693,13 @@ results) and the developer reviews before the next step starts.
 
 ## Current state / Next action
 
-- Done: research and grilling; decisions in this file and summarized in `doc/agent-plans/initial_idea.md`.
-- Repository has no commits yet; only `.nvmrc` and `doc/`.
-- Next action: wait for the developer's go-ahead, then start **Step 1 — Dev environment and project skeleton**
-  (implementation in a sub-agent per the feature workflow).
+- Done: research and grilling; Step 1 and Step 2 (reviewed 2026-11-08).
+- Repository has no commits yet; all work is uncommitted in the working tree (the developer decides when to
+  commit).
+- Nothing half-finished, no temporary changes to revert.
+- Sandbox notes for agents on the host: `pkill`/process listing is blocked → stop own servers with
+  `lsof -ti tcp:<port> | xargs kill`, or ask the developer to run a kill command. Background `&` prints a
+  harmless `nice(5) failed` warning. Another local tool on the host sometimes sends requests to
+  `127.0.0.1:8080`; use another port (`COLLAGEOMAT_LISTEN`) for host tests.
+- Next action: wait for the developer's go-ahead, then start **Step 3 — Collage management**
+  (implementation in sub-agents per the feature workflow).

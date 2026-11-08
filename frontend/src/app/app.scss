@@ -1,0 +1,32 @@
+:host {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+}
+
+.toolbar-spacer {
+  flex: 1;
+}
+
+.toolbar-user {
+  font: var(--mat-sys-body-large);
+}
+
+.admin-badge {
+  margin-left: 8px;
+  padding: 2px 8px;
+  border-radius: 8px;
+  background-color: var(--mat-sys-secondary-container);
+  color: var(--mat-sys-on-secondary-container);
+  font: var(--mat-sys-label-medium);
+}
+
+.toolbar-user + button,
+.admin-badge + button {
+  margin-left: 8px;
+}
+
+.app-content {
+  flex: 1;
+  overflow: auto;
+}

@@ -1,0 +1,13 @@
+# Dev image: Go 1.27 + Node 26 + make. Used by compose.yaml (service "dev").
+FROM golang:1.27-bookworm
+
+# Node 26 (node, npm, npx, corepack) from the official image. COPY merges into
+# /usr/local, so /usr/local/go of the golang image stays.
+COPY --from=node:26-bookworm /usr/local /usr/local
+
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends make git sqlite3 \
+    && rm -rf /var/lib/apt/lists/* \
+    && node --version && npm --version && go version
+
+WORKDIR /workspace
