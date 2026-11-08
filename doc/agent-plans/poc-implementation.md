@@ -284,7 +284,8 @@ keeps the stored key.
   "defaultBorder": { "widthMm": 0, "color": "#ffffff" },
   "mode": "grid",
   "grid":   { "rows": null, "cols": null, "gapMm": 5, "marginMm": 10 },
-  "center": { "centerPhotoId": null, "sizePercent": 50, "gapMm": 5, "marginMm": 10 }
+  "center": { "centerPhotoId": null, "sizePercent": 50, "gapMm": 5, "marginMm": 10,
+              "topCount": null, "middleCount": null, "bottomCount": null }
 }
 ```
 Presets (portrait size, swapped for landscape): A5 148×210, A4 210×297, A3 297×420, Letter 215.9×279.4,
@@ -362,7 +363,7 @@ if `ia > fa` → `crop.height = 1`, `crop.width = fa/ia`, centred in x; else `cr
 inside 0..1.
 
 **Grid** (`arrange/grid.ts`), photos in import order (photo `id` ascending), `n` photos, `A = content.w/content.h`:
-- rows and cols null: `cols = ceil(sqrt(n × A))`, `rows = ceil(n / cols)`
+- rows and cols null: `cols = min(ceil(sqrt(n × A)), n)`, `rows = ceil(n / cols)` (1 photo fills the content)
 - only cols set: `rows = ceil(n / cols)`; only rows set: `cols = ceil(n / rows)`; both set: as given
 - `cellW = (content.w − (cols−1)·gap)/cols`, `cellH = (content.h − (rows−1)·gap)/rows`
 - photo i (i < rows·cols): frame = cell (row-major), rotation 0, cover crop, `z = i`
@@ -370,16 +371,22 @@ inside 0..1.
   (`x = page.w + 10mm`), stacked with 10 mm vertical offset, full crop, so the user sees and moves them
 - empty cells stay empty
 
-**Center** (`arrange/center.ts`):
+**Center** (`arrange/center.ts`) — lane model (revised after the step 6/7 review):
 - centre photo = `settings.center.centerPhotoId` if it exists in the collage, else the first photo
 - centre frame: keeps image aspect, fits in a box of `sizePercent%` of content width × `sizePercent%` of
   content height, centred in content, full crop
-- free ring: top band = content width × (space above centre − gap); bottom band likewise; left band = height of
-  the centre frame × (space left of centre − gap); right band likewise. Bands with size ≤ 0 are dropped.
-- remaining photos are distributed over bands in proportion to band area (largest remainder method), in order
-  top, right, bottom, left
-- horizontal band = one justified row: photo widths ∝ image aspect, scaled so widths + gaps = band width,
-  height = band height, cover crop. Vertical band = one justified column (same with height).
+- three lanes: **top lane** = full content width × (space above centre − gap); **bottom lane** likewise;
+  **middle lane** = left side + right side of the centre frame (each: height of the centre frame × (space
+  beside the centre − gap)). Lanes/sides with size ≤ 0 are unusable.
+- counts: `topCount`, `middleCount`, `bottomCount` (`null` = auto). Fixed counts are used as given (middle
+  split left = ceil(m/2), right = floor(m/2)); the remaining photos are distributed over the auto lanes in
+  proportion to lane area (largest remainder, order top, middle, bottom; middle area = left + right area).
+  Photos fill lanes in the order top, middle (left side first, then right), bottom. Photos beyond the total
+  capacity (all counts fixed, or no usable lane) go beside the page (`placeBesidePage`). If there are fewer
+  photos than the fixed counts, the lanes are filled in order and the remaining lanes stay empty.
+- top/bottom lane = one justified row (photo widths ∝ image aspect, scaled so widths + gaps = lane width,
+  height = lane height, cover crop); each middle side = one justified column (heights ∝ 1/aspect, analog).
+  A lane with fewer photos than its count still spans the whole lane (justified).
 - `z`: centre photo highest
 
 **Arrangement trigger:** after each import (all photos, current mode) and with button "Re-arrange". If any
@@ -505,6 +512,32 @@ show a confirm dialog first. Arrangement result is one undo step.
 - **Collage presets (step 3, confirmed):** preset ids `A5`, `A4`, `A3`, `Letter`, `30x30`, `Custom`. Custom:
   no orientation toggle, orientation derived from width/height (width > height → landscape, square →
   portrait), width/height 10–2000 mm.
+- **Grid with few photos (step 6):** in auto mode the column count is limited to the photo count
+  (`cols = min(ceil(sqrt(n × A)), n)`), so 1 photo fills the content area. Rejected: plain plan formula
+  (1 photo = half page).
+- **Center with few photos (step 7):** accepted for the PoC as specified (each band one justified row/column,
+  extreme strips possible with 2–4 photos); re-evaluate after the visual test. Rejected for now: special
+  rules for few photos.
+- **Beside-page placement (step 6):** cascade — each photo 10 mm lower than the previous one, overlapping,
+  later photos in front, starting at the page top. Rejected: column with 10 mm gaps.
+- **Orientation toggle for square presets:** hidden in the editor settings panel; the create dialog keeps
+  showing it for 30×30 (developer: leave as is).
+- **Review feedback steps 6/7 (2026-11-08, from screenshots):**
+  - Settings panel needs inner padding (fields touched the panel edges).
+  - **Canvas navigation:** pan + zoom like Figma/Canva: wheel/trackpad scroll pans (Shift = horizontal),
+    Ctrl/Cmd + wheel and trackpad pinch zoom at the pointer, drag on the empty workspace pans, zoom controls
+    (−, zoom %, +, fit) as a floating overlay on the canvas, auto zoom-to-fit when the page size or
+    orientation changes. Rejected: native scrollbars; auto-fit only.
+  - **Centre photo selection:** a "Set as centre" toolbar button (center mode, a photo selected), then the
+    other photos are re-arranged (confirm rule). No double-click (reserved for crop mode), no context menu.
+    The hidden "Selection" section at the bottom of the settings panel is removed.
+  - **Center lane model:** counts per lane top / middle / bottom (middle split evenly left/right); photos in
+    a lane justified by aspect; empty count = auto (by lane area), extra photos beside the page. Rejected:
+    separate left/right counts; equal cells; counts as maximums with shrinking lanes. Spec: "Algorithms" →
+    "Center".
+- **Settings normalization:** settings loaded from the API are merged with `defaultCollageSettings()`
+  (missing fields, e.g. the new lane counts in older collages, get defaults) by a pure
+  `normalizeSettings(raw)` in `core/models/collage.ts`, used by the editor store on load.
 - **Architecture (step 3+):** SOLID/DRY/clean code required by the developer; see section "Architecture
   conventions".
 - **Backend module wiring (step 2):** `httpapi` must not import domain packages (import cycle, because domain
@@ -735,7 +768,7 @@ results) and the developer reviews before the next step starts.
     imported assets; album count says "items" (includes videos).
 
 ### Step 6 — Editor canvas, collage settings, grid mode, auto-save
-- **Status:** open
+- **Status:** done (reviewed 2026-11-08)
 - **What:**
   - `npm i konva@10.9.1`. Editor page: Konva stage, page rect with background colour, photos rendered from
     `props` (group with clip, image with crop, inside border), texts list prepared but empty; zoom to fit;
@@ -750,9 +783,47 @@ results) and the developer reviews before the next step starts.
     the layout; extra photos (fixed rows×cols too small) appear right of the page.
   - Change page preset/orientation/background → visible at once; reload → same state.
 - **Notes:**
+  - Contract-first: shared types written before the parallel agents — `core/models/photo.ts` (`PhotoProps`,
+    `NormalizedRect`, `PhotoBorder`, `UnplacedProps`, `isPlaced`), `core/models/layout.ts`
+    (`SaveLayoutRequest`), stubs in `arrange/arrange.ts` and `geometry/crop.ts`.
+  - Backend: `PUT /api/collages/{id}/layout` → 204. Unit of work in the context: `internal/db/tx.go`
+    (`NewTransactor(gdb).InTx(ctx, fn)`, `db.Conn(ctx, gdb)`); ALL collage and photo `GormStore` methods use
+    `db.Conn` and join a running transaction. `collage.Service.SaveLayout` (settings update with ownership
+    check first, then `Photos.UpdateProps` per photo via `photo.CollagePhotos`). 400: settings not an object,
+    `photos` missing (array required, `[]` allowed), props not an object, duplicate id, unknown photo id, unknown
+    fields (also `texts` until step 9). Body limit stays 1 MiB (~3700 photos).
+  - Arrangement (pure, `features/editor/arrange/`): `arrange.ts` (dispatcher, strategy map by mode; re-exports),
+    `types.ts`, `frame.ts` (`coverFrame`, `fullFrame`, `MIN_FRAME_SIZE_MM = 1`), `grid.ts` (`arrangeGrid`,
+    `gridDimensions`; auto cols limited to n), `beside-page.ts` (`placeBesidePage`, cascade), `center.ts`
+    (lane model, `resolveCentrePhotoId`), `lanes.ts` (`laneCapacities`, `largestRemainder`,
+    `splitByCapacities`), `justified-line.ts`. Geometry: `crop.ts` (`coverCrop`, `fullCrop`), `rect.ts`,
+    `numbers.ts` (`clamp`, `optionalCount`, `sum`, ...), `units.ts`. Node 26 can run these files directly
+    (erasable TS, `import type`); extensionless imports need a resolve hook in check scripts.
+  - Editor: `editor.store.ts` (`EditorStore`, component-scoped; `load` uses `normalizeSettings`; `commit()`
+    → `AutoSaver.schedule()`; `markManualChange()` hook for step 8; confirm rule via private flag
+    `layoutIsArrangement`; declined re-arrange after import → `placeBesidePage(new, page, ¼ page width, maxZ+1)`;
+    `deletePhoto` flushes pending save first and clears `centerPhotoId` if needed), `auto-saver.ts` (1 s debounce,
+    one request in flight), `save-status-indicator.ts`. Toolbar: back, name/page label, save status,
+    "Set as centre" (outlined text button, center mode only, tooltip explains disabled state), delete, import.
+  - Canvas: `canvas/editor-canvas.ts` (Angular wiring, zoom overlay − / % / + / Fit, auto-fit on page size
+    change), `canvas/collage-renderer.ts` (plain class, Konva scene, node reuse by photo id, image cache,
+    selection outline), `canvas/stage-navigator.ts` (pan/zoom: wheel pans, Shift = horizontal, Ctrl/Cmd+wheel
+    and pinch zoom at the pointer, drag on empty area pans with 4 px threshold, zoom 10–800 %, 100 % = 96 dpi),
+    `canvas/viewport.ts` (pure view math). Konva imported as `konva/lib/Core` + single shapes (bundle size) —
+    later steps import `Transformer`/`Text` the same way.
+  - Bug found in the browser check: `fillEnabled(false)` on the loaded image removed it from Konva's hit graph
+    (photos not clickable) → placeholder is now cleared with `fill('')`. Never disable fill/listening on
+    clickable shapes.
+  - Settings panel: `settings-panel/collage-settings-panel.*` + sections `page-settings-section`,
+    `appearance-settings-section`, `arrangement-settings-section` (grid rows/cols, center size %, lane counts
+    top/middle/bottom; empty = Auto), `number-field.ts`, `color-field.ts`, `settings-limits.ts`,
+    `sync-from-input.ts`. Emits only committed, valid changes. Shared with the create dialog:
+    `shared/page-size-form.ts`, `shared/number-limits.ts`. Panel container has 16 px padding.
+  - `core/models/collage.ts`: `normalizeSettings(raw)`, `ARRANGEMENT_MODES`, `isSquarePreset`.
+  - Testing note: port 8080 serves the SPA embedded at build time; use `ng serve` (`127.0.0.1:4200`).
 
 ### Step 7 — Center mode
-- **Status:** open
+- **Status:** done (reviewed 2026-11-08)
 - **What:** `arrange/center.ts` per the Algorithms section; mode `center` in the panel with `sizePercent`,
   gap, margin; "Set as centre photo" action for the selected photo (needs simple click-selection, which is
   added here if not yet present) followed by re-arrange (with confirm rule).
@@ -760,7 +831,10 @@ results) and the developer reviews before the next step starts.
   - With 9 photos in center mode on A4 landscape: one large photo in the middle, the others fill 4 bands
     without overlap; changing `sizePercent` and re-arranging resizes the centre.
   - "Set as centre photo" on another photo puts it in the middle.
-- **Notes:**
+- **Notes:** implemented together with step 6 (see step 6 Notes): lane model in `arrange/center.ts`, lane
+  count fields in the arrangement section, toolbar "Set as centre" button (replaces the panel "Selection"
+  section). Reviewed in the browser by the developer after the review round (padding, pan/zoom, lanes,
+  centre button).
 
 ### Step 8 — Editing interactions
 - **Status:** open
@@ -838,12 +912,11 @@ results) and the developer reviews before the next step starts.
 
 ## Current state / Next action
 
-- Done: research and grilling; Steps 1–2 (commit `b20e7b0`); shared foundations + Steps 3–5 (reviewed
-  2026-11-08, uncommitted until the developer asks for a commit).
+- Done: research and grilling; Steps 1–7 (reviewed; steps 6–7 committed together with this plan update).
 - Nothing half-finished, no temporary changes to revert.
 - Sandbox notes for agents on the host: `pkill`/process listing is blocked → stop own servers with
   `lsof -ti tcp:<port> | xargs kill`, or ask the developer to run a kill command. Background `&` prints a
-  harmless `nice(5) failed` warning. The developer's dev container may be running and bound to `:8080`;
-  use another port (`COLLAGEOMAT_LISTEN`) for host tests.
-- Next action: wait for the developer's go-ahead, then start **Step 6 — Editor canvas, collage settings,
-  grid mode, auto-save**.
+  harmless `nice(5) failed` warning; `nohup` cannot detach (use a background task). The developer's dev
+  container may be running and bound to `:8080`/`:4200`; use other ports (`COLLAGEOMAT_LISTEN`) and a scratch
+  proxy config targeting `127.0.0.1:<port>` for host tests.
+- Next action: Step 8 — Editing interactions (parallel sub-agents).

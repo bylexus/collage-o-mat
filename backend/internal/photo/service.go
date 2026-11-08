@@ -38,6 +38,9 @@ type Store interface {
 	ListByCollage(ctx context.Context, collageID uint) ([]Photo, error)
 	ExistingSourceAssetIDs(ctx context.Context, collageID, connectorID uint, assetIDs []string) ([]string, error)
 	CountByCollages(ctx context.Context, collageIDs []uint) (map[uint]int, error)
+	// UpdatePropsInCollage returns false if the photo does not exist or
+	// belongs to another collage.
+	UpdatePropsInCollage(ctx context.Context, collageID, id uint, props jsoncol.JSON) (bool, error)
 	Delete(ctx context.Context, id uint) error
 	DeleteByCollage(ctx context.Context, collageID uint) error
 }

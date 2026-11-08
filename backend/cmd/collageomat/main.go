@@ -161,7 +161,11 @@ func newDomainModules(secret string, gdb *gorm.DB, photoFiles *photo.DiskStorage
 	immichSvc := immich.NewService(connectorSvc, immichKind)
 
 	photoStore := photo.NewGormStore(gdb)
-	collageSvc := collage.NewService(collage.NewGormStore(gdb), photo.NewCollagePhotos(photoStore, photoFiles))
+	collageSvc := collage.NewService(
+		collage.NewGormStore(gdb),
+		photo.NewCollagePhotos(photoStore, photoFiles),
+		db.NewTransactor(gdb),
+	)
 	photoSvc := photo.NewService(photoStore, photoFiles, collageSvc, immichSvc)
 
 	return []httpapi.Module{

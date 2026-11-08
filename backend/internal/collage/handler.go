@@ -27,11 +27,19 @@ func (h *Handler) RegisterRoutes(mux *http.ServeMux, requireAuth httpapi.Middlew
 	mux.Handle("GET /api/collages/{id}", requireAuth(http.HandlerFunc(h.get)))
 	mux.Handle("PATCH /api/collages/{id}", requireAuth(http.HandlerFunc(h.rename)))
 	mux.Handle("DELETE /api/collages/{id}", requireAuth(http.HandlerFunc(h.delete)))
+	mux.Handle("PUT /api/collages/{id}/layout", requireAuth(http.HandlerFunc(h.saveLayout)))
 }
 
 type createRequest struct {
 	Name     string       `json:"name"`
 	Settings jsoncol.JSON `json:"settings"`
+}
+
+// layoutRequest is the editor layout. Photos must be present (may be
+// empty); texts follow with the text step.
+type layoutRequest struct {
+	Settings jsoncol.JSON       `json:"settings"`
+	Photos   []PhotoPropsUpdate `json:"photos"`
 }
 
 type renameRequest struct {
@@ -142,6 +150,23 @@ func (h *Handler) delete(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := h.service.Delete(r.Context(), auth.UserID(r), id); err != nil {
+		httpapi.WriteServiceError(w, err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+func (h *Handler) saveLayout(w http.ResponseWriter, r *http.Request) {
+	id, err := httpapi.PathID(r, "id")
+	if err != nil {
+		httpapi.WriteServiceError(w, err)
+		return
+	}
+	var req layoutRequest
+	if !httpapi.DecodeJSON(w, r, &req) {
+		return
+	}
+	if err := h.service.SaveLayout(r.Context(), auth.UserID(r), id, req.Settings, req.Photos); err != nil {
 		httpapi.WriteServiceError(w, err)
 		return
 	}

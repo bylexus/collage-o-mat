@@ -1,5 +1,5 @@
 // Package collage contains the Collage model and the collage CRUD API
-// (list, create, get, rename, delete).
+// (list, create, get, rename, delete, save layout).
 package collage
 
 import (

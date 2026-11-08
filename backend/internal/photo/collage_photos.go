@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 
+	"collageomat/internal/apperr"
 	"collageomat/internal/collage"
 )
 
@@ -35,6 +36,23 @@ func (c *CollagePhotos) ListForCollage(ctx context.Context, collageID uint) ([]c
 		return nil, err
 	}
 	return views(photos), nil
+}
+
+// UpdateProps implements collage.Photos: it sets the props of each listed
+// photo. A photo that is not in the collage gives an apperr validation
+// error; the photos updated before stay changed unless ctx carries a
+// transaction (the collage service runs it in one).
+func (c *CollagePhotos) UpdateProps(ctx context.Context, collageID uint, updates []collage.PhotoPropsUpdate) error {
+	for _, u := range updates {
+		found, err := c.store.UpdatePropsInCollage(ctx, collageID, u.ID, u.Props)
+		if err != nil {
+			return err
+		}
+		if !found {
+			return apperr.Validation("unknown photo id %d", u.ID)
+		}
+	}
+	return nil
 }
 
 // DeleteAllForCollage implements collage.Photos: it deletes the rows, then

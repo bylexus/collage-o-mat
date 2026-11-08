@@ -1,0 +1,28 @@
+<section class="panel-section">
+  <h3 class="panel-heading" i18n="@@editor.settings.pageHeading">Page</h3>
+  <app-page-settings-section [page]="settings().page" (pageChange)="update({ page: $event })" />
+</section>
+
+<section class="panel-section">
+  <h3 class="panel-heading" i18n="@@editor.settings.appearanceHeading">Appearance</h3>
+  <app-appearance-settings-section
+    [backgroundColor]="settings().backgroundColor"
+    [defaultBorder]="settings().defaultBorder"
+    (backgroundColorChange)="update({ backgroundColor: $event })"
+    (defaultBorderChange)="update({ defaultBorder: $event })"
+  />
+</section>
+
+<section class="panel-section">
+  <h3 class="panel-heading" i18n="@@editor.settings.arrangementHeading">Arrangement</h3>
+  <app-arrangement-settings-section
+    [mode]="settings().mode"
+    [grid]="settings().grid"
+    [center]="settings().center"
+    [photoCount]="photoCount()"
+    (modeChange)="update({ mode: $event })"
+    (gridChange)="update({ grid: $event })"
+    (centerChange)="update({ center: $event })"
+    (rearrange)="rearrange.emit()"
+  />
+</section>

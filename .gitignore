@@ -8,3 +8,6 @@ backend/internal/web/dist/*
 
 # local secrets (e.g. Immich test key), never commit
 /.env
+
+# macOS
+.DS_Store
