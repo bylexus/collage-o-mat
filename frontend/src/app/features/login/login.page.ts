@@ -8,8 +8,7 @@ import { MatInputModule } from '@angular/material/input';
 import { MatProgressSpinnerModule } from '@angular/material/progress-spinner';
 import { ActivatedRoute, Router } from '@angular/router';
 import { AuthService } from '../../core/auth.service';
-
-type LoginError = 'invalid' | 'generic';
+import { errorMessage } from '../../shared/error-message';
 
 @Component({
   selector: 'app-login-page',
@@ -34,7 +33,7 @@ export class LoginPage {
     password: ['', Validators.required],
   });
   protected readonly submitting = signal(false);
-  protected readonly error = signal<LoginError | null>(null);
+  protected readonly error = signal<string | null>(null);
 
   protected async submit(): Promise<void> {
     if (this.form.invalid || this.submitting()) {
@@ -49,7 +48,14 @@ export class LoginPage {
       await this.auth.login(username, password);
       await this.router.navigateByUrl(this.returnUrl());
     } catch (err) {
-      this.error.set(err instanceof HttpErrorResponse && err.status === 401 ? 'invalid' : 'generic');
+      this.error.set(
+        err instanceof HttpErrorResponse && err.status === 401
+          ? $localize`:@@login.errorInvalid:Invalid username or password`
+          : errorMessage(
+              err,
+              $localize`:@@login.errorGeneric:Sign in failed. Please try again later.`,
+            ),
+      );
       this.form.enable();
       this.submitting.set(false);
     }

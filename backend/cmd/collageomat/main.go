@@ -16,9 +16,14 @@ import (
 	"gorm.io/gorm"
 
 	"collageomat/internal/auth"
+	"collageomat/internal/collage"
 	"collageomat/internal/config"
+	"collageomat/internal/connector"
+	"collageomat/internal/connector/immich"
 	"collageomat/internal/db"
 	"collageomat/internal/httpapi"
+	"collageomat/internal/photo"
+	"collageomat/internal/secretbox"
 	"collageomat/internal/web"
 )
 
@@ -82,6 +87,18 @@ func runServe(args []string) error {
 		return err
 	}
 
+	photoFiles, err := photo.NewDiskStorage(cfg.PhotosDir())
+	if err != nil {
+		return err
+	}
+	defer photoFiles.Close()
+
+	domainModules, err := newDomainModules(cfg.Secret, gdb, photoFiles)
+	if err != nil {
+		return err
+	}
+	modules := append([]httpapi.Module{authHandler}, domainModules...)
+
 	static, err := web.NewHandler()
 	if err != nil {
 		return err
@@ -89,7 +106,7 @@ func runServe(args []string) error {
 
 	srv := &http.Server{
 		Addr:              cfg.Listen,
-		Handler:           httpapi.NewRouter(static, authHandler.RequireAuth, authHandler),
+		Handler:           httpapi.NewRouter(static, authHandler.RequireAuth, modules...),
 		ReadHeaderTimeout: 10 * time.Second,
 	}
 
@@ -126,7 +143,47 @@ func models() []any {
 	return []any{
 		&auth.User{},
 		&auth.Session{},
+		&collage.Collage{},
+		&connector.Connector{},
+		&photo.Photo{},
 	}
+}
+
+// newDomainModules wires the services and handlers of the domain packages
+// (collages, connectors, Immich, photos). Connector configs are encrypted
+// with a key derived from secret; photo files are stored in photoFiles.
+func newDomainModules(secret string, gdb *gorm.DB, photoFiles *photo.DiskStorage) ([]httpapi.Module, error) {
+	immichKind := immich.NewKind(nil)
+	connectorSvc, err := newConnectorService(secret, gdb, immichKind)
+	if err != nil {
+		return nil, err
+	}
+	immichSvc := immich.NewService(connectorSvc, immichKind)
+
+	photoStore := photo.NewGormStore(gdb)
+	collageSvc := collage.NewService(collage.NewGormStore(gdb), photo.NewCollagePhotos(photoStore, photoFiles))
+	photoSvc := photo.NewService(photoStore, photoFiles, collageSvc, immichSvc)
+
+	return []httpapi.Module{
+		collage.NewHandler(collageSvc),
+		photo.NewHandler(photoSvc),
+		connector.NewHandler(connectorSvc),
+		immich.NewHandler(immichSvc),
+	}, nil
+}
+
+// newConnectorService returns the connector service with all connector
+// kinds registered.
+func newConnectorService(secret string, gdb *gorm.DB, kinds ...connector.Kind) (*connector.Service, error) {
+	box, err := secretbox.New(secret)
+	if err != nil {
+		return nil, err
+	}
+	registry, err := connector.NewRegistry(kinds...)
+	if err != nil {
+		return nil, err
+	}
+	return connector.NewService(connector.NewGormStore(gdb), box, registry), nil
 }
 
 // openDB creates the data dir if needed, opens the database and migrates

@@ -1,0 +1,80 @@
+<h2 mat-dialog-title i18n="@@collages.create.title">New collage</h2>
+<form [formGroup]="form" (ngSubmit)="submit()">
+  <mat-dialog-content class="create-fields">
+    <mat-form-field>
+      <mat-label i18n="@@collages.name.label">Name</mat-label>
+      <input
+        matInput
+        formControlName="name"
+        [attr.maxlength]="nameMaxLength"
+        cdkFocusInitial
+        required
+      />
+      @if (form.controls.name.hasError('required')) {
+        <mat-error i18n="@@collages.name.required">Name is required</mat-error>
+      }
+    </mat-form-field>
+
+    <mat-form-field>
+      <mat-label i18n="@@collages.create.pageSize">Page size</mat-label>
+      <mat-select formControlName="preset">
+        @for (preset of presets; track preset.id) {
+          <mat-option [value]="preset.id">{{ preset.label }}</mat-option>
+        }
+        <mat-option value="Custom">{{ customPresetLabel }}</mat-option>
+      </mat-select>
+    </mat-form-field>
+
+    @if (isCustom()) {
+      <div class="size-fields">
+        <mat-form-field>
+          <mat-label i18n="@@collages.create.widthMm">Width (mm)</mat-label>
+          <input
+            matInput
+            type="number"
+            formControlName="widthMm"
+            [attr.min]="sideMinMm"
+            [attr.max]="sideMaxMm"
+            step="0.1"
+            required
+          />
+          <mat-error i18n="@@collages.create.sizeRange">
+            Enter a value from {{ sideMinMm }} to {{ sideMaxMm }} mm
+          </mat-error>
+        </mat-form-field>
+        <mat-form-field>
+          <mat-label i18n="@@collages.create.heightMm">Height (mm)</mat-label>
+          <input
+            matInput
+            type="number"
+            formControlName="heightMm"
+            [attr.min]="sideMinMm"
+            [attr.max]="sideMaxMm"
+            step="0.1"
+            required
+          />
+          <mat-error i18n="@@collages.create.sizeRange">
+            Enter a value from {{ sideMinMm }} to {{ sideMaxMm }} mm
+          </mat-error>
+        </mat-form-field>
+      </div>
+    } @else {
+      <mat-button-toggle-group
+        formControlName="orientation"
+        i18n-aria-label="@@collages.create.orientation"
+        aria-label="Orientation"
+      >
+        <mat-button-toggle value="portrait" i18n="@@collages.create.portrait">
+          Portrait
+        </mat-button-toggle>
+        <mat-button-toggle value="landscape" i18n="@@collages.create.landscape">
+          Landscape
+        </mat-button-toggle>
+      </mat-button-toggle-group>
+    }
+  </mat-dialog-content>
+  <mat-dialog-actions align="end">
+    <button matButton type="button" mat-dialog-close i18n="@@collages.dialog.cancel">Cancel</button>
+    <button matButton="filled" type="submit" i18n="@@collages.create.submit">Create</button>
+  </mat-dialog-actions>
+</form>

@@ -1,11 +1,12 @@
-import { HttpClient, HttpErrorResponse } from '@angular/common/http';
+import { HttpErrorResponse } from '@angular/common/http';
 import { computed, inject, Injectable, signal } from '@angular/core';
 import { firstValueFrom } from 'rxjs';
-import { User } from './models';
+import { AuthApi } from './api/auth.api';
+import { User } from './models/user';
 
 @Injectable({ providedIn: 'root' })
 export class AuthService {
-  private readonly http = inject(HttpClient);
+  private readonly api = inject(AuthApi);
   private readonly user = signal<User | null>(null);
   private loaded: Promise<void> | null = null;
 
@@ -21,7 +22,7 @@ export class AuthService {
   /** Loads the current user from the session cookie; 401 (or any error) means "not logged in". */
   async loadMe(): Promise<void> {
     try {
-      this.user.set(await firstValueFrom(this.http.get<User>('/api/auth/me')));
+      this.user.set(await firstValueFrom(this.api.me()));
     } catch (err) {
       if (!(err instanceof HttpErrorResponse && err.status === 401)) {
         console.error('Failed to load current user', err);
@@ -32,9 +33,7 @@ export class AuthService {
 
   /** Throws the `HttpErrorResponse` on failure (401 = wrong credentials). */
   async login(username: string, password: string): Promise<User> {
-    const user = await firstValueFrom(
-      this.http.post<User>('/api/auth/login', { username, password }),
-    );
+    const user = await firstValueFrom(this.api.login(username, password));
     this.user.set(user);
     this.loaded = Promise.resolve();
     return user;
@@ -43,7 +42,7 @@ export class AuthService {
   /** Ends the session on the server. The local user is cleared also if the request fails. */
   async logout(): Promise<void> {
     try {
-      await firstValueFrom(this.http.post<void>('/api/auth/logout', {}));
+      await firstValueFrom(this.api.logout());
     } finally {
       this.clearUser();
     }

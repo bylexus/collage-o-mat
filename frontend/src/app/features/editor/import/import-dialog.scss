@@ -1,0 +1,59 @@
+.import-path {
+  display: block;
+  overflow: hidden;
+  color: var(--mat-sys-on-surface-variant);
+  font: var(--mat-sys-title-small);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.import-content {
+  min-height: 200px;
+}
+
+.import-message {
+  margin: 0 0 8px;
+  color: var(--mat-sys-on-surface-variant);
+}
+
+.selection-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 8px;
+  margin-bottom: 8px;
+}
+
+.selection-count {
+  flex: 1;
+  min-width: 140px;
+}
+
+.load-more {
+  display: flex;
+  justify-content: center;
+  margin-top: 16px;
+}
+
+.import-spinner {
+  margin: 24px auto;
+}
+
+.import-error {
+  margin: 8px 0 0;
+  color: var(--mat-sys-error);
+
+  p {
+    margin: 0 0 8px;
+  }
+}
+
+.actions-spacer {
+  flex: 1;
+}
+
+.button-spinner {
+  display: inline-block;
+  margin-right: 8px;
+  vertical-align: middle;
+}

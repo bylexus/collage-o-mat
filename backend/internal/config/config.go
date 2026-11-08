@@ -9,8 +9,13 @@ import (
 	"strconv"
 )
 
-// dbFileName is the name of the SQLite file inside the data directory.
-const dbFileName = "collageomat.db"
+const (
+	// dbFileName is the name of the SQLite file inside the data directory.
+	dbFileName = "collageomat.db"
+	// photosDirName is the name of the photo directory inside the data
+	// directory.
+	photosDirName = "photos"
+)
 
 // Config holds the runtime configuration of the server.
 type Config struct {
@@ -60,6 +65,11 @@ func (c Config) EnsureDataDir() error {
 // DBPath returns the path of the SQLite database file.
 func (c Config) DBPath() string {
 	return filepath.Join(c.DataDir, dbFileName)
+}
+
+// PhotosDir returns the directory of the imported photo files.
+func (c Config) PhotosDir() string {
+	return filepath.Join(c.DataDir, photosDirName)
 }
 
 func envOr(key, def string) string {

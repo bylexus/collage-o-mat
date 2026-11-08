@@ -8,6 +8,17 @@
   flex: 1;
 }
 
+.toolbar-nav {
+  display: flex;
+  gap: 4px;
+  margin-left: 24px;
+}
+
+.active-link {
+  background-color: var(--mat-sys-secondary-container);
+  color: var(--mat-sys-on-secondary-container);
+}
+
 .toolbar-user {
   font: var(--mat-sys-body-large);
 }

@@ -1,0 +1,42 @@
+<a matButton routerLink="/collages" class="back-link">
+  <mat-icon>arrow_back</mat-icon>
+  <span i18n="@@editor.back">Back to collages</span>
+</a>
+
+@if (collage(); as collage) {
+  <header class="editor-header">
+    <div class="editor-heading">
+      <h1 class="editor-title">{{ collage.name }}</h1>
+      <p class="editor-subtitle">
+        {{ pageLabel() }} ·
+        <span i18n="@@editor.photoCount">
+          {collage.photos.length, plural,
+            =0 {no photos}
+            =1 {1 photo}
+            other {{{ collage.photos.length }} photos}
+          }
+        </span>
+      </p>
+    </div>
+    <button matButton="filled" type="button" (click)="openImport()">
+      <mat-icon>add_photo_alternate</mat-icon>
+      <span i18n="@@editor.importButton">Import from Immich</span>
+    </button>
+  </header>
+
+  @if (collage.photos.length === 0) {
+    <p class="editor-message" i18n="@@editor.noPhotos">
+      This collage has no photos yet. Import photos from Immich.
+    </p>
+  } @else {
+    <app-photo-grid
+      [collageId]="collage.id"
+      [photos]="collage.photos"
+      (deleteRequested)="deletePhoto($event)"
+    />
+  }
+} @else if (loadError(); as message) {
+  <p class="editor-error" role="alert">{{ message }}</p>
+} @else {
+  <mat-spinner class="editor-spinner" diameter="40" />
+}

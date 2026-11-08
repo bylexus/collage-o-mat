@@ -1,7 +1,20 @@
 <mat-toolbar class="app-toolbar">
   <span i18n="@@appName">Collage-o-mat</span>
-  <span class="toolbar-spacer"></span>
   @if (auth.currentUser(); as user) {
+    <nav class="toolbar-nav">
+      <a matButton routerLink="/collages" routerLinkActive="active-link" i18n="@@toolbar.collages">
+        Collages
+      </a>
+      <a
+        matButton
+        routerLink="/settings/connectors"
+        routerLinkActive="active-link"
+        i18n="@@toolbar.connectors"
+      >
+        Connectors
+      </a>
+    </nav>
+    <span class="toolbar-spacer"></span>
     <span class="toolbar-user">{{ user.username }}</span>
     @if (user.isAdmin) {
       <span class="admin-badge" i18n="@@toolbar.adminBadge">Admin</span>

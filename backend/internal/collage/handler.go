@@ -1,0 +1,149 @@
+package collage
+
+import (
+	"net/http"
+	"time"
+
+	"collageomat/internal/auth"
+	"collageomat/internal/httpapi"
+	"collageomat/internal/jsoncol"
+)
+
+// Handler serves the collage API under /api/collages. It implements
+// httpapi.Module.
+type Handler struct {
+	service *Service
+}
+
+// NewHandler returns the collage HTTP handler.
+func NewHandler(service *Service) *Handler {
+	return &Handler{service: service}
+}
+
+// RegisterRoutes implements httpapi.Module. All routes need a session.
+func (h *Handler) RegisterRoutes(mux *http.ServeMux, requireAuth httpapi.Middleware) {
+	mux.Handle("GET /api/collages", requireAuth(http.HandlerFunc(h.list)))
+	mux.Handle("POST /api/collages", requireAuth(http.HandlerFunc(h.create)))
+	mux.Handle("GET /api/collages/{id}", requireAuth(http.HandlerFunc(h.get)))
+	mux.Handle("PATCH /api/collages/{id}", requireAuth(http.HandlerFunc(h.rename)))
+	mux.Handle("DELETE /api/collages/{id}", requireAuth(http.HandlerFunc(h.delete)))
+}
+
+type createRequest struct {
+	Name     string       `json:"name"`
+	Settings jsoncol.JSON `json:"settings"`
+}
+
+type renameRequest struct {
+	Name string `json:"name"`
+}
+
+// summaryResponse is a list entry; POST and PATCH return it too.
+type summaryResponse struct {
+	ID         uint         `json:"id"`
+	Name       string       `json:"name"`
+	Settings   jsoncol.JSON `json:"settings"`
+	PhotoCount int          `json:"photoCount"`
+	UpdatedAt  time.Time    `json:"updatedAt"`
+}
+
+// detailResponse is the full collage for the editor. Texts are always an
+// empty list for now; the text step fills them.
+type detailResponse struct {
+	ID       uint         `json:"id"`
+	Name     string       `json:"name"`
+	Settings jsoncol.JSON `json:"settings"`
+	Photos   []PhotoView  `json:"photos"`
+	Texts    []any        `json:"texts"`
+}
+
+func toSummaryResponse(s Summary) summaryResponse {
+	return summaryResponse{
+		ID:         s.ID,
+		Name:       s.Name,
+		Settings:   s.Settings,
+		PhotoCount: s.PhotoCount,
+		UpdatedAt:  s.UpdatedAt,
+	}
+}
+
+func toDetailResponse(d *Detail) detailResponse {
+	return detailResponse{
+		ID:       d.ID,
+		Name:     d.Name,
+		Settings: d.Settings,
+		Photos:   d.Photos,
+		Texts:    []any{},
+	}
+}
+
+func (h *Handler) list(w http.ResponseWriter, r *http.Request) {
+	summaries, err := h.service.List(r.Context(), auth.UserID(r))
+	if err != nil {
+		httpapi.WriteServiceError(w, err)
+		return
+	}
+	resp := make([]summaryResponse, len(summaries))
+	for i, s := range summaries {
+		resp[i] = toSummaryResponse(s)
+	}
+	httpapi.WriteJSON(w, http.StatusOK, resp)
+}
+
+func (h *Handler) create(w http.ResponseWriter, r *http.Request) {
+	var req createRequest
+	if !httpapi.DecodeJSON(w, r, &req) {
+		return
+	}
+	summary, err := h.service.Create(r.Context(), auth.UserID(r), req.Name, req.Settings)
+	if err != nil {
+		httpapi.WriteServiceError(w, err)
+		return
+	}
+	httpapi.WriteJSON(w, http.StatusCreated, toSummaryResponse(*summary))
+}
+
+func (h *Handler) get(w http.ResponseWriter, r *http.Request) {
+	id, err := httpapi.PathID(r, "id")
+	if err != nil {
+		httpapi.WriteServiceError(w, err)
+		return
+	}
+	d, err := h.service.Detail(r.Context(), auth.UserID(r), id)
+	if err != nil {
+		httpapi.WriteServiceError(w, err)
+		return
+	}
+	httpapi.WriteJSON(w, http.StatusOK, toDetailResponse(d))
+}
+
+func (h *Handler) rename(w http.ResponseWriter, r *http.Request) {
+	id, err := httpapi.PathID(r, "id")
+	if err != nil {
+		httpapi.WriteServiceError(w, err)
+		return
+	}
+	var req renameRequest
+	if !httpapi.DecodeJSON(w, r, &req) {
+		return
+	}
+	summary, err := h.service.Rename(r.Context(), auth.UserID(r), id, req.Name)
+	if err != nil {
+		httpapi.WriteServiceError(w, err)
+		return
+	}
+	httpapi.WriteJSON(w, http.StatusOK, toSummaryResponse(*summary))
+}
+
+func (h *Handler) delete(w http.ResponseWriter, r *http.Request) {
+	id, err := httpapi.PathID(r, "id")
+	if err != nil {
+		httpapi.WriteServiceError(w, err)
+		return
+	}
+	if err := h.service.Delete(r.Context(), auth.UserID(r), id); err != nil {
+		httpapi.WriteServiceError(w, err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}

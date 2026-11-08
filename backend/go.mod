@@ -5,6 +5,7 @@ go 1.27.3
 require (
 	github.com/glebarez/sqlite v1.11.0
 	golang.org/x/crypto v0.58.0
+	golang.org/x/image v0.47.0
 	golang.org/x/term v0.47.0
 	gorm.io/gorm v1.31.2
 )

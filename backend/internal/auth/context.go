@@ -1,6 +1,9 @@
 package auth
 
-import "context"
+import (
+	"context"
+	"net/http"
+)
 
 type userContextKey struct{}
 
@@ -12,4 +15,10 @@ func withUser(ctx context.Context, user *User) context.Context {
 func UserFromContext(ctx context.Context) *User {
 	u, _ := ctx.Value(userContextKey{}).(*User)
 	return u
+}
+
+// UserID returns the ID of the logged-in user. It is only valid in handlers
+// behind RequireAuth, which always puts the user into the request context.
+func UserID(r *http.Request) uint {
+	return UserFromContext(r.Context()).ID
 }

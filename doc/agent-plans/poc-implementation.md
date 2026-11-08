@@ -209,6 +209,56 @@ Dev URL: `http://localhost:4200` (ng serve, proxies `/api` to Go). Built binary:
 - PrimeNG licence change (reason for rejection): https://primeng.org/lts ,
   https://dev.to/playfulprogramming-angular/ng-news-2617-primengs-new-licensing-and-a2ui-for-angular-4eik
 
+## Architecture conventions (clean code, SOLID, DRY)
+
+The developer requires maintainable code: SOLID, common design patterns, DRY, clean code. All steps from step 3
+on follow these rules.
+
+**Backend — one package per domain** (`internal/collage`, `internal/photo`, `internal/connector`, ...), layered:
+- `model.go` — GORM models only.
+- `store.go` — repository: the **only** layer that uses `*gorm.DB`. Exposed as a concrete type with a
+  constructor; consumers depend on small interfaces they declare themselves (Interface Segregation,
+  Dependency Inversion).
+- `service.go` — business rules: validation, ownership checks, transactions, orchestration. No `net/http`.
+  Depends on interfaces (stores, file storage, external clients), not on concrete types.
+- `handler.go` — HTTP only: parse path/body, call the service, map the result. Implements `httpapi.Module`.
+- Constructors with explicit dependencies (`NewService(store Store, ...)`); wiring only in the composition root
+  `backend/cmd/collageomat/main.go`. No package-level mutable state.
+- Shared building blocks (no duplicates in domain packages):
+  - `internal/apperr`: domain errors `ErrNotFound`, `ErrConflict`, and a validation error type with a message;
+    services return these.
+  - `httpapi.WriteServiceError(w, err)`: one central mapping apperr → HTTP status + JSON error (unknown errors
+    → 500 with a generic message, real error logged).
+  - `httpapi.PathID(r, name) (uint, error)` for numeric path parameters.
+  - `internal/jsoncol.JSON`: GORM column type for JSON stored as `TEXT` (implements `sql.Scanner`,
+    `driver.Valuer`, `json.Marshaler`/`Unmarshaler`; rejects invalid JSON). Used by all `settings`/`props`/
+    `config` columns.
+- Naming (unified after steps 3/4): the GORM repository is `type GormStore` with `NewGormStore(db *gorm.DB)`;
+  the service declares the exported consumer interface `Store` it needs; `NewService(...)` takes interfaces;
+  handlers depend on the concrete `*Service` (no handler-side interface — no tests, no substitution need);
+  `NewHandler(svc *Service)`. The session user ID in handlers comes from `auth.UserID(r)` (one helper, no
+  per-package copies).
+- Cross-domain access only through small interfaces declared by the consumer and implemented by adapters
+  in the provider package (e.g. `collage.Photos` implemented in `internal/photo`); no import cycles.
+- Ownership: service methods take the `userID` of the session user; a record that does not exist **or**
+  belongs to another user gives `apperr.ErrNotFound` (→ 404).
+- Errors are wrapped with context (`fmt.Errorf("load collage %d: %w", id, err)`); no panics for control flow.
+- Small functions, intention-revealing names, doc comments on exported identifiers, `gofmt`/`go vet` clean.
+- Existing `internal/auth` (step 2) does not follow the store/service split yet; it stays as is unless the
+  developer asks for a refactor.
+
+**Frontend:**
+- `src/app/core/api/` — one API service per resource (`CollageApi`, `ConnectorApi`, `ImmichApi`, ...). Only
+  these services use `HttpClient`. Typed DTOs in `src/app/core/models/`.
+- `src/app/shared/` — reusable building blocks: `ConfirmDialog` (Material dialog, title/message/confirm
+  label), `NotificationService` (snackbar for success/error), `errorMessage(err)` helper that turns an
+  `HttpErrorResponse` with `{"error": "..."}` into a display text. No duplicated dialog/snackbar/error code
+  in features.
+- `src/app/features/<feature>/` — page components (containers: load data, call API services, hold state in
+  signals) and presentational components/dialogs (`input()`/`output()`, no API calls).
+- Signals for state, `inject()`, standalone components, new control flow, OnPush (default). No state library.
+- All UI texts marked for i18n with stable ids (`@@<feature>.<key>`).
+
 ## Data model
 
 All tables have `created_at`, `updated_at` (GORM). JSON columns are `TEXT`.
@@ -435,6 +485,28 @@ show a confirm dialog first. Arrangement result is one undo step.
   cached). Rejected: keep the CDN links.
 - **Forms (step 2):** Angular Reactive Forms (`NonNullableFormBuilder`) — *Rationale:* Signal Forms are still
   `@experimental` in `@angular/forms` 22.2.5.
+- **Duplicate import (step 5):** an Immich asset that is already in the collage (same `connector_id` +
+  `source_asset_id`) is skipped on import; the import result reports the skipped count; the selection dialog
+  marks already imported assets. Rejected: allow duplicates.
+- **Immich testing by agents (steps 4, 5):** agents test against the real server `https://immich.alexi.ch`
+  with a read-only API key (scopes `album.read`, `asset.read`, `asset.view`) from the repo-local file `.env`
+  (gitignored as `/.env`), variables `IMMICH_TEST_URL=https://immich.alexi.ch` and `IMMICH_TEST_API_KEY=...`.
+  The app itself does not read these variables (the app gets the key from the connector settings in the DB);
+  they are only for agent tests. Agents only read `.env`; the key must never be written to committed files,
+  the plan, logs or reports. The developer keeps `.env` permanently for dev purposes (decided after step 4).
+  `.dockerignore` (created by the developer) already contains `/.env`. Rejected: fake Immich server only;
+  key file in `~/.config/collageomat/` (needs a sandbox change).
+- **Import order (step 5):** accepted: photo ids follow the download completion order (4 parallel
+  downloads), not the album/selection order; arrangement order = photo id ascending. Rejected: keep request
+  order.
+- **Bundle budget (step 5):** the developer accepts a large initial bundle (~533 kB raw / ~132 kB transfer;
+  `matTooltip` on logout pulls in the CDK overlay). `angular.json` production budget `initial` raised to
+  warning 1 MB / error 2 MB. Rejected: replace the tooltip.
+- **Collage presets (step 3, confirmed):** preset ids `A5`, `A4`, `A3`, `Letter`, `30x30`, `Custom`. Custom:
+  no orientation toggle, orientation derived from width/height (width > height → landscape, square →
+  portrait), width/height 10–2000 mm.
+- **Architecture (step 3+):** SOLID/DRY/clean code required by the developer; see section "Architecture
+  conventions".
 - **Backend module wiring (step 2):** `httpapi` must not import domain packages (import cycle, because domain
   packages use `httpapi.WriteJSON`). Each domain handler implements `httpapi.Module`
   (`RegisterRoutes(mux, requireAuth)`); `main.go` calls `httpapi.NewRouter(static, authHandler.RequireAuth,
@@ -540,7 +612,7 @@ results) and the developer reviews before the next step starts.
     is a styled `<span>`. i18n ids like `@@login.title`, `@@toolbar.logout`.
 
 ### Step 3 — Collage management
-- **Status:** open
+- **Status:** done (reviewed 2026-11-08)
 - **What:**
   - Model `Collage`, AutoMigrate; handlers list/create/get/patch/delete with owner check (404 for others).
   - Frontend: route `/collages` (start page after login): Material table/cards with name, page size
@@ -553,9 +625,34 @@ results) and the developer reviews before the next step starts.
   - A second user (create with CLI) sees none of the first user's collages; `GET /api/collages/<other id>`
     → 404.
 - **Notes:**
+  - Shared foundations built before steps 3–5: `internal/apperr` (`ErrNotFound`, `ErrConflict`,
+    `Conflict(fmt,...)`/`AsConflict`, `Validation(fmt,...)`/`AsValidation`, `Upstream(fmt,...)`/`AsUpstream`),
+    `httpapi.WriteServiceError` (404 / 409 msg / 400 msg / 502 msg logged as warning / 500 generic logged),
+    `httpapi.PathID`, `internal/jsoncol.JSON` (TEXT; nil/empty/`null` → SQL NULL; `From`, `Decode`, `IsNull`,
+    `IsObject`; services set defaults, columns `not null`). Frontend: `core/api/auth.api.ts`,
+    `core/models/user.ts`, `shared/confirm-dialog/{confirm-dialog,confirm.service}.ts`
+    (`ConfirmService.confirm(data): Promise<boolean>`), `shared/notification.service.ts` (success 3 s, error 8 s
+    with Close), `shared/error-message.ts` (`errorMessage(err, fallback?)`; status 0 → network text). Toolbar
+    links "Collages" / "Connectors"; `''` redirects to `collages`. Login page shows server error text for non-401.
+  - Backend `internal/collage/{model,store,service,handler}.go`: `NewGormStore`, `NewService(store Store, photos
+    Photos)`, `NewHandler(*Service)`. `Photos` interface (implemented in `internal/photo`, step 5):
+    `CountByCollages`, `DeleteAllForCollage` (called before the row delete, idempotent), `ListForCollage` →
+    `[]collage.PhotoView`. Service: `List`, `Create`, `Get`, `Detail`, `Rename`, `Delete`.
+  - API: list sorted `updated_at` desc then `id` desc; POST → 201 and PATCH → 200 return the summary shape
+    `{id, name, settings, photoCount, updatedAt}`; detail `{id, name, settings, photos, texts: []}` (no
+    `updatedAt`). Errors: blank name / > 200 chars / settings not an object → 400.
+  - Frontend: `core/models/collage.ts` (types matching the settings JSON, presets, pure helpers
+    `findFixedPreset`, `orientedSize`, `orientationOf`, `fixedPageSettings`, `customPageSettings`, `pageLabel`,
+    `defaultCollageSettings`, constants `DEFAULT_DPI`, `COLLAGE_NAME_MAX_LENGTH = 200`,
+    `CUSTOM_PAGE_SIZE_MIN_MM`/`MAX_MM`), `core/api/collage.api.ts`, `features/collages/` (`collages.page`,
+    `collage-create-dialog`, `collage-rename-dialog`, `collage-dialogs.service`, `collage-name` validators).
+    Dialogs only collect input; the page calls the API. Page label: "A4 landscape", square preset "30 × 30 cm",
+    custom "300 × 200 mm" (`Intl.NumberFormat`). `features/home` deleted.
+  - Editor page `features/editor/editor.page.*` (route `collages/:id`): invalid id / 404 → notification +
+    back to `/collages`.
 
 ### Step 4 — Connectors and Immich client
-- **Status:** open
+- **Status:** done (reviewed 2026-11-08)
 - **What:**
   - Model `Connector`, AutoMigrate; AES-GCM encrypt/decrypt of the config JSON; CRUD handlers (API key never
     returned; empty `apiKey` on update keeps the stored key); `POST /api/connectors/{id}/test`.
@@ -571,9 +668,29 @@ results) and the developer reviews before the next step starts.
   - `sqlite3 data/collageomat.db "select config from connectors"` shows no readable URL or key.
   - Edit name without entering the key → test still works.
 - **Notes:**
+  - `internal/secretbox` (AES-256-GCM, key SHA-256(secret), base64(nonce‖ciphertext)).
+  - `internal/connector/{model,kind,store,service,handler}.go`: Strategy `Kind` interface (`Type`,
+    `BuildConfig(input, stored json.RawMessage)` — stored nil on create, empty `apiKey` keeps the stored key,
+    `PublicConfig`, `Test(ctx, stored) (TestResult, error)`); `NewRegistry(kinds...)` (duplicate type → error;
+    unknown type → 400). `NewGormStore`, `NewService(store Store, cipher Cipher, kinds *Registry)`,
+    `NewHandler(*Service)`. `Service.LoadConfig(ctx, userID, id) (Connector, json.RawMessage, error)` returns
+    the decrypted config (contains the key — never send to clients).
+  - `internal/connector/immich/{client,types,kind}.go`: `NewClient(url, apiKey, httpClient)` (trims `/`,
+    appends `/api`), `NewHTTPClient()` (30 s, redirects only to the same host), `ServerVersion`, `ListAlbums`,
+    `AlbumAssets(ctx, albumID, page)` (page from 1, 250, images only, `NextPage` 0 = last), `Thumbnail(ctx, id,
+    size)`; `StatusError` (401/403 → "Immich rejected the request: invalid API key or missing permission");
+    JSON responses limited to 32 MiB; HTML instead of JSON → clear "check the URL" message. Config strict:
+    unknown fields → 400, URL absolute http/https without user info/query/fragment, stored without trailing `/`.
+    Test = server version, then album list; failed test → 200 `ok:false` (with version if only the key is wrong).
+  - Frontend: `core/models/connector.ts`, `core/api/connector.api.ts`, `features/connectors/`
+    (`connectors.page`, `connector-dialog` with `save` callback (stays open on error), `immich-config-form` +
+    `createImmichConfigGroup()`, `connector-types.ts`). Test result shown in the connector card. A new type =
+    one form component + one `@case`.
+  - `POST /api/connectors/{id}/test` needs `Content-Type: application/json` (CSRF rule); frontend sends `{}`.
+  - Verified against immich.alexi.ch 3.3.6 (36 albums).
 
 ### Step 5 — Immich import into a collage
-- **Status:** open
+- **Status:** done (reviewed 2026-11-08)
 - **What:**
   - Model `Photo`, AutoMigrate; storage helper for `data/photos/<collageId>/`.
   - Handlers: Immich albums, album assets (images only, paged), thumbnail proxy (owner check of connector);
@@ -590,6 +707,32 @@ results) and the developer reviews before the next step starts.
   - Delete one photo → file and row are gone. Delete the collage → directory is gone.
   - Another user gets 404 for the photo file URL.
 - **Notes:**
+  - Consistency pass: `auth.UserID(r)`; connector renamed to `GormStore`/`NewGormStore`, exported `Store`,
+    handler takes `*Service` (see Architecture conventions "Naming").
+  - `internal/photo/{model,store,storage,preview,service,collage_photos,handler}.go`. `Photo` unique index on
+    `(collage_id, connector_id, source_asset_id)`; collage FK CASCADE, connector FK SET NULL. Consumer
+    interfaces: `Store`, `FileStorage{Save, Open → io.ReadSeekCloser, Remove, RemoveDir}`,
+    `Collages{Get}` (= `*collage.Service`), `Sources{Source(ctx, userID, connectorID) (Source, error)}` +
+    `Source{Preview(ctx, assetID)}` (connector-agnostic; loaded once per import). `photo.DiskStorage` uses
+    `os.Root` (path traversal safe), atomic writes. `GormStore.CreateWithFile` inserts row + writes
+    `<collageId>/<photoId>.<ext>` in one transaction. `photo.CollagePhotos` adapter implements
+    `collage.Photos` (uses store + storage directly to avoid a construction cycle).
+  - Import: asset ids trimmed, deduped, 1–500, max 200 chars each; skipped = already in the collage; previews
+    read into memory (max 50 MiB, 4 workers with `sync.WaitGroup.Go`); decoded format must match Content-Type
+    (`image/jpeg`/`image/webp`) else 502; first failure stops new downloads, already imported photos stay,
+    error names the asset. Photo delete: row first, then file (file error only logged).
+  - `internal/connector/immich/{service,handler}.go`: `immich.NewService(connectors Connectors, kind *Kind)`
+    implements browse routes and `photo.Sources`; all Immich errors → `apperr.Upstream` (502, never 401 so the
+    frontend does not log out). Album list sorted by name (case-insensitive), `thumbnailAssetId` may be `null`.
+    Image endpoints send `X-Content-Type-Options: nosniff`; thumbnail proxy rejects non-`image/*`. Photo file
+    via `http.ServeContent` (Range/HEAD). Bad/unknown Immich asset id → 502 (Immich answers 400).
+  - `main.go`: `newDomainModules(...)`, `newConnectorService(...)`; `Config.PhotosDir()`. New dep
+    `golang.org/x/image` v0.47.0.
+  - Frontend: `core/models/{photo,immich}.ts` (`photoFileUrl`, `immichThumbnailUrl`), `core/api/{immich,photo}
+    .api.ts`, `features/editor/photo-grid.ts`, `features/editor/import/{import-dialog,connector-list,
+    album-list,asset-grid,import-result-message}.ts`. Dialog step derived from selection signals; one `load()`
+    helper with stale-response protection; asset ids sent in album order; "Select all" = loaded, not yet
+    imported assets; album count says "items" (includes videos).
 
 ### Step 6 — Editor canvas, collage settings, grid mode, auto-save
 - **Status:** open
@@ -683,23 +826,24 @@ results) and the developer reviews before the next step starts.
   font size only in the panel. Confirm at step 9.
 - **Photo delete and undo (step 8):** proposal: deleting a photo is an explicit action with confirm that
   deletes the file at once and is not undoable (texts are fully undoable). Confirm at step 8.
-- **Duplicate import (step 5):** proposal: an Immich asset that is already in the collage is skipped on
-  import. Confirm at step 5.
 - **Risk — SSRF:** the Immich URL is user input, so the server makes requests to any URL a logged-in user
   enters. Accepted for a private PoC; revisit before multi-tenant use.
 - **Risk — no login rate limiting** in the PoC.
 - **Risk — Immich preview format:** if the Immich server is set to WebP previews, Konva shows them fine in
   modern browsers; Go needs `golang.org/x/image/webp` only to read the pixel size.
+- **Host proxy note:** `frontend/proxy.conf.json` targets `http://localhost:8080`. On the host, `localhost`
+  can resolve to `::1:8080` = the dev container's port mapping, not a backend started on the host with
+  `127.0.0.1:8080`. Correct for the container workflow; host-only tests need a scratch proxy config with
+  `127.0.0.1`.
 
 ## Current state / Next action
 
-- Done: research and grilling; Step 1 and Step 2 (reviewed 2026-11-08).
-- Repository has no commits yet; all work is uncommitted in the working tree (the developer decides when to
-  commit).
+- Done: research and grilling; Steps 1–2 (commit `b20e7b0`); shared foundations + Steps 3–5 (reviewed
+  2026-11-08, uncommitted until the developer asks for a commit).
 - Nothing half-finished, no temporary changes to revert.
 - Sandbox notes for agents on the host: `pkill`/process listing is blocked → stop own servers with
   `lsof -ti tcp:<port> | xargs kill`, or ask the developer to run a kill command. Background `&` prints a
-  harmless `nice(5) failed` warning. Another local tool on the host sometimes sends requests to
-  `127.0.0.1:8080`; use another port (`COLLAGEOMAT_LISTEN`) for host tests.
-- Next action: wait for the developer's go-ahead, then start **Step 3 — Collage management**
-  (implementation in sub-agents per the feature workflow).
+  harmless `nice(5) failed` warning. The developer's dev container may be running and bound to `:8080`;
+  use another port (`COLLAGEOMAT_LISTEN`) for host tests.
+- Next action: wait for the developer's go-ahead, then start **Step 6 — Editor canvas, collage settings,
+  grid mode, auto-save**.

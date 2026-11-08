@@ -1,0 +1,49 @@
+:host {
+  display: block;
+  max-width: 1000px;
+  margin: 0 auto;
+  padding: 16px;
+}
+
+.back-link {
+  margin-bottom: 16px;
+}
+
+.editor-header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 24px;
+}
+
+.editor-heading {
+  min-width: 0;
+}
+
+.editor-title {
+  margin: 0 0 4px;
+  font: var(--mat-sys-headline-small);
+  overflow-wrap: anywhere;
+}
+
+.editor-subtitle {
+  margin: 0;
+  color: var(--mat-sys-on-surface-variant);
+}
+
+.editor-message {
+  padding: 48px 0;
+  margin: 0;
+  text-align: center;
+  color: var(--mat-sys-on-surface-variant);
+}
+
+.editor-error {
+  color: var(--mat-sys-error);
+}
+
+.editor-spinner {
+  margin: 48px auto;
+}

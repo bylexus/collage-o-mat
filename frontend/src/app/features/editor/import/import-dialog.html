@@ -1,0 +1,126 @@
+<h2 mat-dialog-title>
+  <ng-container i18n="@@import.title">Import from Immich</ng-container>
+  @if (connector(); as connector) {
+    <span class="import-path">
+      {{ connector.name }}
+      @if (album(); as album) {
+        › {{ album.name }}
+      }
+    </span>
+  }
+</h2>
+
+<mat-dialog-content class="import-content">
+  @if (connector(); as connector) {
+    @if (album()) {
+      <div class="selection-bar">
+        <span class="selection-count" i18n="@@import.assets.selectedCount">
+          {selectedCount(), plural,
+            =0 {No photos selected}
+            =1 {1 photo selected}
+            other {{{ selectedCount() }} photos selected}
+          }
+        </span>
+        <button
+          matButton
+          type="button"
+          [disabled]="importing() || assets().length === 0"
+          (click)="selectAll()"
+          i18n="@@import.assets.selectAll"
+        >
+          Select all
+        </button>
+        <button
+          matButton
+          type="button"
+          [disabled]="importing() || selectedCount() === 0"
+          (click)="selectNone()"
+          i18n="@@import.assets.selectNone"
+        >
+          Select none
+        </button>
+      </div>
+      @if (!loading() && !loadError() && assets().length === 0) {
+        <p class="import-message" i18n="@@import.assets.empty">This album has no photos.</p>
+      }
+      <app-asset-grid
+        [connectorId]="connector.id"
+        [assets]="assets()"
+        [selectedIds]="selectedIds()"
+        [importedIds]="importedIds()"
+        [disabled]="importing()"
+        (toggled)="toggle($event)"
+      />
+      @if (nextPage() !== null && !loading() && !loadError()) {
+        <div class="load-more">
+          <button
+            matButton="outlined"
+            type="button"
+            [disabled]="importing()"
+            (click)="loadMore()"
+            i18n="@@import.assets.loadMore"
+          >
+            Load more
+          </button>
+        </div>
+      }
+    } @else if (albums(); as albums) {
+      <app-album-list
+        [connectorId]="connector.id"
+        [albums]="albums"
+        (selected)="chooseAlbum($event)"
+      />
+    }
+  } @else if (connectors(); as connectors) {
+    @if (connectors.length === 0) {
+      <p class="import-message" i18n="@@import.connectors.none">
+        You have no Immich connector yet. Add one in the
+        <a routerLink="/settings/connectors" mat-dialog-close>connector settings</a>.
+      </p>
+    } @else {
+      <p class="import-message" i18n="@@import.connectors.choose">Choose a connector:</p>
+      <app-connector-list [connectors]="connectors" (selected)="chooseConnector($event)" />
+    }
+  }
+
+  @if (loading()) {
+    <mat-spinner class="import-spinner" diameter="40" />
+  }
+  @if (loadError(); as message) {
+    <div class="import-error" role="alert">
+      <p>{{ message }}</p>
+      <button matButton="outlined" type="button" (click)="retry()" i18n="@@import.retry">
+        Retry
+      </button>
+    </div>
+  }
+  @if (importError(); as message) {
+    <p class="import-error" role="alert">{{ message }}</p>
+  }
+</mat-dialog-content>
+
+<mat-dialog-actions class="import-actions">
+  @if (canGoBack()) {
+    <button matButton type="button" [disabled]="importing()" (click)="back()">
+      <mat-icon>arrow_back</mat-icon>
+      <ng-container i18n="@@import.back">Back</ng-container>
+    </button>
+  }
+  <span class="actions-spacer"></span>
+  <button matButton type="button" mat-dialog-close [disabled]="importing()">
+    <ng-container i18n="@@import.cancel">Cancel</ng-container>
+  </button>
+  @if (album()) {
+    <button
+      matButton="filled"
+      type="button"
+      [disabled]="importing() || selectedCount() === 0"
+      (click)="import()"
+    >
+      @if (importing()) {
+        <mat-spinner class="button-spinner" diameter="18" />
+      }
+      <ng-container i18n="@@import.submit">Import ({{ selectedCount() }})</ng-container>
+    </button>
+  }
+</mat-dialog-actions>

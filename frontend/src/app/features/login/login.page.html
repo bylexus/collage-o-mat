@@ -27,13 +27,8 @@
         }
       </mat-form-field>
 
-      @switch (error()) {
-        @case ('invalid') {
-          <p class="login-error" role="alert" i18n="@@login.errorInvalid">Invalid username or password</p>
-        }
-        @case ('generic') {
-          <p class="login-error" role="alert" i18n="@@login.errorGeneric">Sign in failed. Please try again later.</p>
-        }
+      @if (error(); as message) {
+        <p class="login-error" role="alert">{{ message }}</p>
       }
     </mat-card-content>
 

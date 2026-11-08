@@ -1,0 +1,75 @@
+<header class="page-header">
+  <h1 class="page-title" i18n="@@connectors.title">Connectors</h1>
+  <button matButton="filled" type="button" (click)="add()">
+    <mat-icon>add</mat-icon>
+    <span i18n="@@connectors.add">Add connector</span>
+  </button>
+</header>
+
+@if (loading()) {
+  <mat-spinner class="page-spinner" diameter="40" />
+} @else if (loadError(); as message) {
+  <div class="page-message" role="alert">
+    <p class="error-text">{{ message }}</p>
+    <button matButton type="button" (click)="load()" i18n="@@connectors.retry">Retry</button>
+  </div>
+} @else {
+  @for (connector of connectors(); track connector.id) {
+    <mat-card class="connector-card" appearance="outlined">
+      <mat-card-header>
+        <mat-card-title>{{ connector.name }}</mat-card-title>
+        <mat-card-subtitle>
+          {{ typeLabel(connector.type) }} · {{ connector.config.url }}
+        </mat-card-subtitle>
+      </mat-card-header>
+
+      @if (tests().get(connector.id); as state) {
+        <mat-card-content class="test-status" role="status">
+          @if (state.running) {
+            <mat-spinner diameter="16" />
+            <span i18n="@@connectors.test.running">Testing connection…</span>
+          } @else if (state.result.ok) {
+            <mat-icon class="ok-text">check_circle</mat-icon>
+            <span class="ok-text">
+              @if (state.result.serverVersion; as version) {
+                <ng-container i18n="@@connectors.test.okVersion"
+                  >Connection OK (server version {{ version }})</ng-container
+                >
+              } @else {
+                <ng-container i18n="@@connectors.test.ok">Connection OK</ng-container>
+              }
+            </span>
+          } @else {
+            <mat-icon class="error-text">error</mat-icon>
+            <span class="error-text">
+              <ng-container i18n="@@connectors.test.failed">Connection failed:</ng-container>
+              {{ state.result.error }}
+            </span>
+          }
+        </mat-card-content>
+      }
+
+      <mat-card-actions align="end">
+        <button
+          matButton
+          type="button"
+          [disabled]="tests().get(connector.id)?.running"
+          (click)="test(connector)"
+          i18n="@@connectors.test.button"
+        >
+          Test connection
+        </button>
+        <button matButton type="button" (click)="edit(connector)" i18n="@@connectors.edit">
+          Edit
+        </button>
+        <button matButton type="button" (click)="remove(connector)" i18n="@@connectors.delete">
+          Delete
+        </button>
+      </mat-card-actions>
+    </mat-card>
+  } @empty {
+    <p class="page-message" i18n="@@connectors.empty">
+      No connectors yet. Add an Immich connector to import photos.
+    </p>
+  }
+}
