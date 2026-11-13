@@ -6,14 +6,13 @@ import type { BorderSettings } from '../../../core/models/collage';
 import type { NormalizedRect, PhotoProps } from '../../../core/models/photo';
 import { fullCrop } from '../geometry/crop';
 import type { FrameBox } from '../geometry/transform';
+import { DRAG_THRESHOLD_PX } from './canvas-theme';
 import { isLoaded } from './image-cache';
 import type { Point } from './viewport';
 
 /** Konva name of the photo groups. */
 const PHOTO_NAME = 'photo';
 const PLACEHOLDER_FILL = '#c8c8c8';
-/** Pointer movement (screen px) after which a press on a photo starts a move. */
-const DRAG_THRESHOLD_PX = 4;
 
 /** The photo group that contains the node (or is the node), or `null`. */
 export function photoGroupOf(node: Konva.Node): Konva.Node | null {

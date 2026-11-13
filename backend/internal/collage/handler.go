@@ -35,11 +35,12 @@ type createRequest struct {
 	Settings jsoncol.JSON `json:"settings"`
 }
 
-// layoutRequest is the editor layout. Photos must be present (may be
-// empty); texts follow with the text step.
+// layoutRequest is the editor layout. Photos and texts must be present
+// (may be empty).
 type layoutRequest struct {
 	Settings jsoncol.JSON       `json:"settings"`
 	Photos   []PhotoPropsUpdate `json:"photos"`
+	Texts    []TextData         `json:"texts"`
 }
 
 type renameRequest struct {
@@ -55,14 +56,13 @@ type summaryResponse struct {
 	UpdatedAt  time.Time    `json:"updatedAt"`
 }
 
-// detailResponse is the full collage for the editor. Texts are always an
-// empty list for now; the text step fills them.
+// detailResponse is the full collage for the editor.
 type detailResponse struct {
 	ID       uint         `json:"id"`
 	Name     string       `json:"name"`
 	Settings jsoncol.JSON `json:"settings"`
 	Photos   []PhotoView  `json:"photos"`
-	Texts    []any        `json:"texts"`
+	Texts    []TextData   `json:"texts"`
 }
 
 func toSummaryResponse(s Summary) summaryResponse {
@@ -81,7 +81,7 @@ func toDetailResponse(d *Detail) detailResponse {
 		Name:     d.Name,
 		Settings: d.Settings,
 		Photos:   d.Photos,
-		Texts:    []any{},
+		Texts:    d.Texts,
 	}
 }
 
@@ -166,7 +166,11 @@ func (h *Handler) saveLayout(w http.ResponseWriter, r *http.Request) {
 	if !httpapi.DecodeJSON(w, r, &req) {
 		return
 	}
-	if err := h.service.SaveLayout(r.Context(), auth.UserID(r), id, req.Settings, req.Photos); err != nil {
+	if err := h.service.SaveLayout(r.Context(), auth.UserID(r), id, Layout{
+		Settings: req.Settings,
+		Photos:   req.Photos,
+		Texts:    req.Texts,
+	}); err != nil {
 		httpapi.WriteServiceError(w, err)
 		return
 	}

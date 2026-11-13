@@ -1,0 +1,174 @@
+<h3 class="panel-heading" i18n="@@editor.text.heading">Selected text</h3>
+
+<mat-form-field subscriptSizing="dynamic">
+  <mat-label i18n="@@editor.text.text">Text</mat-label>
+  <textarea
+    #textArea
+    matInput
+    cdkTextareaAutosize
+    cdkAutosizeMinRows="2"
+    cdkAutosizeMaxRows="12"
+    [formControl]="form.controls.text"
+    (change)="commit()"
+  ></textarea>
+</mat-form-field>
+
+<mat-form-field subscriptSizing="dynamic">
+  <mat-label i18n="@@editor.text.font">Font</mat-label>
+  <mat-select [formControl]="form.controls.fontFamily" (selectionChange)="commit()">
+    <mat-select-trigger [style.font-family]="fontFamily()">{{ fontFamily() }}</mat-select-trigger>
+    @for (family of fontFamilies; track family) {
+      <mat-option [value]="family" [style.font-family]="family">{{ family }}</mat-option>
+    }
+  </mat-select>
+</mat-form-field>
+
+<div class="field-row">
+  <app-number-field
+    [control]="form.controls.fontSizePt"
+    [limits]="limits.fontSizePt"
+    i18n-label="@@editor.text.fontSizePt"
+    label="Size (pt)"
+    (committed)="commit()"
+  />
+  <app-color-field
+    class="color-cell"
+    [control]="form.controls.color"
+    i18n-label="@@editor.text.color"
+    label="Colour"
+    (committed)="commit()"
+  />
+</div>
+
+<div class="toggle-row">
+  <mat-button-toggle-group
+    multiple
+    hideMultipleSelectionIndicator
+    [formControl]="form.controls.styles"
+    (change)="commit()"
+    i18n-aria-label="@@editor.text.style"
+    aria-label="Font style"
+  >
+    <mat-button-toggle value="bold" i18n-aria-label="@@editor.text.bold" aria-label="Bold">
+      <mat-icon>format_bold</mat-icon>
+    </mat-button-toggle>
+    <mat-button-toggle value="italic" i18n-aria-label="@@editor.text.italic" aria-label="Italic">
+      <mat-icon>format_italic</mat-icon>
+    </mat-button-toggle>
+  </mat-button-toggle-group>
+
+  <mat-button-toggle-group
+    hideSingleSelectionIndicator
+    [formControl]="form.controls.align"
+    (change)="commit()"
+    i18n-aria-label="@@editor.text.align"
+    aria-label="Alignment"
+  >
+    <mat-button-toggle
+      value="left"
+      i18n-aria-label="@@editor.text.alignLeft"
+      aria-label="Align left"
+    >
+      <mat-icon>format_align_left</mat-icon>
+    </mat-button-toggle>
+    <mat-button-toggle
+      value="center"
+      i18n-aria-label="@@editor.text.alignCenter"
+      aria-label="Align centre"
+    >
+      <mat-icon>format_align_center</mat-icon>
+    </mat-button-toggle>
+    <mat-button-toggle
+      value="right"
+      i18n-aria-label="@@editor.text.alignRight"
+      aria-label="Align right"
+    >
+      <mat-icon>format_align_right</mat-icon>
+    </mat-button-toggle>
+  </mat-button-toggle-group>
+</div>
+
+@let shadow = form.controls.shadow.controls;
+<mat-checkbox [formControl]="shadow.enabled" (change)="commit()" i18n="@@editor.text.shadow">
+  Shadow
+</mat-checkbox>
+@if (shadowEnabled()) {
+  <div class="field-row">
+    <app-color-field
+      class="color-cell"
+      [control]="shadow.color"
+      i18n-label="@@editor.text.shadowColor"
+      label="Colour"
+      (committed)="commit()"
+    />
+    <app-number-field
+      [control]="shadow.opacityPercent"
+      [limits]="limits.shadowOpacityPercent"
+      i18n-label="@@editor.text.shadowOpacityPercent"
+      label="Opacity (%)"
+      (committed)="commit()"
+    />
+  </div>
+  <app-number-field
+    [control]="shadow.blurMm"
+    [limits]="limits.shadowBlurMm"
+    i18n-label="@@editor.text.shadowBlurMm"
+    label="Blur (mm)"
+    (committed)="commit()"
+  />
+  <div class="field-row">
+    <app-number-field
+      [control]="shadow.offsetXMm"
+      [limits]="limits.shadowOffsetMm"
+      i18n-label="@@editor.text.shadowOffsetXMm"
+      label="Offset X (mm)"
+      (committed)="commit()"
+    />
+    <app-number-field
+      [control]="shadow.offsetYMm"
+      [limits]="limits.shadowOffsetMm"
+      i18n-label="@@editor.text.shadowOffsetYMm"
+      label="Offset Y (mm)"
+      (committed)="commit()"
+    />
+  </div>
+}
+
+@let outline = form.controls.outline.controls;
+<mat-checkbox [formControl]="outline.enabled" (change)="commit()" i18n="@@editor.text.outline">
+  Outline
+</mat-checkbox>
+@if (outlineEnabled()) {
+  <div class="field-row">
+    <app-number-field
+      [control]="outline.widthMm"
+      [limits]="limits.outlineWidthMm"
+      i18n-label="@@editor.text.outlineWidthMm"
+      label="Width (mm)"
+      (committed)="commit()"
+    />
+    <app-color-field
+      class="color-cell"
+      [control]="outline.color"
+      i18n-label="@@editor.text.outlineColor"
+      label="Colour"
+      (committed)="commit()"
+    />
+  </div>
+}
+
+<div class="button-row">
+  <button matButton="outlined" type="button" (click)="bringToFront.emit()">
+    <mat-icon>flip_to_front</mat-icon>
+    <span i18n="@@editor.text.bringToFront">Bring to front</span>
+  </button>
+  <button matButton="outlined" type="button" (click)="sendToBack.emit()">
+    <mat-icon>flip_to_back</mat-icon>
+    <span i18n="@@editor.text.sendToBack">Send to back</span>
+  </button>
+</div>
+
+<button matButton="outlined" type="button" class="delete-button" (click)="delete.emit()">
+  <mat-icon>delete</mat-icon>
+  <span i18n="@@editor.text.delete">Delete text</span>
+</button>

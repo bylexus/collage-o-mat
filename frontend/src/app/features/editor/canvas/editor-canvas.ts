@@ -17,6 +17,8 @@ import { MatIconModule } from '@angular/material/icon';
 import { MatTooltipModule } from '@angular/material/tooltip';
 import { CollageSettings, PageSize } from '../../../core/models/collage';
 import { isPlaced, Photo, photoFileUrl, PhotoProps } from '../../../core/models/photo';
+import type { CollageText, TextProps } from '../../../core/models/text';
+import type { EditorSelection } from '../selection';
 import { CollageRenderer, CropModeState, Scene, ScenePhoto } from './collage-renderer';
 import { CropModeControls } from './crop-mode-controls';
 
@@ -27,10 +29,18 @@ export interface PhotoChange {
   props: PhotoProps;
 }
 
+/** A committed change of one text made on the canvas (move, rotation, box width). */
+export interface TextChange {
+  id: string;
+  /** The complete new props. */
+  props: TextProps;
+}
+
 /**
- * Konva canvas of the editor (presentational): draws the page and the placed photos, reports
- * clicks and committed photo edits (move, rotate, resize, crop) and shows the zoom controls and
- * the crop mode controls. Fills its container. The view is zoomed to fit on the first render and
+ * Konva canvas of the editor (presentational): draws the page, the placed photos and the overlay
+ * texts, reports the selection, committed photo edits (move, rotate, resize, crop), committed text
+ * edits (move, rotate, box width) and text edit requests (double-click), and shows the zoom
+ * controls and the crop mode controls. Fills its container. The view is zoomed to fit on the first render and
  * when the page size or orientation changes. All canvas input is handled by the renderer (see
  * `CollageRenderer`).
  */
@@ -146,11 +156,17 @@ export class EditorCanvas {
   readonly photos = input.required<readonly Photo[]>();
   /** Collage of the photos (for the image URLs). */
   readonly collageId = input.required<number>();
-  readonly selectedPhotoId = input<number | null>(null);
-  /** Click on a photo (its id) or on the empty area (`null`). */
-  readonly photoSelected = output<number | null>();
+  /** All texts of the collage, with a live preview of the panel already applied. */
+  readonly texts = input.required<readonly CollageText[]>();
+  readonly selection = input<EditorSelection>(null);
+  /** Click on a photo, on a text, or on the empty area (`null`). */
+  readonly selectionChange = output<EditorSelection>();
   /** A committed move, rotation, resize or crop change (once per gesture, never during it). */
   readonly photoChange = output<PhotoChange>();
+  /** A committed move, rotation or box width change of a text (once per gesture, never during it). */
+  readonly textChange = output<TextChange>();
+  /** Double-click on a text (its id): the owner shows the text for editing. */
+  readonly textEditRequest = output<string>();
 
   private readonly destroyRef = inject(DestroyRef);
   private readonly host = viewChild.required<ElementRef<HTMLDivElement>>('host');
@@ -181,7 +197,8 @@ export class EditorCanvas {
             ]
           : [],
       ),
-      selectedPhotoId: this.selectedPhotoId(),
+      texts: this.texts(),
+      selection: this.selection(),
     };
   });
 
@@ -190,7 +207,7 @@ export class EditorCanvas {
     effect(() => this.renderScene());
   }
 
-  /** Shows the page and all photos as large as possible. */
+  /** Shows the page and all elements as large as possible. */
   zoomToFit(): void {
     this.renderer()?.zoomToFit();
   }
@@ -237,9 +254,11 @@ export class EditorCanvas {
   private createRenderer(): void {
     const container = this.host().nativeElement;
     const renderer = new CollageRenderer(container, {
-      onSelect: (id) => this.photoSelected.emit(id),
+      onSelect: (selection) => this.selectionChange.emit(selection),
       onZoomChange: (zoom) => this.zoom.set(zoom),
       onPhotoChange: (id, props) => this.photoChange.emit({ id, props }),
+      onTextChange: (id, props) => this.textChange.emit({ id, props }),
+      onTextEditRequest: (id) => this.textEditRequest.emit(id),
       onCropModeChange: (state) => this.cropMode.set(state),
     });
     const resizeObserver = new ResizeObserver(() =>

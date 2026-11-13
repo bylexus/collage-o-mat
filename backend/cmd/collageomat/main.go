@@ -144,6 +144,7 @@ func models() []any {
 		&auth.User{},
 		&auth.Session{},
 		&collage.Collage{},
+		&collage.CollageText{},
 		&connector.Connector{},
 		&photo.Photo{},
 	}

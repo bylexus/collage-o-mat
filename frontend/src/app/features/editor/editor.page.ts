@@ -1,4 +1,4 @@
-import { Component, computed, inject } from '@angular/core';
+import { afterNextRender, Component, computed, inject, Injector, viewChild } from '@angular/core';
 import { MatButtonModule } from '@angular/material/button';
 import { MatDialog } from '@angular/material/dialog';
 import { MatIconModule } from '@angular/material/icon';
@@ -18,11 +18,12 @@ import { importResultMessage } from './import/import-result-message';
 import { PhotoPropertiesPanel } from './photo-panel/photo-properties-panel';
 import { SaveStatusIndicator } from './save-status-indicator';
 import { CollageSettingsPanel } from './settings-panel/collage-settings-panel';
+import { TextPropertiesPanel } from './text-panel/text-properties-panel';
 import { undoRedoCommand, undoRedoShortcutLabels } from './undo-shortcut';
 
 /**
- * Editor of one collage (container): toolbar, Konva canvas and side panel (selected photo,
- * collage settings). The state lives in the page-scoped `EditorStore`.
+ * Editor of one collage (container): toolbar, Konva canvas and side panel (selected photo or
+ * text, collage settings). The state lives in the page-scoped `EditorStore`.
  */
 @Component({
   selector: 'app-editor-page',
@@ -35,6 +36,7 @@ import { undoRedoCommand, undoRedoShortcutLabels } from './undo-shortcut';
     EditorCanvas,
     CollageSettingsPanel,
     PhotoPropertiesPanel,
+    TextPropertiesPanel,
     SaveStatusIndicator,
   ],
   providers: [EditorStore],
@@ -52,6 +54,9 @@ export class EditorPage {
   private readonly router = inject(Router);
   private readonly dialog = inject(MatDialog);
   private readonly notification = inject(NotificationService);
+  private readonly injector = inject(Injector);
+
+  private readonly textPanel = viewChild(TextPropertiesPanel);
 
   protected readonly pageLabel = computed(() => {
     const settings = this.store.settings();
@@ -61,6 +66,13 @@ export class EditorPage {
   private readonly shortcuts = undoRedoShortcutLabels();
   protected readonly undoLabel = $localize`:@@editor.undo:Undo (${this.shortcuts.undo}:shortcut:)`;
   protected readonly redoLabel = $localize`:@@editor.redo:Redo (${this.shortcuts.redo}:shortcut:)`;
+
+  /** Label of the toolbar Delete button for the selected element. */
+  protected readonly deleteLabel = computed(() =>
+    this.store.selection()?.kind === 'text'
+      ? $localize`:@@editor.text.delete:Delete text`
+      : $localize`:@@editor.photo.delete:Delete photo`,
+  );
 
   protected readonly isCenterMode = computed(() => this.store.settings()?.mode === 'center');
 
@@ -122,11 +134,31 @@ export class EditorPage {
     }
   }
 
-  protected deleteSelectedPhoto(): void {
-    const id = this.store.selectedPhotoId();
-    if (id !== null) {
-      void this.store.deletePhoto(id);
+  /** Deletes the selected photo (after a confirm) or the selected text (no confirm). */
+  protected deleteSelection(): void {
+    const selection = this.store.selection();
+    if (selection?.kind === 'photo') {
+      void this.store.deletePhoto(selection.id);
+    } else if (selection?.kind === 'text') {
+      this.store.deleteText(selection.id);
     }
+  }
+
+  /** Adds a text and focuses its text in the panel. */
+  protected addText(): void {
+    this.store.addText();
+    this.focusTextPanel();
+  }
+
+  /** Double-click on a text: selects it and focuses its text in the panel. */
+  protected editText(id: string): void {
+    this.store.select({ kind: 'text', id });
+    this.focusTextPanel();
+  }
+
+  /** Focuses the text area of the text panel once it shows the selected text. */
+  private focusTextPanel(): void {
+    afterNextRender(() => this.textPanel()?.focusText(), { injector: this.injector });
   }
 
   /** Undo/redo shortcuts; not while a dialog is open or a form field has the focus. */

@@ -6,6 +6,7 @@ import (
 	"fmt"
 
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 
 	"collageomat/internal/apperr"
 	"collageomat/internal/db"
@@ -92,3 +93,78 @@ func (s *GormStore) Delete(ctx context.Context, id uint) error {
 	}
 	return nil
 }
+
+// ListTexts returns the texts of a collage in creation order (created_at,
+// then id), never nil.
+func (s *GormStore) ListTexts(ctx context.Context, collageID uint) ([]CollageText, error) {
+	texts := []CollageText{}
+	err := db.Conn(ctx, s.db).
+		Where("collage_id = ?", collageID).
+		Order("created_at ASC, id ASC").
+		Find(&texts).Error
+	if err != nil {
+		return nil, fmt.Errorf("list texts of collage %d: %w", collageID, err)
+	}
+	return texts, nil
+}
+
+// TextIDsInOtherCollages returns those of ids that belong to a collage other
+// than collageID.
+func (s *GormStore) TextIDsInOtherCollages(ctx context.Context, collageID uint, ids []string) ([]string, error) {
+	found := []string{}
+	if len(ids) == 0 {
+		return found, nil
+	}
+	err := db.Conn(ctx, s.db).Model(&CollageText{}).
+		Where("id IN ? AND collage_id <> ?", ids, collageID).
+		Order("id ASC").
+		Pluck("id", &found).Error
+	if err != nil {
+		return nil, fmt.Errorf("find texts of other collages: %w", err)
+	}
+	return found, nil
+}
+
+// ReplaceTexts makes texts the complete text list of the collage: it
+// creates the texts that do not exist, replaces the props of the existing
+// ones and deletes the texts of the collage that are not in texts. The
+// caller must make sure that no id of texts belongs to another collage; an
+// upsert never changes a row of another collage. Run it in a transaction
+// (see db.Transactor) so that the steps are atomic.
+func (s *GormStore) ReplaceTexts(ctx context.Context, collageID uint, texts []CollageText) error {
+	conn := db.Conn(ctx, s.db)
+	ids := make([]string, len(texts))
+	for i := range texts {
+		texts[i].CollageID = collageID
+		ids[i] = texts[i].ID
+	}
+
+	del := conn.Where("collage_id = ?", collageID)
+	if len(ids) > 0 {
+		del = del.Where("id NOT IN ?", ids)
+	}
+	if err := del.Delete(&CollageText{}).Error; err != nil {
+		return fmt.Errorf("delete removed texts of collage %d: %w", collageID, err)
+	}
+
+	if len(texts) == 0 {
+		return nil
+	}
+	upsert := clause.OnConflict{
+		Columns:   []clause.Column{{Name: "id"}},
+		DoUpdates: clause.AssignmentColumns([]string{"props", "updated_at"}),
+		// Never take over a text of another collage.
+		Where: clause.Where{Exprs: []clause.Expression{
+			clause.Expr{SQL: "collage_texts.collage_id = excluded.collage_id"},
+		}},
+	}
+	err := conn.Omit(clause.Associations).Clauses(upsert).CreateInBatches(texts, textBatchSize).Error
+	if err != nil {
+		return fmt.Errorf("save texts of collage %d: %w", collageID, err)
+	}
+	return nil
+}
+
+// textBatchSize is the number of rows per INSERT of ReplaceTexts (keeps the
+// number of SQL parameters small).
+const textBatchSize = 100

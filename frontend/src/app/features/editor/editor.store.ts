@@ -6,6 +6,7 @@ import { PhotoApi } from '../../core/api/photo.api';
 import { CollageSettings, normalizeSettings } from '../../core/models/collage';
 import { SaveLayoutRequest } from '../../core/models/layout';
 import { ImportResult, isPlaced, Photo, PhotoBorder, PhotoProps } from '../../core/models/photo';
+import { CollageText, TextProps } from '../../core/models/text';
 import { ConfirmService } from '../../shared/confirm-dialog/confirm.service';
 import { errorMessage } from '../../shared/error-message';
 import { NotificationService } from '../../shared/notification.service';
@@ -13,7 +14,9 @@ import { arrangePhotos, FrameMap, placeBesidePage, resolveCentrePhotoId } from '
 import { AutoSaver } from './auto-saver';
 import { LayoutSnapshot, restoreSnapshot, takeSnapshot } from './layout-snapshot';
 import { hasBorderOverride, inheritedBorder, sameBorder } from './photo-border';
+import { EditorSelection, sameSelection, selectedPhotoIdOf, selectedTextIdOf } from './selection';
 import { swapFrames } from './swap-frames';
+import { isBlankText, newTextProps, sameTextProps } from './text-props';
 import { UndoHistory } from './undo-history';
 import { backZ, frontZ, nextFrontZ } from './z-order';
 
@@ -32,15 +35,19 @@ interface BorderPreview {
   border: PhotoBorder;
 }
 
+/** Default text of a new overlay text. */
+const NEW_TEXT = $localize`:@@editor.text.defaultText:Text`;
+
 /** New z of an element from its z and the z of all other elements; `null` = no change. */
 type RestackRule = (z: number, others: readonly number[]) => number | null;
 
 /**
  * State of the editor of one collage (provided by the editor page, lives as long as the page).
- * Holds settings and photos in signals. Every committed change goes through `commit()`: it is
- * recorded for undo/redo and saved by the auto-save (full layout). Arrangements overwrite all
- * frames; they ask first if the current layout may contain work of the user (see
- * `layoutIsArrangement`). Deleting a photo is not undoable (the file is deleted at once).
+ * Holds settings, photos, overlay texts and the selection in signals. Every committed change goes
+ * through `commit()`: it is recorded for undo/redo and saved by the auto-save (full layout).
+ * Arrangements overwrite all photo frames (texts stay); they ask first if the current layout may
+ * contain work of the user (see `layoutIsArrangement`). Deleting a photo is not undoable (the file
+ * is deleted at once); adding and deleting texts is.
  */
 @Injectable()
 export class EditorStore {
@@ -52,9 +59,12 @@ export class EditorStore {
   private readonly collageSignal = signal<EditorCollage | null>(null);
   private readonly settingsSignal = signal<CollageSettings | null>(null);
   private readonly photosSignal = signal<readonly Photo[]>([]);
-  private readonly selectedPhotoIdSignal = signal<number | null>(null);
+  private readonly textsSignal = signal<readonly CollageText[]>([]);
+  private readonly selectionSignal = signal<EditorSelection>(null);
   private readonly loadErrorSignal = signal<string | null>(null);
   private readonly borderPreviewSignal = signal<BorderPreview | null>(null);
+  /** Text shown on the canvas before it is committed (panel edit in progress). */
+  private readonly textPreviewSignal = signal<CollageText | null>(null);
 
   /** `null` until loaded. */
   readonly collage = this.collageSignal.asReadonly();
@@ -62,7 +72,12 @@ export class EditorStore {
   readonly settings = this.settingsSignal.asReadonly();
   /** Photos in import order (id ascending). */
   readonly photos = this.photosSignal.asReadonly();
-  readonly selectedPhotoId = this.selectedPhotoIdSignal.asReadonly();
+  /** Overlay texts (any order; drawn by `props.z`). */
+  readonly texts = this.textsSignal.asReadonly();
+  /** The selected element (photo, text or nothing). */
+  readonly selection = this.selectionSignal.asReadonly();
+  /** Id of the selected photo; `null` if no photo is selected. */
+  readonly selectedPhotoId = computed(() => selectedPhotoIdOf(this.selectionSignal()));
   /**
    * Photos as the canvas draws them: `photos` with the border preview applied. Not saved and not
    * part of the undo history.
@@ -70,10 +85,22 @@ export class EditorStore {
   readonly displayedPhotos = computed(() =>
     withBorderPreview(this.photosSignal(), this.borderPreviewSignal()),
   );
-  /** The selected photo; `null` if none is selected. */
-  readonly selectedPhoto = computed(
-    () => this.photosSignal().find((photo) => photo.id === this.selectedPhotoIdSignal()) ?? null,
+  /**
+   * Texts as the canvas draws them: `texts` with the text preview applied. Not saved and not
+   * part of the undo history.
+   */
+  readonly displayedTexts = computed(() =>
+    withTextPreview(this.textsSignal(), this.textPreviewSignal()),
   );
+  /** The selected photo; `null` if no photo is selected. */
+  readonly selectedPhoto = computed(
+    () => this.photosSignal().find((photo) => photo.id === this.selectedPhotoId()) ?? null,
+  );
+  /** The selected text with its committed props; `null` if no text is selected. */
+  readonly selectedText = computed(() => {
+    const id = selectedTextIdOf(this.selectionSignal());
+    return id === null ? null : (this.textsSignal().find((text) => text.id === id) ?? null);
+  });
   /** True if at least one placed photo has an own border (not the collage default). */
   readonly hasBorderOverrides = computed(() =>
     this.photosSignal().some(
@@ -119,6 +146,7 @@ export class EditorStore {
       this.collageSignal.set({ id: detail.id, name: detail.name });
       this.settingsSignal.set(normalizeSettings(detail.settings));
       this.photosSignal.set(detail.photos);
+      this.textsSignal.set(detail.texts ?? []);
       this.history.reset(this.snapshot());
       return 'loaded';
     } catch (err) {
@@ -138,9 +166,13 @@ export class EditorStore {
     this.commit();
   }
 
-  selectPhoto(id: number | null): void {
-    this.borderPreviewSignal.set(null);
-    this.selectedPhotoIdSignal.set(id);
+  /** Selects an element (or nothing); a changed selection removes the previews. */
+  select(selection: EditorSelection): void {
+    if (sameSelection(selection, this.selectionSignal())) {
+      return;
+    }
+    this.clearPreviews();
+    this.selectionSignal.set(selection);
   }
 
   /**
@@ -189,12 +221,69 @@ export class EditorStore {
 
   /** Puts a placed photo in front of all other elements. */
   bringToFront(id: number): void {
-    this.restack(id, frontZ);
+    this.restackPhoto(id, frontZ);
   }
 
   /** Puts a placed photo behind all other elements. */
   sendToBack(id: number): void {
-    this.restack(id, backZ);
+    this.restackPhoto(id, backZ);
+  }
+
+  /**
+   * Adds a text with the default props (see `newTextProps`) in front of all elements and selects
+   * it. One undo step. Returns the id of the new text.
+   */
+  addText(): string {
+    const id = crypto.randomUUID();
+    const props = newTextProps(NEW_TEXT, this.requireSettings().page, nextFrontZ(this.zValues()));
+    this.textsSignal.update((texts) => [...texts, { id, props }]);
+    this.select({ kind: 'text', id });
+    this.commit();
+    return id;
+  }
+
+  /**
+   * Shows text props on the canvas without committing them (panel edit in progress). The next
+   * commit, undo/redo or selection change removes the preview.
+   */
+  previewText(id: string, props: TextProps): void {
+    this.textPreviewSignal.set({ id, props });
+  }
+
+  /**
+   * Replaces the props of a text (committed panel edit, move, rotation or width change). A text
+   * without visible characters is deleted instead. Not a manual change of the frames (an
+   * arrangement does not touch texts).
+   */
+  updateTextProps(id: string, props: TextProps): void {
+    this.textPreviewSignal.set(null);
+    if (isBlankText(props)) {
+      this.deleteText(id);
+      return;
+    }
+    this.editText(id, (current) => (sameTextProps(current, props) ? null : props));
+  }
+
+  /** Deletes a text (no confirm; one undo step). */
+  deleteText(id: string): void {
+    if (!this.textsSignal().some((text) => text.id === id)) {
+      return;
+    }
+    this.textsSignal.update((texts) => texts.filter((text) => text.id !== id));
+    if (selectedTextIdOf(this.selectionSignal()) === id) {
+      this.selectionSignal.set(null);
+    }
+    this.commit();
+  }
+
+  /** Puts a text in front of all other elements. */
+  bringTextToFront(id: string): void {
+    this.restackText(id, frontZ);
+  }
+
+  /** Puts a text behind all other elements. */
+  sendTextToBack(id: string): void {
+    this.restackText(id, backZ);
   }
 
   /** Shows the layout before the last committed change (deleted photos stay deleted). */
@@ -291,8 +380,8 @@ export class EditorStore {
       return;
     }
     this.photosSignal.update((photos) => photos.filter((p) => p.id !== id));
-    if (this.selectedPhotoIdSignal() === id) {
-      this.selectedPhotoIdSignal.set(null);
+    if (this.selectedPhotoId() === id) {
+      this.selectionSignal.set(null);
     }
     const settings = this.requireSettings();
     if (settings.center.centerPhotoId === id) {
@@ -319,22 +408,50 @@ export class EditorStore {
     this.commit();
   }
 
+  /**
+   * Replaces the props of a text with `edit(props)` and commits it. Unknown texts and `edit`
+   * returning `null` change nothing.
+   */
+  private editText(id: string, edit: (props: TextProps) => TextProps | null): void {
+    const text = this.textsSignal().find((t) => t.id === id);
+    const props = text ? edit(text.props) : null;
+    if (!props) {
+      return;
+    }
+    this.textsSignal.update((texts) => texts.map((t) => (t.id === id ? { ...t, props } : t)));
+    this.commit();
+  }
+
   /** Gives a placed photo the z computed by `rule` from its z and the z of all other elements. */
-  private restack(id: number, rule: RestackRule): void {
+  private restackPhoto(id: number, rule: RestackRule): void {
     this.editPlacedPhoto(id, (props) => {
-      const z = rule(props.z, this.zValues(id));
+      const z = rule(props.z, this.zValues({ kind: 'photo', id }));
+      return z === null ? null : { ...props, z };
+    });
+  }
+
+  /** Gives a text the z computed by `rule` from its z and the z of all other elements. */
+  private restackText(id: string, rule: RestackRule): void {
+    this.editText(id, (props) => {
+      const z = rule(props.z, this.zValues({ kind: 'text', id }));
       return z === null ? null : { ...props, z };
     });
   }
 
   /**
-   * z values of all elements on the page (photos and texts share one z scale), optionally without
-   * one photo. The one place that collects z values.
+   * z values of all elements on the page (placed photos and texts share one z scale), optionally
+   * without one element. The one place that collects z values.
    */
-  private zValues(exceptPhotoId?: number): number[] {
-    return this.photosSignal().flatMap((photo) =>
-      photo.id !== exceptPhotoId && isPlaced(photo.props) ? [photo.props.z] : [],
+  private zValues(except: EditorSelection = null): number[] {
+    const photoZs = this.photosSignal().flatMap((photo) =>
+      isPlaced(photo.props) && !sameSelection(except, { kind: 'photo', id: photo.id })
+        ? [photo.props.z]
+        : [],
     );
+    const textZs = this.textsSignal().flatMap((text) =>
+      sameSelection(except, { kind: 'text', id: text.id }) ? [] : [text.props.z],
+    );
+    return [...photoZs, ...textZs];
   }
 
   private arrangeAll(): void {
@@ -387,7 +504,7 @@ export class EditorStore {
    * with the auto-save.
    */
   private commit(): void {
-    this.borderPreviewSignal.set(null);
+    this.clearPreviews();
     this.history.push(this.snapshot());
     this.autoSaver.schedule();
   }
@@ -397,23 +514,35 @@ export class EditorStore {
     if (!snapshot) {
       return;
     }
-    this.borderPreviewSignal.set(null);
-    const { settings, photos } = restoreSnapshot(snapshot, this.photosSignal());
+    this.clearPreviews();
+    const { settings, photos, texts } = restoreSnapshot(snapshot, this.photosSignal());
     this.settingsSignal.set(settings);
     this.photosSignal.set(photos);
+    this.textsSignal.set(texts);
+    const selectedTextId = selectedTextIdOf(this.selectionSignal());
+    if (selectedTextId !== null && !texts.some((text) => text.id === selectedTextId)) {
+      this.selectionSignal.set(null);
+    }
     // The restored layout can contain manual changes.
     this.layoutIsArrangement = false;
     this.autoSaver.schedule();
   }
 
   private snapshot(): LayoutSnapshot {
-    return takeSnapshot(this.requireSettings(), this.photosSignal());
+    return takeSnapshot(this.requireSettings(), this.photosSignal(), this.textsSignal());
+  }
+
+  /** Removes the border and text previews (the canvas shows the committed state again). */
+  private clearPreviews(): void {
+    this.borderPreviewSignal.set(null);
+    this.textPreviewSignal.set(null);
   }
 
   private async saveLayout(): Promise<void> {
     const request: SaveLayoutRequest = {
       settings: this.requireSettings(),
       photos: this.photosSignal().map(({ id, props }) => ({ id, props })),
+      texts: this.textsSignal().map(({ id, props }) => ({ id, props })),
     };
     await firstValueFrom(this.collageApi.saveLayout(this.requireCollage().id, request));
   }
@@ -448,4 +577,15 @@ function withBorderPreview(
       ? { ...photo, props: { ...photo.props, border: preview.border } }
       : photo,
   );
+}
+
+/** The texts with the props of the preview text replaced (same array without a preview). */
+function withTextPreview(
+  texts: readonly CollageText[],
+  preview: CollageText | null,
+): readonly CollageText[] {
+  if (!preview) {
+    return texts;
+  }
+  return texts.map((text) => (text.id === preview.id ? { ...text, props: preview.props } : text));
 }

@@ -25,3 +25,19 @@ type Collage struct {
 
 // TableName sets the table name.
 func (Collage) TableName() string { return "collages" }
+
+// CollageText is one overlay text of a collage. The ID is a UUID made by the
+// frontend (so a new text has a stable id before the first save). The props
+// (text, font, colours, position, z, ...) are one JSON document owned by the
+// frontend; the backend only checks that it is a JSON object.
+type CollageText struct {
+	ID        string       `gorm:"primaryKey;size:64"`
+	CollageID uint         `gorm:"not null;index"`
+	Collage   Collage      `gorm:"constraint:OnDelete:CASCADE"`
+	Props     jsoncol.JSON `gorm:"not null"`
+	CreatedAt time.Time
+	UpdatedAt time.Time
+}
+
+// TableName sets the table name.
+func (CollageText) TableName() string { return "collage_texts" }

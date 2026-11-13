@@ -1,0 +1,23 @@
+@use '../fields/panel-section';
+@use '../fields/panel-heading';
+
+.color-cell {
+  align-self: center;
+}
+
+.toggle-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+.button-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.delete-button {
+  align-self: flex-start;
+  color: var(--mat-sys-error);
+}

@@ -64,14 +64,16 @@
     <button
       matIconButton
       type="button"
-      [disabled]="store.selectedPhotoId() === null"
-      (click)="deleteSelectedPhoto()"
-      i18n-aria-label="@@editor.photo.delete"
-      aria-label="Delete photo"
-      i18n-matTooltip="@@editor.photo.delete"
-      matTooltip="Delete photo"
+      [disabled]="store.selection() === null"
+      (click)="deleteSelection()"
+      [attr.aria-label]="deleteLabel()"
+      [matTooltip]="deleteLabel()"
     >
       <mat-icon>delete</mat-icon>
+    </button>
+    <button matButton="tonal" type="button" (click)="addText()">
+      <mat-icon>text_fields</mat-icon>
+      <span i18n="@@editor.text.addButton">Add text</span>
     </button>
     <button matButton="filled" type="button" (click)="openImport()">
       <mat-icon>add_photo_alternate</mat-icon>
@@ -86,10 +88,13 @@
           class="editor-canvas"
           [settings]="settings"
           [photos]="store.displayedPhotos()"
+          [texts]="store.displayedTexts()"
           [collageId]="collage.id"
-          [selectedPhotoId]="store.selectedPhotoId()"
-          (photoSelected)="store.selectPhoto($event)"
+          [selection]="store.selection()"
+          (selectionChange)="store.select($event)"
           (photoChange)="store.updatePhotoProps($event.id, $event.props)"
+          (textChange)="store.updateTextProps($event.id, $event.props)"
+          (textEditRequest)="editText($event)"
         />
         @if (store.photos().length === 0) {
           <p class="editor-hint" i18n="@@editor.noPhotos">
@@ -108,6 +113,16 @@
             (bringToFront)="store.bringToFront(photo.id)"
             (sendToBack)="store.sendToBack(photo.id)"
             (delete)="store.deletePhoto(photo.id)"
+          />
+        } @else if (store.selectedText(); as text) {
+          <app-text-properties-panel
+            class="text-panel"
+            [text]="text"
+            (preview)="store.previewText(text.id, $event)"
+            (propsChange)="store.updateTextProps(text.id, $event)"
+            (bringToFront)="store.bringTextToFront(text.id)"
+            (sendToBack)="store.sendTextToBack(text.id)"
+            (delete)="store.deleteText(text.id)"
           />
         }
         <app-collage-settings-panel

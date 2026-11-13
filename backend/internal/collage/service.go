@@ -13,6 +13,10 @@ import (
 // MaxNameLength is the maximum length of a collage name in characters.
 const MaxNameLength = 200
 
+// MaxTextIDLength is the maximum length of a text id in bytes (the frontend
+// sends UUIDs).
+const MaxTextIDLength = 64
+
 // Store is the persistence the service needs (implemented by GormStore).
 type Store interface {
 	ListByUser(ctx context.Context, userID uint) ([]Collage, error)
@@ -26,6 +30,14 @@ type Store interface {
 	// user.
 	UpdateSettingsForUser(ctx context.Context, userID, id uint, settings jsoncol.JSON) error
 	Delete(ctx context.Context, id uint) error
+	// ListTexts returns the texts of a collage, never nil.
+	ListTexts(ctx context.Context, collageID uint) ([]CollageText, error)
+	// TextIDsInOtherCollages returns those of ids that belong to another
+	// collage than collageID.
+	TextIDsInOtherCollages(ctx context.Context, collageID uint, ids []string) ([]string, error)
+	// ReplaceTexts makes texts the complete text list of the collage
+	// (create, replace props, delete the texts that are not listed).
+	ReplaceTexts(ctx context.Context, collageID uint, texts []CollageText) error
 }
 
 // Photos is the part of the photo domain that the collage service needs.
@@ -75,16 +87,33 @@ type PhotoView struct {
 	Props         jsoncol.JSON `json:"props"`
 }
 
+// TextData is one text of a collage as the API shows it (collage detail)
+// and saves it (layout save).
+type TextData struct {
+	ID    string       `json:"id"`
+	Props jsoncol.JSON `json:"props"`
+}
+
+// Layout is the editor state that a layout save replaces: the settings, the
+// props of the listed photos and the complete text list. Photos and Texts
+// must not be nil (empty lists are allowed).
+type Layout struct {
+	Settings jsoncol.JSON
+	Photos   []PhotoPropsUpdate
+	Texts    []TextData
+}
+
 // Summary is a collage with the number of its photos (list entry).
 type Summary struct {
 	Collage
 	PhotoCount int
 }
 
-// Detail is a collage with its photos (editor view).
+// Detail is a collage with its photos and texts (editor view).
 type Detail struct {
 	Collage
 	Photos []PhotoView
+	Texts  []TextData
 }
 
 // Service contains the business rules for collages. Every method takes the
@@ -145,7 +174,7 @@ func (s *Service) Get(ctx context.Context, userID, id uint) (*Collage, error) {
 	return s.store.FindForUser(ctx, userID, id)
 }
 
-// Detail returns one collage of the user with its photos.
+// Detail returns one collage of the user with its photos and texts.
 func (s *Service) Detail(ctx context.Context, userID, id uint) (*Detail, error) {
 	c, err := s.store.FindForUser(ctx, userID, id)
 	if err != nil {
@@ -155,7 +184,11 @@ func (s *Service) Detail(ctx context.Context, userID, id uint) (*Detail, error) 
 	if err != nil {
 		return nil, fmt.Errorf("list photos of collage %d: %w", c.ID, err)
 	}
-	return &Detail{Collage: *c, Photos: photos}, nil
+	texts, err := s.store.ListTexts(ctx, c.ID)
+	if err != nil {
+		return nil, err
+	}
+	return &Detail{Collage: *c, Photos: photos, Texts: textData(texts)}, nil
 }
 
 // Rename validates name and sets it as the new name of the collage.
@@ -178,7 +211,8 @@ func (s *Service) Rename(ctx context.Context, userID, id uint, name string) (*Su
 	return &Summary{Collage: *c, PhotoCount: counts[c.ID]}, nil
 }
 
-// Delete deletes the collage with all its photos.
+// Delete deletes the collage with all its photos and texts (the texts by
+// the foreign key ON DELETE CASCADE).
 func (s *Service) Delete(ctx context.Context, userID, id uint) error {
 	c, err := s.store.FindForUser(ctx, userID, id)
 	if err != nil {
@@ -190,36 +224,67 @@ func (s *Service) Delete(ctx context.Context, userID, id uint) error {
 	return s.store.Delete(ctx, c.ID)
 }
 
-// SaveLayout replaces the settings of the collage and the props of the
-// listed photos in one transaction; the collage's UpdatedAt changes. Photos
-// that are not listed keep their props. photos must not be nil (an empty
-// list is allowed). Settings and each props must be JSON objects ({} is an
-// unplaced photo); a photo id may be listed only once and must belong to the
-// collage.
-func (s *Service) SaveLayout(ctx context.Context, userID, id uint, settings jsoncol.JSON, photos []PhotoPropsUpdate) error {
-	if err := validLayout(settings, photos); err != nil {
+// SaveLayout saves the layout in one transaction; the collage's UpdatedAt
+// changes. It replaces the settings and the props of the listed photos
+// (photos that are not listed keep their props) and makes layout.Texts the
+// complete text list of the collage (new texts are created, listed texts get
+// the new props, texts that are not listed are deleted).
+//
+// Settings and each props must be JSON objects ({} is an unplaced photo); a
+// photo id may be listed only once and must belong to the collage. A text id
+// must be 1–MaxTextIDLength bytes, may be listed only once and must not
+// belong to another collage.
+func (s *Service) SaveLayout(ctx context.Context, userID, id uint, layout Layout) error {
+	if err := validLayout(layout); err != nil {
 		return err
 	}
 	return s.tx.InTx(ctx, func(ctx context.Context) error {
 		// The write comes first: it checks ownership and makes this a write
 		// transaction from the start (no read-to-write lock upgrade in
 		// SQLite).
-		if err := s.store.UpdateSettingsForUser(ctx, userID, id, settings); err != nil {
+		if err := s.store.UpdateSettingsForUser(ctx, userID, id, layout.Settings); err != nil {
 			return err
 		}
-		if err := s.photos.UpdateProps(ctx, id, photos); err != nil {
+		if err := s.photos.UpdateProps(ctx, id, layout.Photos); err != nil {
 			return fmt.Errorf("update photo props of collage %d: %w", id, err)
 		}
-		return nil
+		return s.replaceTexts(ctx, id, layout.Texts)
 	})
+}
+
+// replaceTexts makes texts the text list of the collage. A text id of
+// another collage gives a validation error.
+func (s *Service) replaceTexts(ctx context.Context, collageID uint, texts []TextData) error {
+	ids := make([]string, len(texts))
+	rows := make([]CollageText, len(texts))
+	for i, t := range texts {
+		ids[i] = t.ID
+		rows[i] = CollageText{ID: t.ID, CollageID: collageID, Props: t.Props}
+	}
+	foreign, err := s.store.TextIDsInOtherCollages(ctx, collageID, ids)
+	if err != nil {
+		return err
+	}
+	if len(foreign) > 0 {
+		return apperr.Validation("text id %q belongs to another collage", foreign[0])
+	}
+	return s.store.ReplaceTexts(ctx, collageID, rows)
 }
 
 // validLayout checks the input of SaveLayout that does not need the
 // database.
-func validLayout(settings jsoncol.JSON, photos []PhotoPropsUpdate) error {
-	if !settings.IsObject() {
+func validLayout(layout Layout) error {
+	if !layout.Settings.IsObject() {
 		return apperr.Validation("settings must be a JSON object")
 	}
+	if err := validPhotoUpdates(layout.Photos); err != nil {
+		return err
+	}
+	return validTexts(layout.Texts)
+}
+
+// validPhotoUpdates checks the photo list of a layout save.
+func validPhotoUpdates(photos []PhotoPropsUpdate) error {
 	if photos == nil {
 		return apperr.Validation("photos must be a list")
 	}
@@ -234,6 +299,39 @@ func validLayout(settings jsoncol.JSON, photos []PhotoPropsUpdate) error {
 		}
 	}
 	return nil
+}
+
+// validTexts checks the text list of a layout save.
+func validTexts(texts []TextData) error {
+	if texts == nil {
+		return apperr.Validation("texts must be a list")
+	}
+	seen := make(map[string]bool, len(texts))
+	for _, t := range texts {
+		if t.ID == "" {
+			return apperr.Validation("text id is required")
+		}
+		if len(t.ID) > MaxTextIDLength {
+			return apperr.Validation("text id must be at most %d characters", MaxTextIDLength)
+		}
+		if seen[t.ID] {
+			return apperr.Validation("duplicate text id %q", t.ID)
+		}
+		seen[t.ID] = true
+		if !t.Props.IsObject() {
+			return apperr.Validation("props of text %q must be a JSON object", t.ID)
+		}
+	}
+	return nil
+}
+
+// textData returns the API views of texts, never nil.
+func textData(texts []CollageText) []TextData {
+	out := make([]TextData, len(texts))
+	for i, t := range texts {
+		out[i] = TextData{ID: t.ID, Props: t.Props}
+	}
+	return out
 }
 
 // validName returns the trimmed name or a validation error if it is empty

@@ -546,6 +546,27 @@ show a confirm dialog first. Arrangement result is one undo step.
   photos that still exist. Rejected: soft delete.
 - **Beside-page width (step 8):** photos placed beside the page always get ¼ of the page width (grid overflow,
   center overflow, declined re-arrange after import). Rejected: centre photo width / cell width.
+- **Text decisions (step 9, 2026-11-13):**
+  - Resize: transformer side handles change only the text box width (text wraps again); font size only in
+    the panel; rotation handle rotates. Rejected: corner handles scale the font, scale-only.
+  - Outline width = visible outline outside the letters: Konva `strokeWidth = 2 × outline.widthMm` (the fill
+    covers the inner half of the stroke). Rejected: stroke width = value (only half visible).
+  - Panel edits: live preview on the canvas while typing / picking a colour / changing a number (not saved,
+    no undo step, like the photo border colour); committed (one undo step + auto-save) when the field loses
+    focus, the picker closes, or a checkbox/select/button changes. Rejected: debounced commit while typing,
+    no preview.
+  - "Add text" toolbar button (next to Import): text "Text", Inter 24 pt, black, align centre, box width 50 %
+    of the page width, centred on the page, rotation 0, z in front of all elements, selected; the panel text
+    area gets the focus with its text selected. Rejected: centre of the visible area, no focus.
+  - Bold/italic always allowed; for a font without that face (Bebas Neue: regular only; Caveat: no italic)
+    the browser synthesizes it. Rejected: disable the toggles.
+  - Delete text: toolbar Delete button + panel button, no confirm (texts are in the undo history).
+  - A text that is empty when its text area loses focus is deleted (one undo step).
+  - Double-click a text on the canvas focuses the panel text area; no inline editing on the canvas.
+  - Limits: font size 4–400 pt; shadow blur 0–20 mm, offset −20..20 mm, opacity 0–100 % (stored 0..1);
+    outline width 0–5 mm.
+  - Bundled font faces: Inter and Lora 400/700 normal + italic, Caveat 400/700, Bebas Neue 400.
+  - Text panel above the collage settings (like the photo panel), z-order buttons as for photos.
 - **Architecture (step 3+):** SOLID/DRY/clean code required by the developer; see section "Architecture
   conventions".
 - **Backend module wiring (step 2):** `httpapi` must not import domain packages (import cycle, because domain
@@ -845,7 +866,7 @@ results) and the developer reviews before the next step starts.
   centre button).
 
 ### Step 8 — Editing interactions
-- **Status:** open
+- **Status:** done (reviewed 2026-11-13)
 - **What:** selection + `Konva.Transformer` (move, rotate, corner resize keeps aspect, edge resize with cover);
   crop mode (double-click, pan, zoom, Esc); properties panel for photos (border override, "Apply to all
   photos" for the default border, z-order buttons, delete with confirm); undo/redo (`history.ts`, keyboard +
@@ -857,9 +878,28 @@ results) and the developer reviews before the next step starts.
   - In crop mode the image can be moved/zoomed but never shows empty area in the frame.
   - Undo/redo steps back and forward through moves, rotations, crops, border changes and re-arrange.
 - **Notes:**
+  - Pure logic: `geometry/transform.ts` (`applyFrameBox`, `panCrop`, `zoomCrop`, `normalizeRotationDeg`,
+    `MIN_CROP_SIZE`, `ImageSize`, `FrameBox`), `geometry/frame-size.ts`, `history.ts`, `swap-frames.ts`.
+  - Canvas: `canvas/collage-renderer.ts` is a facade over `photo-view.ts` (Konva nodes of one photo),
+    `photo-transformer.ts`, `crop-mode.ts`, `crop-mode-controls.ts`, `scene.ts`, `image-cache.ts`,
+    `press-gesture.ts`, `pointer.ts`, `canvas-theme.ts`, `stage-navigator.ts`. Each interaction reports one
+    committed change (`onPhotoChange`), never during the gesture; live previews are drawn by the views.
+  - Store/UI: `layout-snapshot.ts`, `z-order.ts`, `photo-border.ts`, `undo-history.ts`, `undo-shortcut.ts`,
+    `photo-panel/photo-properties-panel.*`; shared form fields in `features/editor/fields/`
+    (`number-field`, `color-field`, `border-fields`, `sync-from-input`, `panel-section.scss`).
+  - Review round 1: photo border colour is shown live while the picker changes it (`ColorField.previewed` →
+    `EditorStore.previewPhotoBorder`; canvas draws `EditorStore.displayedPhotos`; preview not saved, no undo
+    step; committed on native `change`). Crop zoom slider zooms live (native `input`), commits on release
+    (`CropMode.setZoom`/`commitZoom`); wheel zoom commits 300 ms after the last change. Crop controls = only
+    a 160 px slider directly below the frame (follows pan/zoom via `CropModeState.anchor`), no hint text, no
+    "Done" button (crop mode ends with Esc or a click outside the frame).
+  - Review round 2: crop slider has a semi-transparent pill background (75 % surface colour); "Set as
+    centre" swaps frames instead of re-arranging (see decision log "Centre photo selection").
+  - Only the photo border colour has the live preview; background colour and default border colour still
+    apply on picker close.
 
 ### Step 9 — Overlay texts
-- **Status:** open
+- **Status:** in progress
 - **What:** `@fontsource` packages for Inter, Lora, Caveat, Bebas Neue (regular, bold, italic where the font
   has them), loaded globally; `collage_texts` model + AutoMigrate (layout endpoint already handles texts);
   "Add text" button; text rendering with `Konva.Text` (size pt→mm, shadow, outline as stroke); transformer for
@@ -870,6 +910,37 @@ results) and the developer reviews before the next step starts.
     reload → same state.
   - Shadow and outline are visible and adjustable.
 - **Notes:**
+  - Status: in progress (2026-11-13). Contract-first, then 3 parallel agents (backend / canvas / store+UI).
+  - Contract files written before the agents: `core/models/text.ts` (`TextProps`, `CollageText`,
+    `TEXT_FONT_FAMILIES`, `ptToMm`), `core/models/layout.ts` (`SaveLayoutRequest.texts` = all texts),
+    `core/models/collage.ts` (`CollageDetail.texts: CollageText[]`), `features/editor/selection.ts`
+    (`EditorSelection` = photo id | text id | null, `sameSelection`, `selectedPhotoIdOf`, `selectedTextIdOf`),
+    `canvas/scene.ts` (`SceneText`, `Scene.texts`, `Scene.selection` replaces `selectedPhotoId`).
+  - `EditorCanvas` API: inputs `settings`, `photos`, `texts: readonly CollageText[]` (already with the live
+    preview applied), `collageId`, `selection: EditorSelection`; outputs `selectionChange: EditorSelection`
+    (replaces `photoSelected`), `photoChange` (unchanged), `textChange: {id: string; props: TextProps}`
+    (committed move/rotate/width change), `textEditRequest: string` (double-click on a text).
+  - Ownership: backend agent `backend/**`; canvas agent `features/editor/canvas/**`; store/UI agent
+    everything else in the frontend (store, snapshot, page, text panel, fonts in `package.json` +
+    `angular.json`).
+  - Backend (done): `CollageText` model in `internal/collage/model.go` (PK string ≤ 64, FK CASCADE),
+    store `ListTexts`, `TextIDsInOtherCollages`, `ReplaceTexts` (delete unlisted, upsert listed in batches of
+    100, upsert guarded by `collage_id`); `Service.SaveLayout(ctx, userID, id, Layout{Settings, Photos,
+    Texts})` in one transaction. 400 messages: `texts must be a list`, `text id is required`, `text id must
+    be at most 64 characters`, `duplicate text id "x"`, `props of text "x" must be a JSON object`, `text id
+    "k" belongs to another collage` (rolls back the whole save). Tested with curl against a real server.
+  - Canvas (done): `canvas/text-view.ts`, `font-loader.ts` (`document.fonts.load` once per face, relayout via
+    `Text._setTextData()`, also on `document.fonts` `loadingdone`), `selection-transformer.ts` (shared base),
+    `text-transformer.ts` (side handles + rotate, width-only, min 5 mm), `photo-transformer.ts` extends the
+    base; `scene.ts` (`TextBox`, `applyTextBox`, `sameTextBox`, `MIN_TEXT_WIDTH_MM`). Konva 10.9.1 source:
+    shadow blur/offset are multiplied by the absolute scale → stored mm values work at every zoom and in the
+    export; the shadow offset is not rotated with the text. Outline = Konva stroke with
+    `fillAfterStrokeEnabled`.
+  - Store/UI (done): `text-props.ts` (`newTextProps`, `isBlankText`, `sameTextProps`), `text-panel/*`
+    (`TextPropertiesPanel`, `TEXT_LIMITS`), store `selection`/`select()`, `texts`, `displayedTexts`,
+    `addText`, `previewText`, `updateTextProps`, `deleteText`, `bringTextToFront`, `sendTextToBack`;
+    `layout-snapshot.ts` includes texts. Fonts: `@fontsource/{inter,lora,caveat,bebas-neue}` ^5.3.0 in
+    `angular.json` styles. The dev container needs `make install` (own `node_modules` volume).
 
 ### Step 10 — Export PNG/JPG
 - **Status:** open
@@ -904,8 +975,6 @@ results) and the developer reviews before the next step starts.
 
 ## Open questions
 
-- **Text resize behaviour (step 9):** proposal: transformer handles change the text box width (text wraps),
-  font size only in the panel. Confirm at step 9.
 - **Risk — SSRF:** the Immich URL is user input, so the server makes requests to any URL a logged-in user
   enters. Accepted for a private PoC; revisit before multi-tenant use.
 - **Risk — no login rate limiting** in the PoC.
@@ -918,26 +987,12 @@ results) and the developer reviews before the next step starts.
 
 ## Current state / Next action
 
-- Done: research and grilling; Steps 1–7 (reviewed; steps 6–7 committed together with this plan update).
+- Done: research and grilling; Steps 1–8 (reviewed and committed).
 - Nothing half-finished, no temporary changes to revert.
 - Sandbox notes for agents on the host: `pkill`/process listing is blocked → stop own servers with
   `lsof -ti tcp:<port> | xargs kill`, or ask the developer to run a kill command. Background `&` prints a
   harmless `nice(5) failed` warning; `nohup` cannot detach (use a background task). The developer's dev
   container may be running and bound to `:8080`/`:4200`; use other ports (`COLLAGEOMAT_LISTEN`) and a scratch
   proxy config targeting `127.0.0.1:<port>` for host tests.
-- Implemented, waiting for the developer's browser review (uncommitted): **Step 8** — pure logic
-  (`geometry/transform.ts`: `applyFrameBox`, `panCrop`, `zoomCrop`, `normalizeRotationDeg`, `MIN_CROP_SIZE`;
-  `geometry/frame-size.ts`; `history.ts`), canvas (`canvas/photo-view.ts`, `photo-transformer.ts`,
-  `crop-mode.ts`, `crop-mode-controls.ts`, `scene.ts`, `image-cache.ts`, `press-gesture.ts`, `pointer.ts`,
-  `canvas-theme.ts`; `collage-renderer.ts` is a facade), store/UI (`layout-snapshot.ts`, `z-order.ts`,
-  `photo-border.ts`, `undo-history.ts`, `undo-shortcut.ts`, `photo-panel/*`, shared form fields moved to
-  `features/editor/fields/`). Beside-page width = ¼ page width for all callers. Not browser-tested by agents.
-  After approval: fill the Notes of step 8 and set it to done.
-- Step 8 review round 1 (2026-11-13), fixed, waiting for re-review: photo border colour is shown live while
-  the picker changes it (`ColorField.previewed` → `EditorStore.previewPhotoBorder`, canvas draws
-  `displayedPhotos`; preview is not saved, no undo step; committed on `change`); crop zoom slider zooms live
-  (native `input`), commits on release (`CropMode.setZoom`/`commitZoom`); crop controls = only a 160 px
-  slider directly below the frame (follows pan/zoom via `CropModeState.anchor`), no hint, no "Done" button
-  (crop mode ends with Esc / click outside).
-- Step 8 review round 2 (2026-11-13): crop slider has a semi-transparent pill background; "Set as centre"
-  swaps frames instead of re-arranging (`swap-frames.ts`, `EditorStore.setCenterPhoto`).
+- Step 8 done (reviewed and committed 2026-11-13, commit `c504234`).
+- Next: **Step 9 — Overlay texts** (open question "Text resize behaviour" must be answered first).

@@ -80,7 +80,8 @@
   background-color: var(--mat-sys-surface);
 }
 
-.photo-panel {
+.photo-panel,
+.text-panel {
   padding-bottom: 24px;
   border-bottom: 1px solid var(--mat-sys-outline-variant);
 }

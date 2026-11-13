@@ -1,5 +1,5 @@
 // View math of the editor canvas. Pure, no Angular, no Konva.
-import type { PhotoProps } from '../../../core/models/photo';
+import type { FrameBox } from '../geometry/transform';
 
 /** Axis-aligned rectangle. */
 export interface Rect {
@@ -42,8 +42,8 @@ const WHEEL_ZOOM_SENSITIVITY = 0.01;
  */
 const MAX_WHEEL_ZOOM_DELTA_PX = 25;
 
-/** Axis-aligned bounding box of a (rotated) photo frame. */
-export function frameBounds(props: PhotoProps): Rect {
+/** Axis-aligned bounding box of a (rotated) box: a photo frame or a text box. */
+export function frameBounds(props: FrameBox): Rect {
   const rad = (props.rotationDeg * Math.PI) / 180;
   const cos = Math.abs(Math.cos(rad));
   const sin = Math.abs(Math.sin(rad));

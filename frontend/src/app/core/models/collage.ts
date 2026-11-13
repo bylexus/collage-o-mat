@@ -4,6 +4,7 @@
  */
 
 import type { Photo } from './photo';
+import type { CollageText } from './text';
 
 /** Ids of the page presets with a fixed size. */
 export type FixedPagePresetId = 'A5' | 'A4' | 'A3' | 'Letter' | '30x30';
@@ -87,8 +88,8 @@ export interface CollageDetail {
   settings: CollageSettings;
   /** Photos in import order (id ascending). */
   photos: Photo[];
-  /** Typed when texts are added (step 9). */
-  texts: unknown[];
+  /** Overlay texts (any order; drawn by `props.z`). */
+  texts: CollageText[];
 }
 
 /** Body of `POST /api/collages`. */
