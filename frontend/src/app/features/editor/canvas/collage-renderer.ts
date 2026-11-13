@@ -45,6 +45,8 @@ export interface RendererCallbacks {
   onTextEditRequest: (textId: string) => void;
   /** Crop mode started, its zoom changed, or it ended (`null`). */
   onCropModeChange: (state: CropModeState | null) => void;
+  /** Swap mode: click on a photo other than the selected one (its id). */
+  onSwapTarget: (photoId: number) => void;
 }
 
 /**
@@ -61,6 +63,8 @@ export interface RendererCallbacks {
  *   scene's snap grid the bounding box snaps to the grid at each step (Alt/Option held: free move).
  * - `CropMode`: double-click a photo to pan/zoom the image inside its frame.
  * - Double-click a text: `onTextEditRequest`.
+ * - Swap mode (`setSwapMode`): no edits; the selected photo shows its frame without handles and a
+ *   click on another photo reports `onSwapTarget`. Pan and zoom stay.
  *
  * Each interaction reports one `onPhotoChange` / `onTextChange` when it is committed, never during
  * the gesture.
@@ -81,6 +85,8 @@ export class CollageRenderer {
   private readonly textTransformer: TextTransformer;
   private readonly cropMode: CropMode;
   private scene: Scene | null = null;
+  /** Swap mode is on (see `setSwapMode`). */
+  private swapMode = false;
 
   constructor(
     container: HTMLDivElement,
@@ -157,6 +163,23 @@ export class CollageRenderer {
   /** Zooms out by one step around the view centre. */
   zoomOut(): void {
     this.navigator.zoomOut();
+  }
+
+  /**
+   * Swap mode on/off: no element can be moved, the selected photo keeps its selection frame
+   * without handles, double-click does nothing and only a click on another photo reports
+   * `onSwapTarget` (all other clicks are ignored). Starting it ends a running crop mode (pending
+   * change committed).
+   */
+  setSwapMode(on: boolean): void {
+    if (this.swapMode === on) {
+      return;
+    }
+    this.swapMode = on;
+    if (on) {
+      this.cropMode.end(true);
+    }
+    this.applyInteractionState();
   }
 
   /** Sets the crop zoom of the photo in crop mode while the slider moves (see `CropModeState`). */
@@ -298,18 +321,20 @@ export class CollageRenderer {
 
   /**
    * Handles and dragging follow the mode: in crop mode no element can be moved and the handles are
-   * hidden; otherwise the selected photo or text has its handles. Also restores the overlay order.
+   * hidden; in swap mode no element can be moved and the selected photo shows only its selection
+   * frame; otherwise the selected photo or text has its handles. Also restores the overlay order.
    */
   private applyInteractionState(): void {
     const cropping = this.cropMode.photoId !== null;
     for (const view of [...this.views.values(), ...this.textViews.values()]) {
-      view.setDraggable(!cropping);
+      view.setDraggable(!cropping && !this.swapMode);
     }
     const selection = cropping ? null : (this.scene?.selection ?? null);
     const photo = selection?.kind === 'photo' ? this.views.get(selection.id) : undefined;
     const text = selection?.kind === 'text' ? this.textViews.get(selection.id) : undefined;
+    this.transformer.setHandlesEnabled(!this.swapMode);
     this.transformer.attach(photo ?? null);
-    this.textTransformer.attach(text ?? null);
+    this.textTransformer.attach(this.swapMode ? null : (text ?? null));
     this.cropMode.raise();
     this.transformer.refresh();
     this.textTransformer.refresh();
@@ -380,6 +405,10 @@ export class CollageRenderer {
     ) {
       return;
     }
+    if (this.swapMode) {
+      this.onSwapClick(target);
+      return;
+    }
     if (this.cropMode.photoId !== null) {
       // In crop mode a click outside the frame only ends crop mode.
       if (!this.cropMode.contains(target)) {
@@ -390,8 +419,22 @@ export class CollageRenderer {
     this.callbacks.onSelect(this.selectionOf(target));
   }
 
-  /** Double-click on a photo starts crop mode for it; on a text it requests text editing. */
+  /** Swap mode: a click on a photo other than the selected one reports it; other clicks do nothing. */
+  private onSwapClick(target: Konva.Node): void {
+    const view = this.viewOf(target);
+    if (view && view.id !== selectedPhotoIdOf(this.scene?.selection ?? null)) {
+      this.callbacks.onSwapTarget(view.id);
+    }
+  }
+
+  /**
+   * Double-click on a photo starts crop mode for it; on a text it requests text editing. Nothing in
+   * swap mode.
+   */
   private onDoubleClick(target: Konva.Node): void {
+    if (this.swapMode) {
+      return;
+    }
     const textView = this.textViewOf(target);
     if (textView) {
       this.select({ kind: 'text', id: textView.id });

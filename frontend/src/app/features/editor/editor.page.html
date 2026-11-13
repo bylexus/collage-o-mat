@@ -83,6 +83,20 @@
         />
       }
     </ng-template>
+    <!-- disabledInteractive: the tooltip explains why the button is disabled. -->
+    <button
+      matIconButton
+      type="button"
+      disabledInteractive
+      [disabled]="!canSwap() && !swapping()"
+      [class.toolbar-active]="swapping()"
+      [attr.aria-pressed]="swapping()"
+      (click)="toggleSwap()"
+      [attr.aria-label]="swapLabel"
+      [matTooltip]="swapHint()"
+    >
+      <mat-icon>swap_horiz</mat-icon>
+    </button>
     @if (isCenterMode()) {
       <!-- disabledInteractive: the tooltip explains why the button is disabled. -->
       <button
@@ -152,6 +166,8 @@
           (photoChange)="store.updatePhotoProps($event.id, $event.props)"
           (textChange)="store.updateTextProps($event.id, $event.props)"
           (textEditRequest)="editText($event)"
+          [swapMode]="swapping()"
+          (swapTarget)="swapWith($event)"
         />
         @if (store.photos().length === 0) {
           <p class="editor-hint" i18n="@@editor.noPhotos">

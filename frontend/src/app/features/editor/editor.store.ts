@@ -374,21 +374,30 @@ export class EditorStore {
     if (currentId === id) {
       return;
     }
-    const selected = photos.find((p) => p.id === id);
-    const current = photos.find((p) => p.id === currentId);
-    if (selected && current && isPlaced(selected.props) && isPlaced(current.props)) {
-      const [selectedProps, currentProps] = swapFrames(
-        { props: selected.props, image: selected },
-        { props: current.props, image: current },
-      );
-      this.applyFrames(
-        new Map([
-          [selected.id, selectedProps],
-          [current.id, currentProps],
-        ]),
-      );
+    if (currentId !== null) {
+      this.swapPlacedFrames(id, currentId);
     }
     this.settingsSignal.set({ ...settings, center: { ...settings.center, centerPhotoId: id } });
+    this.commit();
+  }
+
+  /**
+   * Swaps the places of two placed photos (see `swapFrames`); all other photos stay. If one of
+   * them is the centre photo, the other one becomes the centre photo. Unknown, not placed and
+   * equal photos change nothing. The selection stays. One undo step.
+   */
+  swapPhotos(aId: number, bId: number): void {
+    const settings = this.requireSettings();
+    const photos = this.photosSignal();
+    const centreId = resolveCentrePhotoId(photos, settings.center.centerPhotoId);
+    if (aId === bId || !this.swapPlacedFrames(aId, bId)) {
+      return;
+    }
+    if (centreId === aId || centreId === bId) {
+      const centerPhotoId = centreId === aId ? bId : aId;
+      this.settingsSignal.set({ ...settings, center: { ...settings.center, centerPhotoId } });
+    }
+    this.markManualChange();
     this.commit();
   }
 
@@ -498,6 +507,27 @@ export class EditorStore {
     const page = this.requireSettings().page;
     this.applyFrames(placeBesidePage(photos, page, nextFrontZ(this.zValues())));
     this.layoutIsArrangement = false;
+  }
+
+  /**
+   * Swaps the frames of two placed photos (see `swapFrames`, not committed). Returns `false` and
+   * changes nothing if one of them is unknown or not placed.
+   */
+  private swapPlacedFrames(aId: number, bId: number): boolean {
+    const photos = this.photosSignal();
+    const a = photos.find((p) => p.id === aId);
+    const b = photos.find((p) => p.id === bId);
+    if (!a || !b || !isPlaced(a.props) || !isPlaced(b.props)) {
+      return false;
+    }
+    const [aProps, bProps] = swapFrames({ props: a.props, image: a }, { props: b.props, image: b });
+    this.applyFrames(
+      new Map([
+        [a.id, aProps],
+        [b.id, bProps],
+      ]),
+    );
+    return true;
   }
 
   /** Sets the props of the photos in `frames` (not committed). */

@@ -41,8 +41,8 @@ export interface TextChange {
 /**
  * Konva canvas of the editor (presentational): draws the page, the placed photos and the overlay
  * texts, reports the selection, committed photo edits (move, rotate, resize, crop), committed text
- * edits (move, rotate, box width) and text edit requests (double-click), and shows the zoom
- * controls and the crop mode controls. Fills its container. The view is zoomed to fit on the first render and
+ * edits (move, rotate, box width), text edit requests (double-click) and the target photo of the
+ * swap mode, and shows the zoom controls and the crop mode controls. Fills its container. The view is zoomed to fit on the first render and
  * when the page size or orientation changes. All canvas input is handled by the renderer (see
  * `CollageRenderer`).
  */
@@ -169,6 +169,13 @@ export class EditorCanvas {
   readonly textChange = output<TextChange>();
   /** Double-click on a text (its id): the owner shows the text for editing. */
   readonly textEditRequest = output<string>();
+  /**
+   * Swap mode: no canvas edits, the selected photo shows only its selection frame and a click on
+   * another photo emits `swapTarget`. Pan and zoom stay.
+   */
+  readonly swapMode = input(false);
+  /** Swap mode: click on a photo other than the selected one (its id). */
+  readonly swapTarget = output<number>();
 
   private readonly destroyRef = inject(DestroyRef);
   private readonly host = viewChild.required<ElementRef<HTMLDivElement>>('host');
@@ -197,6 +204,7 @@ export class EditorCanvas {
   constructor() {
     afterNextRender(() => this.createRenderer());
     effect(() => this.renderScene());
+    effect(() => this.renderer()?.setSwapMode(this.swapMode()));
   }
 
   /** Shows the page and all elements as large as possible. */
@@ -252,6 +260,7 @@ export class EditorCanvas {
       onTextChange: (id, props) => this.textChange.emit({ id, props }),
       onTextEditRequest: (id) => this.textEditRequest.emit(id),
       onCropModeChange: (state) => this.cropMode.set(state),
+      onSwapTarget: (id) => this.swapTarget.emit(id),
     });
     const resizeObserver = new ResizeObserver(() =>
       renderer.setSize(container.clientWidth, container.clientHeight),

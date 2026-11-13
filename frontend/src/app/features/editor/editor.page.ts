@@ -4,6 +4,7 @@ import {
   afterNextRender,
   Component,
   computed,
+  effect,
   inject,
   Injector,
   signal,
@@ -18,7 +19,7 @@ import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { firstValueFrom } from 'rxjs';
 import { PhotoApi } from '../../core/api/photo.api';
 import { pageLabel, SnapGridSettings } from '../../core/models/collage';
-import { ImportResult } from '../../core/models/photo';
+import { ImportResult, isPlaced } from '../../core/models/photo';
 import { NotificationService } from '../../shared/notification.service';
 import { resolveCentrePhotoId } from './arrange/arrange';
 import { EditorCanvas } from './canvas/editor-canvas';
@@ -63,6 +64,7 @@ import { undoRedoCommand, undoRedoShortcutLabels } from './undo-shortcut';
   host: {
     '(window:beforeunload)': 'warnIfUnsaved($event)',
     '(window:keydown)': 'handleUndoRedoKey($event)',
+    '(window:keydown.escape)': 'endSwapOnEscape($event)',
   },
 })
 export class EditorPage {
@@ -85,6 +87,7 @@ export class EditorPage {
   protected readonly undoLabel = $localize`:@@editor.undo:Undo (${this.shortcuts.undo}:shortcut:)`;
   protected readonly redoLabel = $localize`:@@editor.redo:Redo (${this.shortcuts.redo}:shortcut:)`;
   protected readonly setCentreLabel = $localize`:@@editor.setCentre:Set as centre`;
+  protected readonly swapLabel = $localize`:@@editor.swap:Swap photos`;
   protected readonly exportLabel = $localize`:@@editor.export.button:Export`;
   protected readonly addTextLabel = $localize`:@@editor.text.addButton:Add text`;
   protected readonly importLabel = $localize`:@@editor.importButton:Import from Immich`;
@@ -135,7 +138,56 @@ export class EditorPage {
       : $localize`:@@editor.setCentreHint:Swap the selected photo with the centre photo`;
   });
 
+  /**
+   * Id of the source photo A of the swap mode (the selected photo when the mode started), or
+   * `null`. Reset by the auto-end effect (see constructor), so the mode cannot come back.
+   */
+  private readonly swapSourceId = signal<number | null>(null);
+
+  /** Swap mode is on: the source photo is still the selected, placed photo. */
+  protected readonly swapping = computed(() => {
+    const sourceId = this.swapSourceId();
+    const photo = this.store.selectedPhoto();
+    return sourceId !== null && photo?.id === sourceId && isPlaced(photo.props);
+  });
+
+  /** Number of photos on the page. */
+  private readonly placedPhotoCount = computed(
+    () => this.store.photos().filter((photo) => isPlaced(photo.props)).length,
+  );
+
+  private readonly selectedPhotoPlaced = computed(() => {
+    const photo = this.store.selectedPhoto();
+    return photo !== null && isPlaced(photo.props);
+  });
+
+  /** The Swap button can start the mode: a placed photo is selected and a second one exists. */
+  protected readonly canSwap = computed(
+    () => this.selectedPhotoPlaced() && this.placedPhotoCount() >= 2,
+  );
+
+  /** Tooltip of the Swap button: explains the disabled states and the active mode. */
+  protected readonly swapHint = computed(() => {
+    if (this.swapping()) {
+      return $localize`:@@editor.swapActiveHint:Click the photo to swap with (Esc to cancel)`;
+    }
+    if (!this.selectedPhotoPlaced()) {
+      return $localize`:@@editor.swapSelectFirst:Select a photo on the page first`;
+    }
+    if (this.placedPhotoCount() < 2) {
+      return $localize`:@@editor.swapTooFewPhotos:At least two photos are needed`;
+    }
+    return $localize`:@@editor.swapHint:Swap the selected photo with another photo`;
+  });
+
   constructor() {
+    // Auto-end of the swap mode: the selection is no longer the placed source photo (e.g. "Add
+    // text", delete, undo/redo).
+    effect(() => {
+      if (this.swapSourceId() !== null && !this.swapping()) {
+        this.swapSourceId.set(null);
+      }
+    });
     // The route has no child routes or links to other collages, so the id does not change while
     // the page is shown.
     void this.load(Number(this.route.snapshot.paramMap.get('id')));
@@ -205,6 +257,36 @@ export class EditorPage {
     if (id !== null && !this.selectedIsCentrePhoto()) {
       this.store.setCenterPhoto(id);
     }
+  }
+
+  /** Starts the swap mode for the selected photo, or ends it. */
+  protected toggleSwap(): void {
+    if (this.swapping()) {
+      this.swapSourceId.set(null);
+    } else if (this.canSwap()) {
+      this.swapSourceId.set(this.store.selectedPhotoId());
+    }
+  }
+
+  /** Swap mode: the target photo was clicked; swaps it with the source photo and ends the mode. */
+  protected swapWith(targetId: number): void {
+    const sourceId = this.swapSourceId();
+    if (sourceId !== null && this.swapping()) {
+      this.store.swapPhotos(sourceId, targetId);
+    }
+    this.swapSourceId.set(null);
+  }
+
+  /**
+   * Esc ends the swap mode; not while a dialog is open or when another element has already used
+   * the key (e.g. the snap grid popover closes).
+   */
+  protected endSwapOnEscape(event: Event): void {
+    if (!this.swapping() || event.defaultPrevented || this.dialog.openDialogs.length > 0) {
+      return;
+    }
+    event.preventDefault();
+    this.swapSourceId.set(null);
   }
 
   /** Deletes the selected photo (after a confirm) or the selected text (no confirm). */

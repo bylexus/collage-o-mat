@@ -82,6 +82,17 @@ export abstract class SelectionTransformer<V extends TransformableView> {
     this.transformer.nodes(view ? [view.group] : []);
   }
 
+  /**
+   * Shows or hides the resize and rotation handles; without them only the selection frame is
+   * shown and the box cannot be transformed.
+   */
+  setHandlesEnabled(enabled: boolean): void {
+    if (this.transformer.resizeEnabled() !== enabled) {
+      this.transformer.resizeEnabled(enabled);
+      this.transformer.rotateEnabled(enabled);
+    }
+  }
+
   /** Lays the handles out again (after the attached view was redrawn) and puts them in front. */
   refresh(): void {
     this.transformer.moveToTop();
