@@ -14,6 +14,7 @@ import { photoGroupOf, PhotoView } from './photo-view';
 import { PressGestureTracker } from './press-gesture';
 import {
   applyTextBox,
+  elementsByZ,
   sameGeometry,
   sameTextBox,
   Scene,
@@ -264,18 +265,11 @@ export class CollageRenderer {
     if (!scene) {
       return;
     }
-    const stacked: { z: number; group: Konva.Group | undefined }[] = [
-      ...scene.photos.map((photo) => ({
-        z: photo.props.z,
-        group: this.views.get(photo.id)?.group,
-      })),
-      ...scene.texts.map((text) => ({
-        z: text.props.z,
-        group: this.textViews.get(text.id)?.group,
-      })),
-    ];
-    stacked.sort((a, b) => a.z - b.z);
-    for (const { group } of stacked) {
+    for (const element of elementsByZ(scene)) {
+      const group =
+        element.kind === 'photo'
+          ? this.views.get(element.photo.id)?.group
+          : this.textViews.get(element.text.id)?.group;
       group?.moveToTop();
     }
   }

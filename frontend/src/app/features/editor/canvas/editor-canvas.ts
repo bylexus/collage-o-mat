@@ -16,10 +16,11 @@ import { MatButtonModule } from '@angular/material/button';
 import { MatIconModule } from '@angular/material/icon';
 import { MatTooltipModule } from '@angular/material/tooltip';
 import { CollageSettings, PageSize } from '../../../core/models/collage';
-import { isPlaced, Photo, photoFileUrl, PhotoProps } from '../../../core/models/photo';
+import type { Photo, PhotoProps } from '../../../core/models/photo';
 import type { CollageText, TextProps } from '../../../core/models/text';
 import type { EditorSelection } from '../selection';
-import { CollageRenderer, CropModeState, Scene, ScenePhoto } from './collage-renderer';
+import { CollageRenderer, CropModeState, Scene } from './collage-renderer';
+import { scenePhotos } from './scene';
 import { CropModeControls } from './crop-mode-controls';
 
 /** A committed change of one photo made on the canvas. */
@@ -185,18 +186,7 @@ export class EditorCanvas {
       page: settings.page,
       backgroundColor: settings.backgroundColor,
       defaultBorder: settings.defaultBorder,
-      photos: this.photos().flatMap((photo): ScenePhoto[] =>
-        isPlaced(photo.props)
-          ? [
-              {
-                id: photo.id,
-                url: photoFileUrl(collageId, photo.id),
-                image: { widthPx: photo.widthPx, heightPx: photo.heightPx },
-                props: photo.props,
-              },
-            ]
-          : [],
-      ),
+      photos: scenePhotos(this.photos(), collageId),
       texts: this.texts(),
       selection: this.selection(),
     };

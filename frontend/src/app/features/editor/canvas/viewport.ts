@@ -52,6 +52,11 @@ export function frameBounds(props: FrameBox): Rect {
   return { x: props.cxMm - width / 2, y: props.cyMm - height / 2, width, height };
 }
 
+/** True if both rectangles share an area (touching edges do not count). */
+export function rectsOverlap(a: Rect, b: Rect): boolean {
+  return a.x < b.x + b.width && b.x < a.x + a.width && a.y < b.y + b.height && b.y < a.y + a.height;
+}
+
 /** Smallest rectangle that contains all rectangles (at least one is required). */
 export function unionRects(first: Rect, ...others: readonly Rect[]): Rect {
   let left = first.x;

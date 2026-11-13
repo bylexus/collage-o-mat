@@ -1,0 +1,41 @@
+.export-fields {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+mat-button-toggle-group {
+  align-self: flex-start;
+}
+
+.export-quality {
+  display: flex;
+  flex-direction: column;
+}
+
+.export-label {
+  font: var(--mat-sys-body-medium);
+}
+
+mat-slider {
+  width: 100%;
+  margin: 0;
+}
+
+.export-note {
+  margin: 0;
+  color: var(--mat-sys-on-surface-variant);
+  font: var(--mat-sys-body-small);
+}
+
+.export-error {
+  margin: 0;
+  color: var(--mat-sys-error);
+  font: var(--mat-sys-body-medium);
+}
+
+.export-spinner {
+  display: inline-block;
+  margin-right: 8px;
+  vertical-align: middle;
+}

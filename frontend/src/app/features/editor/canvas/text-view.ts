@@ -57,20 +57,23 @@ export class TextView {
   /** True while a drag or transform changes the group; `update` then keeps the gesture's geometry. */
   private inGesture = false;
 
+  /** @param events drag events; without them the view is static (not draggable, e.g. the export). */
   constructor(
     readonly id: string,
-    events: TextViewEvents,
+    events?: TextViewEvents,
   ) {
     this.group = new Konva.Group({
       name: TEXT_NAME,
-      draggable: true,
+      draggable: events !== undefined,
       dragDistance: DRAG_THRESHOLD_PX,
     });
     // The outline is drawn first, the fill on top: the outline does not cover the letters.
     this.text = new KonvaText({ wrap: 'word', fillAfterStrokeEnabled: true, lineJoin: 'round' });
     this.group.add(this.text);
-    this.group.on('dragstart', () => events.onDragStart(this));
-    this.group.on('dragend', () => events.onDragEnd(this));
+    if (events) {
+      this.group.on('dragstart', () => events.onDragStart(this));
+      this.group.on('dragend', () => events.onDragEnd(this));
+    }
   }
 
   /** CSS font face of the drawn text (see `textFontFace`). */

@@ -12,6 +12,7 @@ import { errorMessage } from '../../shared/error-message';
 import { NotificationService } from '../../shared/notification.service';
 import { arrangePhotos, FrameMap, placeBesidePage, resolveCentrePhotoId } from './arrange/arrange';
 import { AutoSaver } from './auto-saver';
+import { ExportContent } from './export/page-export';
 import { LayoutSnapshot, restoreSnapshot, takeSnapshot } from './layout-snapshot';
 import { hasBorderOverride, inheritedBorder, sameBorder } from './photo-border';
 import { EditorSelection, sameSelection, selectedPhotoIdOf, selectedTextIdOf } from './selection';
@@ -109,6 +110,23 @@ export class EditorStore {
   );
   /** Error text if loading failed for another reason than "not found". */
   readonly loadError = this.loadErrorSignal.asReadonly();
+  /**
+   * What an export renders: the committed layout (no previews, no selection); `null` until the
+   * collage is loaded.
+   */
+  readonly exportContent = computed<ExportContent | null>(() => {
+    const collage = this.collageSignal();
+    const settings = this.settingsSignal();
+    if (!collage || !settings) {
+      return null;
+    }
+    return {
+      collageId: collage.id,
+      settings,
+      photos: this.photosSignal(),
+      texts: this.textsSignal(),
+    };
+  });
 
   private readonly autoSaver = new AutoSaver(
     () => this.saveLayout(),

@@ -12,7 +12,10 @@ import { ImportResult } from '../../core/models/photo';
 import { NotificationService } from '../../shared/notification.service';
 import { resolveCentrePhotoId } from './arrange/arrange';
 import { EditorCanvas } from './canvas/editor-canvas';
+import { renderPageImage } from './canvas/page-image-renderer';
 import { EditorStore } from './editor.store';
+import { downloadBlob, exportFileName } from './export/download';
+import { ExportDialog, ExportDialogData } from './export/export-dialog';
 import { ImportDialog, ImportDialogData } from './import/import-dialog';
 import { importResultMessage } from './import/import-result-message';
 import { PhotoPropertiesPanel } from './photo-panel/photo-properties-panel';
@@ -124,6 +127,27 @@ export class EditorPage {
         this.notification.success(importResultMessage(result));
         void this.store.applyImport(result);
       }
+    });
+  }
+
+  /** Opens the export dialog; it renders the committed layout and downloads the image. */
+  protected openExport(): void {
+    const collage = this.store.collage();
+    const content = this.store.exportContent();
+    if (!collage || !content) {
+      return;
+    }
+    const data: ExportDialogData = {
+      page: content.settings.page,
+      runExport: async (options) => {
+        const blob = await renderPageImage(content, options);
+        downloadBlob(blob, exportFileName(collage.name, options.format));
+      },
+    };
+    this.dialog.open<ExportDialog, ExportDialogData, boolean>(ExportDialog, {
+      data,
+      width: '400px',
+      maxWidth: 'calc(100vw - 32px)',
     });
   }
 

@@ -1,0 +1,68 @@
+<h2 mat-dialog-title i18n="@@editor.export.title">Export image</h2>
+<form [formGroup]="form" (ngSubmit)="submit()">
+  <mat-dialog-content class="export-fields">
+    <mat-button-toggle-group
+      formControlName="format"
+      hideSingleSelectionIndicator
+      i18n-aria-label="@@editor.export.format"
+      aria-label="Format"
+    >
+      <mat-button-toggle value="png" i18n="@@editor.export.png">PNG</mat-button-toggle>
+      <mat-button-toggle value="jpg" i18n="@@editor.export.jpg">JPG</mat-button-toggle>
+    </mat-button-toggle-group>
+
+    @if (format() === 'jpg') {
+      <div class="export-quality">
+        <span class="export-label" i18n="@@editor.export.quality">
+          JPG quality: {{ formatPercent(jpgQuality()) }}
+        </span>
+        <mat-slider
+          discrete
+          [min]="qualityLimits.min"
+          [max]="qualityLimits.max"
+          [step]="qualityLimits.step"
+          [displayWith]="formatPercent"
+        >
+          <input
+            matSliderThumb
+            formControlName="jpgQuality"
+            i18n-aria-label="@@editor.export.qualityAria"
+            aria-label="JPG quality"
+          />
+        </mat-slider>
+      </div>
+    }
+
+    <app-number-field
+      [control]="form.controls.dpi"
+      [limits]="dpiLimits"
+      i18n-label="@@editor.export.dpi"
+      label="Resolution (DPI)"
+    />
+
+    @if (pixelSize(); as size) {
+      <p class="export-note" i18n="@@editor.export.pixelSize">
+        Image size: {{ size.widthPx }} × {{ size.heightPx }} px
+      </p>
+    }
+    <p class="export-note" i18n="@@editor.export.dpiHint">
+      The DPI applies to this export only. The collage setting does not change.
+    </p>
+
+    @if (error() ?? sizeError(); as message) {
+      <p class="export-error" role="alert">{{ message }}</p>
+    }
+  </mat-dialog-content>
+
+  <mat-dialog-actions align="end">
+    <button matButton type="button" mat-dialog-close [disabled]="exporting()">
+      <ng-container i18n="@@editor.export.cancel">Cancel</ng-container>
+    </button>
+    <button matButton="filled" type="submit" [disabled]="!canExport()">
+      @if (exporting()) {
+        <mat-spinner class="export-spinner" diameter="18" />
+      }
+      <ng-container i18n="@@editor.export.submit">Export</ng-container>
+    </button>
+  </mat-dialog-actions>
+</form>

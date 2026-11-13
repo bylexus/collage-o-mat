@@ -567,6 +567,13 @@ show a confirm dialog first. Arrangement result is one undo step.
     outline width 0–5 mm.
   - Bundled font faces: Inter and Lora 400/700 normal + italic, Caveat 400/700, Bebas Neue 400.
   - Text panel above the collage settings (like the photo panel), z-order buttons as for photos.
+- **Export decisions (step 10, 2026-11-13):**
+  - Size checks: only the 16384 px side limit is checked before the export. If the browser cannot create
+    the canvas or `toBlob` fails (e.g. Safari's canvas area limit of 16,777,216 px; A3 at 300 DPI =
+    17.4 Mpx), an error "too large for this browser, lower the DPI" is shown. Rejected: a hard area limit
+    for all browsers.
+  - DPI: the export dialog pre-fills the DPI from the page settings and allows a different DPI for this
+    export only (pixel size updates live); the collage setting does not change. Rejected: read-only DPI.
 - **Architecture (step 3+):** SOLID/DRY/clean code required by the developer; see section "Architecture
   conventions".
 - **Backend module wiring (step 2):** `httpapi` must not import domain packages (import cycle, because domain
@@ -899,7 +906,7 @@ results) and the developer reviews before the next step starts.
     apply on picker close.
 
 ### Step 9 — Overlay texts
-- **Status:** in progress
+- **Status:** done (reviewed 2026-11-13)
 - **What:** `@fontsource` packages for Inter, Lora, Caveat, Bebas Neue (regular, bold, italic where the font
   has them), loaded globally; `collage_texts` model + AutoMigrate (layout endpoint already handles texts);
   "Add text" button; text rendering with `Konva.Text` (size pt→mm, shadow, outline as stroke); transformer for
@@ -910,7 +917,8 @@ results) and the developer reviews before the next step starts.
     reload → same state.
   - Shadow and outline are visible and adjustable.
 - **Notes:**
-  - Status: in progress (2026-11-13). Contract-first, then 3 parallel agents (backend / canvas / store+UI).
+  - Implemented contract-first, then 3 parallel agents (backend / canvas / store+UI); approved by the
+    developer after a browser test on 2026-11-13. Outline width = visible width (see decision log).
   - Contract files written before the agents: `core/models/text.ts` (`TextProps`, `CollageText`,
     `TEXT_FONT_FAMILIES`, `ptToMm`), `core/models/layout.ts` (`SaveLayoutRequest.texts` = all texts),
     `core/models/collage.ts` (`CollageDetail.texts: CollageText[]`), `features/editor/selection.ts`
@@ -943,7 +951,7 @@ results) and the developer reviews before the next step starts.
     `angular.json` styles. The dev container needs `make install` (own `node_modules` volume).
 
 ### Step 10 — Export PNG/JPG
-- **Status:** open
+- **Status:** in progress
 - **What:** "Export" dialog (format PNG/JPG, JPG quality 0.6–1.0, shows the pixel size
   `round(widthMm/25.4×dpi) × round(heightMm/25.4×dpi)`); render the page into an offscreen Konva stage at
   `dpi/25.4` px per mm (no selection, no workspace, only page area), wait for `document.fonts.ready`,
@@ -954,6 +962,25 @@ results) and the developer reviews before the next step starts.
     (photos, crops, borders, rotation, texts with correct fonts, background).
   - JPG quality setting changes the file size.
 - **Notes:**
+  - Contract-first (2026-11-13), then 2 parallel agents. Contract: `features/editor/export/page-export.ts`
+    (`ExportFormat`, `ExportOptions {format, dpi, jpgQuality}`, `ExportContent {collageId, settings, photos,
+    texts}`, `ExportError(reason: 'tooLarge' | 'browserLimit' | 'imageLoad')`, `exportPixelSize`,
+    `fitsSideLimit`, `EXPORT_MAX_SIDE_PX = 16384`, `JPG_QUALITY_LIMITS`, `exportMimeType`) and
+    `canvas/page-image-renderer.ts` (`renderPageImage(content, options): Promise<Blob>`).
+  - Ownership: canvas agent `features/editor/canvas/**` (renderer); UI agent the export dialog
+    (`features/editor/export/` except `page-export.ts`), toolbar button, download, store/page wiring.
+  - Renderer (done): `canvas/page-image-renderer.ts` — size check, then image loads (`loadImage` in
+    `image-cache.ts`; only photos overlapping the page, `rectsOverlap`) and font loads (`loadFonts` in
+    `font-loader.ts`, `document.fonts.load(face, text)` + `document.fonts.ready`), then an offscreen stage
+    (scale = px/mm per axis, layer canvas `setPixelRatio(1)` — Konva otherwise uses
+    `window.devicePixelRatio`; listening off), static `PhotoView`/`TextView` (optional `events` = static
+    view) in `elementsByZ` order (`scene.ts`, shared with the editor), `imageSmoothingQuality = 'high'`,
+    encode the layer canvas with `toBlob`; `stage.destroy()` in `finally`. `scenePhotos()` in `scene.ts`
+    is shared with `editor-canvas.ts`.
+  - Dialog (done): `export/export-dialog.{ts,html,scss}` (presentational, `runExport` callback from the
+    page), `export-error-message.ts`, `download.ts` (`exportFileName`, `downloadBlob`); store
+    `exportContent` (committed layout, no preview); toolbar "Export" (icon `download`) before "Add text".
+    `imageLoad` error shows "The export failed. A photo could not be loaded.".
 
 ### Step 11 — Prod image and publish
 - **Status:** open
@@ -973,6 +1000,17 @@ results) and the developer reviews before the next step starts.
     registry.alexi.ch/collageomat:latest`). Needs a prior `docker login registry.alexi.ch` by the developer.
 - **Notes:**
 
+## Backlog (requested by the developer, not scheduled yet)
+
+Added 2026-11-13 after the step 9 review. Not part of any step yet; the developer decides when and how
+(each item needs grilling before implementation).
+
+- **Frame resize mode:** a switch between "resize keeping the aspect" and "free resize of the frame without
+  aspect". Today (step 8): corner handles keep the aspect, edge handles change it (cover crop around the
+  crop centre).
+- **Move grid:** a toggle for a configurable, invisible grid; when on, moving images snaps to the grid.
+  Note: snapping was out of PoC scope ("Multi-select, snapping, keyboard nudging"), so this extends the scope.
+
 ## Open questions
 
 - **Risk — SSRF:** the Immich URL is user input, so the server makes requests to any URL a logged-in user
@@ -987,7 +1025,7 @@ results) and the developer reviews before the next step starts.
 
 ## Current state / Next action
 
-- Done: research and grilling; Steps 1–8 (reviewed and committed).
+- Done: research and grilling; Steps 1–9 (reviewed; 1–8 committed).
 - Nothing half-finished, no temporary changes to revert.
 - Sandbox notes for agents on the host: `pkill`/process listing is blocked → stop own servers with
   `lsof -ti tcp:<port> | xargs kill`, or ask the developer to run a kill command. Background `&` prints a
@@ -995,4 +1033,5 @@ results) and the developer reviews before the next step starts.
   container may be running and bound to `:8080`/`:4200`; use other ports (`COLLAGEOMAT_LISTEN`) and a scratch
   proxy config targeting `127.0.0.1:<port>` for host tests.
 - Step 8 done (reviewed and committed 2026-11-13, commit `c504234`).
-- Next: **Step 9 — Overlay texts** (open question "Text resize behaviour" must be answered first).
+- Step 9 done (reviewed 2026-11-13; not committed yet by the developer at the time of this note).
+- Next: **Step 10 — Export PNG/JPG**. The backlog items (section "Backlog") are not scheduled yet.

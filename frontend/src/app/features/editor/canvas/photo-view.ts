@@ -50,13 +50,14 @@ export class PhotoView {
   /** True while a drag or transform changes the group; `update` then keeps the gesture's geometry. */
   private inGesture = false;
 
+  /** @param events drag events; without them the view is static (not draggable, e.g. the export). */
   constructor(
     readonly id: number,
-    events: PhotoViewEvents,
+    events?: PhotoViewEvents,
   ) {
     this.group = new Konva.Group({
       name: PHOTO_NAME,
-      draggable: true,
+      draggable: events !== undefined,
       dragDistance: DRAG_THRESHOLD_PX,
     });
     this.image = new KonvaImage({
@@ -66,8 +67,10 @@ export class PhotoView {
     });
     this.border = new KonvaRect({ listening: false, perfectDrawEnabled: false });
     this.group.add(this.image, this.border);
-    this.group.on('dragstart', () => events.onDragStart(this));
-    this.group.on('dragend', () => events.onDragEnd(this));
+    if (events) {
+      this.group.on('dragstart', () => events.onDragStart(this));
+      this.group.on('dragend', () => events.onDragEnd(this));
+    }
   }
 
   /** Frame width and height in mm (as drawn, without a pending transformer scale). */

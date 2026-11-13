@@ -48,3 +48,24 @@ export class FontLoader {
     this.fonts?.removeEventListener('loadingdone', this.onLoadingDone);
   }
 }
+
+/** A font face (see `textFontFace`) and the characters drawn with it. */
+export interface FontUse {
+  face: string;
+  text: string;
+}
+
+/**
+ * Loads the faces and waits until the document has no pending font loads (`document.fonts.ready`),
+ * e.g. before a one-shot render. The characters are passed to `document.fonts.load` so all
+ * unicode-range subsets they need get loaded. A failed load is ignored (fallback font, as in
+ * `FontLoader`).
+ */
+export async function loadFonts(uses: readonly FontUse[]): Promise<void> {
+  if (typeof document === 'undefined' || !document.fonts) {
+    return;
+  }
+  const fonts = document.fonts;
+  await Promise.allSettled(uses.map((use) => fonts.load(use.face, use.text)));
+  await fonts.ready;
+}

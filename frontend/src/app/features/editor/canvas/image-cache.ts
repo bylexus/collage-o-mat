@@ -43,3 +43,26 @@ export class ImageCache {
     }
   }
 }
+
+/**
+ * Loads an image and resolves with the element once it has pixels; rejects if the image cannot be
+ * loaded or decoded (one-shot load, e.g. for the export). Drop the element to release it.
+ */
+export function loadImage(url: string): Promise<HTMLImageElement> {
+  return new Promise((resolve, reject) => {
+    const image = new Image();
+    image.onload = () => {
+      image.onload = image.onerror = null;
+      if (isLoaded(image)) {
+        resolve(image);
+      } else {
+        reject(new Error(`image ${url} has no pixels`));
+      }
+    };
+    image.onerror = () => {
+      image.onload = image.onerror = null;
+      reject(new Error(`image ${url} could not be loaded`));
+    };
+    image.src = url;
+  });
+}

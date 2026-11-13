@@ -71,6 +71,15 @@
     >
       <mat-icon>delete</mat-icon>
     </button>
+    <button
+      matButton="tonal"
+      type="button"
+      [disabled]="store.exportContent() === null"
+      (click)="openExport()"
+    >
+      <mat-icon>download</mat-icon>
+      <span i18n="@@editor.export.button">Export</span>
+    </button>
     <button matButton="tonal" type="button" (click)="addText()">
       <mat-icon>text_fields</mat-icon>
       <span i18n="@@editor.text.addButton">Add text</span>
