@@ -4,6 +4,13 @@ A Photo collage web app inspired by CollageIt! Pro
 
 This app is a work-in-progress. Updates coming soon.
 
+## Features
+
+* Import Photos from [an Immich Server](https://immich.app/), local files
+* Arrange photos automatically in several modes (grid, center mode, free placement)
+* Export final image to png, jpg
+* ... TODO ...
+
 ## Development
 
 Requirements: Docker (with compose), `make`. All tools (Go 1.27, Node 26) run in the dev container.

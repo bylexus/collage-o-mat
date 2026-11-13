@@ -2,7 +2,7 @@
 
 **Ticket/Source:** `doc/agent-plans/initial_idea.md`
 **Branch:** none
-**Status:** in progress
+**Status:** done
 
 ## Goal
 
@@ -1007,7 +1007,7 @@ results) and the developer reviews before the next step starts.
     `imageLoad` error shows "The export failed. A photo could not be loaded.".
 
 ### Step 11 — Prod image and publish
-- **Status:** in progress
+- **Status:** done (reviewed 2026-11-13)
 - **What:** `docker/Dockerfile` multi-stage: `node:26` stage (`npm ci`, `ng build`) → `golang:1.27` stage
   (copy SPA build to `internal/web/dist`, `CGO_ENABLED=0 go build` with `TARGETOS/TARGETARCH`) → `alpine`
   runtime (non-root user, `COLLAGEOMAT_DATA_DIR=/data`, `VOLUME /data`, `EXPOSE 8080`,
@@ -1051,7 +1051,7 @@ results) and the developer reviews before the next step starts.
     first; macOS/OrbStack needs no chown.
 
 ### Step 12 — Login lock
-- **Status:** in progress
+- **Status:** done (reviewed 2026-11-13)
 - **What:** brute-force protection of `POST /api/auth/login` per decision log "Login lock (step 12)".
 - **Acceptance criteria:**
   - 3 wrong passwords for a user from one client → 4th attempt (also with the correct password) gives 429
@@ -1073,12 +1073,18 @@ results) and the developer reviews before the next step starts.
 Added 2026-11-13 after the step 9 review. Not part of any step yet; the developer decides when and how
 (each item needs grilling before implementation).
 
+Each item has its own plan file (status "planning"); further work happens there, one feature per session:
+`frame-resize-mode.md`, `move-grid.md`, `page-background.md`, `local-upload-connector.md`,
+`swap-photos.md` (all in `doc/agent-plans/`).
+
 - **Frame resize mode:** a switch between "resize keeping the aspect" and "free resize of the frame without
   aspect". Today (step 8): corner handles keep the aspect, edge handles change it (cover crop around the
   crop centre).
 - **Move grid:** a toggle for a configurable, invisible grid; when on, moving images snaps to the grid.
   Note: snapping was out of PoC scope ("Multi-select, snapping, keyboard nudging"), so this extends the scope.
 
+- **Swap two photos** (added 2026-11-13): swap the places of two arbitrary photos like "Set as centre" does
+  (reuse `swap-frames.ts`); flow: select the first photo, click "Swap", click the second photo.
 - **Local file upload connector** (added 2026-11-13; was out of PoC scope): a second photo source besides
   Immich — the user uploads image files from the local computer into a collage. Fits the existing
   connector design (`internal/connector` `Kind` strategy, `photo.Sources`/`Source` interfaces, frontend: one
@@ -1106,13 +1112,15 @@ Added 2026-11-13 after the step 9 review. Not part of any step yet; the develope
 
 ## Current state / Next action
 
-- Done: research and grilling; Steps 1–10 (reviewed and committed).
+- Done: research and grilling; Steps 1–12 (all reviewed by the developer; PoC done 2026-11-13). All code
+  committed; only this plan update may be uncommitted (check `git status`).
 - Nothing half-finished, no temporary changes to revert.
+- Next: no open step. Further work comes from the section "Backlog" (each item needs grilling and a new
+  plan or new steps first) and the remaining "Open questions" (accepted risks).
+- Not part of the plan, noted for later: no backup procedure for the data dir (SQLite + WAL + `photos/`);
+  HTTPS/TLS reverse proxy setup not documented beyond `COLLAGEOMAT_COOKIE_SECURE`.
 - Sandbox notes for agents on the host: `pkill`/process listing is blocked → stop own servers with
   `lsof -ti tcp:<port> | xargs kill`, or ask the developer to run a kill command. Background `&` prints a
   harmless `nice(5) failed` warning; `nohup` cannot detach (use a background task). The developer's dev
   container may be running and bound to `:8080`/`:4200`; use other ports (`COLLAGEOMAT_LISTEN`) and a scratch
   proxy config targeting `127.0.0.1:<port>` for host tests.
-- Step 8 done (reviewed and committed 2026-11-13, commit `c504234`).
-- Steps 9 and 10 done (reviewed and committed 2026-11-13).
-- Next: **Step 11 — Prod image and publish**. The backlog items (section "Backlog") are not scheduled yet.
