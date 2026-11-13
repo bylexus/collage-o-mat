@@ -3,6 +3,7 @@ package auth
 import (
 	"crypto/rand"
 	"errors"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"strings"
@@ -22,6 +23,9 @@ type Handler struct {
 	// dummyHash is compared for unknown usernames so that the response time
 	// is similar to a wrong password.
 	dummyHash string
+	// limiter blocks a (username, client IP) key after too many failed
+	// logins.
+	limiter *LoginLimiter
 }
 
 // NewHandler returns the auth handler.
@@ -30,7 +34,7 @@ func NewHandler(db *gorm.DB, cookie CookieOptions) (*Handler, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &Handler{db: db, cookie: cookie, dummyHash: dummy}, nil
+	return &Handler{db: db, cookie: cookie, dummyHash: dummy, limiter: NewLoginLimiter(time.Now)}, nil
 }
 
 // RegisterRoutes implements httpapi.Module.
@@ -89,10 +93,17 @@ func (h *Handler) login(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	key := LoginKey(req.Username, ClientIP(r))
+	if remaining, blocked := h.limiter.Blocked(key); blocked {
+		httpapi.WriteError(w, http.StatusTooManyRequests, blockedLoginMessage(remaining))
+		return
+	}
+
 	var user User
 	err := h.db.Where("username = ?", strings.TrimSpace(req.Username)).First(&user).Error
 	if errors.Is(err, gorm.ErrRecordNotFound) {
 		checkPassword(h.dummyHash, req.Password)
+		h.limiter.Fail(key)
 		httpapi.WriteError(w, http.StatusUnauthorized, msgInvalidLogin)
 		return
 	}
@@ -102,18 +113,19 @@ func (h *Handler) login(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if !checkPassword(user.PasswordHash, req.Password) {
+		h.limiter.Fail(key)
 		httpapi.WriteError(w, http.StatusUnauthorized, msgInvalidLogin)
 		return
 	}
 
-	// Housekeeping: drop the session of an old cookie and expired sessions
-	// of this user. Errors here do not block the login.
+	// Housekeeping: drop the session of an old cookie and all expired
+	// sessions (of all users). Errors here do not block the login.
 	if c, err := r.Cookie(h.cookie.Name); err == nil {
 		if err := h.deleteSessionByToken(c.Value); err != nil {
 			slog.Warn("login: delete old session", "err", err)
 		}
 	}
-	if err := h.db.Where("user_id = ? AND expires_at <= ?", user.ID, time.Now().UTC()).Delete(&Session{}).Error; err != nil {
+	if err := h.db.Where("expires_at <= ?", time.Now().UTC()).Delete(&Session{}).Error; err != nil {
 		slog.Warn("login: delete expired sessions", "err", err)
 	}
 
@@ -122,7 +134,15 @@ func (h *Handler) login(w http.ResponseWriter, r *http.Request) {
 		httpapi.WriteError(w, http.StatusInternalServerError, "internal server error")
 		return
 	}
+	h.limiter.Reset(key)
 	httpapi.WriteJSON(w, http.StatusOK, toUserResponse(&user))
+}
+
+// blockedLoginMessage is the 429 text; the remaining time is rounded up to
+// whole minutes, at least 1.
+func blockedLoginMessage(remaining time.Duration) string {
+	minutes := max(int((remaining+time.Minute-1)/time.Minute), 1)
+	return fmt.Sprintf("Too many failed logins. Try again in %d minutes.", minutes)
 }
 
 func (h *Handler) logout(w http.ResponseWriter, r *http.Request) {

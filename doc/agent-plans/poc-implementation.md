@@ -32,7 +32,7 @@ Go backend and an Angular frontend in one Docker image.
 
 **Out of scope:**
 - Arrangement modes mosaic, masonry, heap
-- "local" file connector / file upload
+- "local" file connector / file upload (moved to the Backlog on 2026-11-13)
 - User admin UI (users are created with the CLI)
 - PostgreSQL (code stays GORM-only so it can be added later)
 - High-resolution export (export uses the stored ~1440px previews)
@@ -578,6 +578,24 @@ show a confirm dialog first. Arrangement result is one undo step.
 - **Session cookie name (2026-11-13):** configurable with `COLLAGEOMAT_COOKIE_NAME` (default
   `collageomat_session`, checked with `http.Cookie.Valid`). `config.DefaultCookieName`;
   `auth.NewHandler(db, auth.CookieOptions{Name, Secure})` replaces the constant `auth.CookieName`.
+- **Expired session cleanup (2026-11-13):** a successful login deletes ALL expired sessions (all users) with
+  one query (before: only the expired sessions of the logged-in user). `RequireAuth` still deletes an
+  expired session when its cookie is used.
+- **Login lock (2026-11-13, step 12):**
+  - Key = (username trimmed + lower-case, client IP). Client IP = right-most `X-Forwarded-For` address if
+    the header exists (the address the reverse proxy appended), else the TCP peer address
+    (`r.RemoteAddr`). Rejected: username only (anyone could lock out a known user), IP only, trusted-proxies
+    env var, first XFF entry (client-controlled → lock bypassable with fake headers, also behind
+    nginx/Traefik). Known limit: if the app is reachable without a proxy, a client can fake the header.
+  - 3 failed logins for a key → blocked for 15 min. Failures older than 15 min do not count; a successful
+    login resets the key.
+  - While blocked: every login for the key is refused (also with the correct password), HTTP 429
+    `Too many failed logins. Try again in N minutes.`; the login page shows the server message.
+  - Unknown usernames are counted the same way (no hint whether a user exists).
+  - Counters in memory (lost on restart, single instance only), no DB table; expired entries removed
+    regularly. No admin unlock (wait 15 min or restart).
+- **SSRF via Immich URL (2026-11-13):** stays accepted: users are created only by the admin (CLI), so only
+  trusted users can make the server call internal addresses. Revisit if untrusted users get accounts.
 - **Architecture (step 3+):** SOLID/DRY/clean code required by the developer; see section "Architecture
   conventions".
 - **Backend module wiring (step 2):** `httpapi` must not import domain packages (import cycle, because domain
@@ -1032,6 +1050,24 @@ results) and the developer reviews before the next step starts.
     Named volume: `/data` is already owned by 10001. Bind mount on a Linux host: `chown 10001:10001 <dir>`
     first; macOS/OrbStack needs no chown.
 
+### Step 12 — Login lock
+- **Status:** in progress
+- **What:** brute-force protection of `POST /api/auth/login` per decision log "Login lock (step 12)".
+- **Acceptance criteria:**
+  - 3 wrong passwords for a user from one client → 4th attempt (also with the correct password) gives 429
+    with the message; the login page shows it. After 15 min login works again.
+  - Another client IP (other `X-Forwarded-For`) can still log in with the correct password.
+  - A successful login resets the failure count.
+- **Notes:**
+  - `backend/internal/auth/loginlimit.go`: `LoginLimiter` (in memory, `sync.Mutex`, injectable clock,
+    `Blocked`/`Fail`/`Reset`, prune of expired entries at most once per minute during calls, no goroutine),
+    `LoginKey(username, ip)`, `ClientIP(r)` (right-most non-empty XFF address of the last header line, else
+    host of `r.RemoteAddr`). `NewHandler` creates the limiter (`main.go` unchanged). `login`: decode body →
+    429 if blocked → failure recorded on both 401 paths → reset after a successful login.
+  - Frontend unchanged: the login page shows the server message for non-401 errors.
+  - Tested with curl on a real server (all cases of the acceptance criteria, incl. multi-value and
+    multi-line XFF, case/space of the username, unknown users, reset after success).
+
 ## Backlog (requested by the developer, not scheduled yet)
 
 Added 2026-11-13 after the step 9 review. Not part of any step yet; the developer decides when and how
@@ -1043,6 +1079,12 @@ Added 2026-11-13 after the step 9 review. Not part of any step yet; the develope
 - **Move grid:** a toggle for a configurable, invisible grid; when on, moving images snaps to the grid.
   Note: snapping was out of PoC scope ("Multi-select, snapping, keyboard nudging"), so this extends the scope.
 
+- **Local file upload connector** (added 2026-11-13; was out of PoC scope): a second photo source besides
+  Immich — the user uploads image files from the local computer into a collage. Fits the existing
+  connector design (`internal/connector` `Kind` strategy, `photo.Sources`/`Source` interfaces, frontend: one
+  form component + one `@case` per connector type). Open for grilling: is it a configured connector or a
+  plain "Upload" button, accepted formats (JPEG/PNG/WebP/HEIC?), size limits and downscaling (Immich
+  imports store ~1440 px previews), upload UI (file picker, drag & drop, progress), duplicate detection.
 - **Page background types** (added 2026-11-13): options for the page background:
   - solid colour (as today, `settings.backgroundColor`);
   - gradient with 2 colours;
@@ -1055,7 +1097,6 @@ Added 2026-11-13 after the step 9 review. Not part of any step yet; the develope
 
 - **Risk — SSRF:** the Immich URL is user input, so the server makes requests to any URL a logged-in user
   enters. Accepted for a private PoC; revisit before multi-tenant use.
-- **Risk — no login rate limiting** in the PoC.
 - **Risk — Immich preview format:** if the Immich server is set to WebP previews, Konva shows them fine in
   modern browsers; Go needs `golang.org/x/image/webp` only to read the pixel size.
 - **Host proxy note:** `frontend/proxy.conf.json` targets `http://localhost:8080`. On the host, `localhost`
