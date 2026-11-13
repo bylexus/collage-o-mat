@@ -2,7 +2,7 @@
 
 **Ticket/Source:** Backlog of `doc/agent-plans/done/poc-implementation.md` (requested by the developer 2026-11-13)
 **Branch:** none
-**Status:** in progress
+**Status:** done
 
 ## Goal
 
@@ -136,6 +136,15 @@ modules, `NumberField` commit-on-change, Konva hooks). No new libraries.
   complex. Rejected: edge handles only; bounding box always.
 - **Snap strength:** always snap when the grid is on (no tolerance). Rejected: magnetic snapping.
 - **Modifier:** holding Alt/Option during a move or resize disables snapping for that moment.
+- **Grid button state (follow-up after step 4, 2026-11-13):** icon `grid_on` when on, `grid_off` when off
+  (replaces `grid_4x4`); when on, the icon is primary-coloured (`--mat-icon-button-icon-color:
+  var(--mat-sys-primary)`) on the tonal `--mat-sys-secondary-container` background (`.toolbar-active` in
+  `editor.page.scss`). Note: the `.toolbar-active` style was missing from `editor.page.scss` (class used in
+  the html only) and was added in this follow-up.
+- **Alt during resize (step 4):** Konva 10.9.1 also uses Alt for centred scaling during resize. Kept both:
+  Alt = no snap + centred scaling. — *Rationale:* no extra code; snapping assumes a fixed opposite edge, so
+  it would not fit centred scaling anyway. Rejected: suppressing Konva's Alt behaviour (no flag; fragile
+  event wrapper).
 - **Visibility:** grid never visible.
 - **Popover:** small popover anchored at the toolbar button (CDK connected overlay), closes on outside click
   or Esc, changes apply immediately. Rejected: modal MatDialog with OK/Cancel or live apply.
@@ -155,7 +164,7 @@ pass without errors.
 ## Steps
 
 ### Step 1 — Toolbar icon-only
-- **Status:** open
+- **Status:** done (reviewed 2026-11-13)
 - **What:** In `editor.page.html`, convert Set as centre (`matButton="outlined"`), Export (`tonal`), Add text
   (`tonal`), Import from Immich (`filled`) to `matIconButton` with `[matTooltip]` and `aria-label` (keep the
   existing i18n texts/ids as tooltip/label; Set as centre keeps its explaining `setCentreHint()` tooltip and
@@ -163,10 +172,17 @@ pass without errors.
   `--mat-sys-on-primary`, disabled state respected). No functional change.
 - **Acceptance criteria:** all toolbar buttons show icons only; hover shows the tooltip; Import stands out
   as the main action; all buttons work as before; build passes.
-- **Notes:**
+- **Notes:** Status done (reviewed 2026-11-13). `editor.page.html`: Set as centre, Export, Add text, Import
+  are `matIconButton` with `[attr.aria-label]` + `[matTooltip]`. `editor.page.ts`: `$localize` constants
+  `setCentreLabel` (`@@editor.setCentre`), `exportLabel` (`@@editor.export.button`), `addTextLabel`
+  (`@@editor.text.addButton`), `importLabel` (`@@editor.importButton`) — same ids/texts as before. Set as
+  centre keeps the explaining `setCentreHint()` tooltip; its aria-label is the constant "Set as centre".
+  `editor.page.scss`: class `.toolbar-primary` (Import): `background-color: var(--mat-sys-primary)` (Material
+  22.2.6 has no icon-button container token), icon/state-layer/ripple via `--mat-icon-button-*` tokens set to
+  on-primary, disabled = on-surface 12 %. No i18n translation files exist (`sourceLocale: en` only).
 
 ### Step 2 — Snap grid settings + toolbar popover
-- **Status:** open
+- **Status:** done (reviewed 2026-11-13)
 - **What:** `snapGrid` in `CollageSettings`, `defaultCollageSettings`, `normalizeSettings`; limits in
   `SETTINGS_LIMITS`; new popover component (e.g. `features/editor/snap-grid/snap-grid-popover.ts`) with
   slide toggle + `app-number-field`; toolbar button `grid_4x4` left of Set as centre, highlighted when on,
@@ -175,10 +191,23 @@ pass without errors.
 - **Acceptance criteria:** button opens the popover below it; Esc / outside click closes it; toggle and size
   change are saved (reload keeps them), each is one undo step; invalid size shows the range error and is not
   saved; button is highlighted when the grid is on; old collages open with grid off, 5 mm.
-- **Notes:**
+- **Notes:** Done. `core/models/collage.ts`: `SnapGridSettings`, `CollageSettings.snapGrid`, default
+  `{ enabled: false, sizeMm: 5 }`, `normalizeSnapGrid` + helper `booleanOr`. `settings-limits.ts`:
+  `snapGridSizeMm { min: 1, max: 100, step: 0.5 }`. New `features/editor/snap-grid/snap-grid-popover.ts`
+  (inline template/styles; input `snapGrid`, output `snapGridChange`; `mat-slide-toggle` emits at once,
+  `app-number-field` emits on `committed`, invalid → touched, no emit; `syncFromInput` resets the form;
+  host `role="dialog"`; i18n ids `@@editor.snapGrid.button|heading|enabled|sizeMm`). Editor page: button
+  `grid_4x4` after `toolbar-spacer` with `cdkOverlayOrigin`, class `.toolbar-active` (secondary-container)
+  when enabled, `aria-haspopup="dialog"`, `aria-expanded`; `<ng-template cdkConnectedOverlay>` with
+  transparent backdrop, `(backdropClick)`/`(detach)` → `closeSnapGrid()` (CDK detaches on Esc itself),
+  positions below-end, below-start, above-end; `updateSnapGrid()` → `store.updateSettings({ ...settings,
+  snapGrid })`. Decisions confirmed by the developer: `cdkTrapFocus` + `cdkTrapFocusAutoCapture` on the
+  popover (focus in on open, back to the button on close); toggle with an invalid typed size saves the last
+  committed size; a click on the button while open closes the popover (backdrop); Ctrl/Cmd+Z with focus on
+  the toggle triggers editor undo (accepted, unchanged).
 
 ### Step 3 — Snapping while moving photos and texts
-- **Status:** open
+- **Status:** done (reviewed 2026-11-13)
 - **What:** pure snap module (grid lines from size, margin, page size; nearest-edge delta per axis); renderer
   receives the snap grid config from the settings; photo and text drag apply the delta during the drag
   (`dragmove` or `dragBoundFunc`), skipped with Alt or grid off. Committed position = snapped position.
@@ -186,25 +215,57 @@ pass without errors.
   `margin + n·size` or on `pageWidth − margin`; same vertically; rotated photo: bounding box edges snap;
   texts the same; Alt held: free move; grid off: free move; changing the arrangement mode changes the margin
   used.
-- **Notes:**
+- **Notes:** Done. New `features/editor/geometry/snap-grid.ts` (pure): `snapGridOf(settings)` → `SnapGrid |
+  null` (null when off or size not > 0/finite; the only place of the margin rule: `mode === 'grid'` →
+  `grid.marginMm`, else `center.marginMm`, invalid margin = 0); `snapToAxis(value, axis)` (nearest of
+  `margin + n·size` and `pageSide − margin`), `snapEdgesDelta(start, end, axis)`, `snapRectDelta(rect,
+  grid)` — the first two are meant for step 4. `canvas/scene.ts`: required `Scene.snapGrid: SnapGrid |
+  null`; `editor-canvas.ts` sets `snapGridOf(settings)` (displayed settings incl. preview);
+  `page-image-renderer.ts` sets `null`. `photo-view.ts` / `text-view.ts`: new `onDragMove(view, evt)` in
+  the events interfaces (fired on `dragmove`), no snap logic in the views. `collage-renderer.ts`:
+  `snapMove(view, event)` → `snapRectDelta(frameBounds(view.frameBox()), grid)` → `view.group.move(...)`,
+  skipped when `isAltPressed(event)` or grid null. Choice `dragmove` over `dragBoundFunc`: Konva 10.9.1
+  `Node._setDragPosition` recomputes the position from `pointer − offset` (offset captured once at drag
+  start) → no drift; `DragAndDrop._drag` fires `dragmove` synchronously before the rAF batch draw → no
+  flicker; `dragend` commits the last snapped position; the Transformer's dragmove handler runs after the
+  node's → handles follow; `dragBoundFunc` would need px↔mm conversion. Accepted details: ties → left/top
+  edge, and a grid line beats the far margin line; pressing Alt without pointer movement takes effect on the
+  next move.
 
 ### Step 4 — Snapping while resizing photos
-- **Status:** open
+- **Status:** done (reviewed 2026-11-13)
 - **What:** in the photo transformer, extend `boundBoxFunc` (keep `limitSize`): convert the box to mm, edge
   handle → snap the moved edge; corner handle → snap the axis with the nearer line, derive the other from
   the aspect; skip for rotation not a multiple of 90°, with Alt, or grid off. Text transformer unchanged.
 - **Acceptance criteria:** grid on, unrotated photo: edge handle moves the edge from grid line to grid line;
   corner handle: one edge lands on a line, aspect kept; photo rotated 90°: same; photo rotated 15°: free
   resize; Alt: free resize; minimum frame size still enforced.
-- **Notes:**
+- **Notes:** Done. `geometry/snap-grid.ts`: `snapResizeRect(rect, moving, keepAspect, grid)` (axis-aligned
+  box in mm + moving edge per axis; edge handle → moved edge to nearest line; corner → nearer axis snaps,
+  other follows the aspect, tie → x; opposite corner fixed; returns the box unchanged if a snapped side
+  would be <= 0). `canvas/selection-transformer.ts`: protected hook `adjustBox(newBox)` (identity by
+  default); `boundBoxFunc` = `limitSize(oldBox, adjustBox(newBox))` — text transformer does not override it.
+  `canvas/photo-transformer.ts`: `setSnapGrid(grid)` + `adjustBox` override: px → mm via the layer absolute
+  transform, swaps width/height for 90°/270°, maps the anchor name through the rotation to page edges, snaps,
+  converts back. Only for the 8 resize anchors (never `rotater`), rotation within 0.01° of a multiple of
+  90°, grid set, Alt not held. Alt is read in `anchorDragBoundFunc(oldPos, newPos, e)` (records `e.altKey`,
+  returns the position unchanged) because `boundBoxFunc` gets no event. `collage-renderer.ts`: `render()`
+  calls `transformer.setSnapGrid(scene.snapGrid)`. Hook choice (Konva 10.9.1 `Transformer.js`):
+  `_moveTransform` applies the keepRatio correction (l. 904–1011) before `_fitNodesInto` (l. 1036);
+  `boundBoxFunc` is called at l. 1172–1173 and its box is applied as-is (l. 1196–1213) → exact snap;
+  `anchorDragBoundFunc` runs before the aspect correction (l. 848) → not exact, rejected. Minimum size:
+  snapping first, then `limitSize`; a snap below 5 mm keeps the previous box.
+  **Alt conflict (decided by the developer):** Konva uses Alt for centred scaling during resize
+  (`centeredScaling() || e.altKey`, l. 899/1014). Decision: keep both — Alt = no snap + centred scaling.
+  Rejected: suppressing Konva's Alt centred scaling (no flag; would need a fragile event wrapper).
 
 ## Open questions
 
-- Step 3: `dragmove` (shift group after Konva moved it) vs `dragBoundFunc` (absolute px) — implementation
-  detail, choose whichever is simpler and stable; record in Notes.
-- Step 4: verify how Konva 10.9.1 applies `boundBoxFunc` with `keepRatio` corner handles (risk: Konva may
-  re-project the box). Research first if needed.
+- None. Note for `doc/agent-plans/frame-resize-mode.md`: resize snapping lives in
+  `PhotoTransformer.adjustBox` (`boundBoxFunc`) and assumes corner handles keep the aspect and edge handles
+  move one edge; a free-resize mode must keep this working.
 
 ## Current state / Next action
 
-- Plan approved 2026-11-13. Nothing implemented. Next: Step 1 (toolbar icon-only).
+- All steps 1–4 done (reviewed 2026-11-13). Feature complete. Nothing half-finished, no temporary changes.
+  Not committed yet.

@@ -21,6 +21,7 @@ import type { CollageText, TextProps } from '../../../core/models/text';
 import type { EditorSelection } from '../selection';
 import { CollageRenderer, CropModeState, Scene } from './collage-renderer';
 import { scenePhotos } from './scene';
+import { snapGridOf } from '../geometry/snap-grid';
 import { CropModeControls } from './crop-mode-controls';
 
 /** A committed change of one photo made on the canvas. */
@@ -189,6 +190,7 @@ export class EditorCanvas {
       photos: scenePhotos(this.photos(), collageId),
       texts: this.texts(),
       selection: this.selection(),
+      snapGrid: snapGridOf(settings),
     };
   });
 

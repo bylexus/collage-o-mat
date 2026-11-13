@@ -12,4 +12,6 @@ export const SETTINGS_LIMITS = {
   gapMm: { min: 0, max: 50, step: 0.5 },
   marginMm: { min: 0, max: 100, step: 1 },
   sizePercent: { min: 10, max: 100, step: 5 },
+  /** Cell size of the snap grid (toolbar popover). */
+  snapGridSizeMm: { min: 1, max: 100, step: 0.5 },
 } as const satisfies Record<string, NumberLimits>;

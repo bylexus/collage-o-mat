@@ -22,6 +22,11 @@ export function photoGroupOf(node: Konva.Node): Konva.Node | null {
 /** Drag events of a photo view to its owner. */
 export interface PhotoViewEvents {
   onDragStart: (view: PhotoView) => void;
+  /**
+   * After each drag step (Konva has moved the group, before the layer is drawn): the owner may
+   * adjust the position. `event` is the native pointer event of the step.
+   */
+  onDragMove: (view: PhotoView, event: Event | undefined) => void;
   onDragEnd: (view: PhotoView) => void;
 }
 
@@ -69,6 +74,7 @@ export class PhotoView {
     this.group.add(this.image, this.border);
     if (events) {
       this.group.on('dragstart', () => events.onDragStart(this));
+      this.group.on('dragmove', (event) => events.onDragMove(this, event.evt));
       this.group.on('dragend', () => events.onDragEnd(this));
     }
   }

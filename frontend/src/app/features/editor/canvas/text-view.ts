@@ -37,6 +37,11 @@ export function textFontFace(props: Pick<TextProps, 'bold' | 'italic' | 'fontFam
 /** Drag events of a text view to its owner. */
 export interface TextViewEvents {
   onDragStart: (view: TextView) => void;
+  /**
+   * After each drag step (Konva has moved the group, before the layer is drawn): the owner may
+   * adjust the position. `event` is the native pointer event of the step.
+   */
+  onDragMove: (view: TextView, event: Event | undefined) => void;
   onDragEnd: (view: TextView) => void;
 }
 
@@ -72,6 +77,7 @@ export class TextView {
     this.group.add(this.text);
     if (events) {
       this.group.on('dragstart', () => events.onDragStart(this));
+      this.group.on('dragmove', (event) => events.onDragMove(this, event.evt));
       this.group.on('dragend', () => events.onDragEnd(this));
     }
   }

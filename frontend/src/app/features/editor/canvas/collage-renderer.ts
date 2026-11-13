@@ -4,6 +4,7 @@ import Konva from 'konva/lib/Core';
 import { Rect as KonvaRect } from 'konva/lib/shapes/Rect';
 import type { PhotoProps } from '../../../core/models/photo';
 import type { TextProps } from '../../../core/models/text';
+import { snapRectDelta } from '../geometry/snap-grid';
 import { applyFrameBox, FrameBox } from '../geometry/transform';
 import { EditorSelection, sameSelection, selectedPhotoIdOf } from '../selection';
 import { CropMode, CropModeState } from './crop-mode';
@@ -53,9 +54,11 @@ export interface RendererCallbacks {
  * This class is the only entry point for the owning component; the interactions are delegated:
  *
  * - `StageNavigator`: pan and zoom of the view.
- * - `PhotoTransformer`: handles on the selected photo (rotate, resize).
+ * - `PhotoTransformer`: handles on the selected photo (rotate, resize; a resize snaps to the
+ *   scene's snap grid).
  * - `TextTransformer`: handles on the selected text (rotate, box width).
- * - `PhotoView` / `TextView` drag events: move (an unselected element is selected first).
+ * - `PhotoView` / `TextView` drag events: move (an unselected element is selected first); with the
+ *   scene's snap grid the bounding box snaps to the grid at each step (Alt/Option held: free move).
  * - `CropMode`: double-click a photo to pan/zoom the image inside its frame.
  * - Double-click a text: `onTextEditRequest`.
  *
@@ -127,6 +130,7 @@ export class CollageRenderer {
       height: scene.page.heightMm,
       fill: scene.backgroundColor,
     });
+    this.transformer.setSnapGrid(scene.snapGrid);
     this.syncPhotos(scene);
     this.syncTexts(scene);
     this.orderByZ();
@@ -315,6 +319,7 @@ export class CollageRenderer {
   private createPhoto(photo: ScenePhoto): PhotoView {
     const view = new PhotoView(photo.id, {
       onDragStart: (dragged) => this.onPhotoDragStart(dragged),
+      onDragMove: (dragged, event) => this.snapMove(dragged, event),
       onDragEnd: (dragged) => this.onPhotoDragEnd(dragged),
     });
     view.setImage(this.images.get(photo.id, photo.url));
@@ -333,6 +338,7 @@ export class CollageRenderer {
   private createText(text: SceneText): TextView {
     const view = new TextView(text.id, {
       onDragStart: (dragged) => this.onTextDragStart(dragged),
+      onDragMove: (dragged, event) => this.snapMove(dragged, event),
       onDragEnd: (dragged) => this.onTextDragEnd(dragged),
     });
     this.layer.add(view.group);
@@ -416,6 +422,23 @@ export class CollageRenderer {
     this.select({ kind: 'photo', id: view.id });
   }
 
+  /**
+   * One step of a photo or text move: shifts the group so that the nearer bounding-box edge per
+   * axis lies on the snap grid. Free move when the grid is off or Alt/Option is held. Konva sets
+   * the drag position again from the pointer at the next step, so the shift does not add up; the
+   * position of the last step is the one `dragend` commits.
+   */
+  private snapMove(view: PhotoView | TextView, event: Event | undefined): void {
+    const grid = this.scene?.snapGrid ?? null;
+    if (!grid || isAltPressed(event)) {
+      return;
+    }
+    const { dx, dy } = snapRectDelta(frameBounds(view.frameBox()), grid);
+    if (dx !== 0 || dy !== 0) {
+      view.group.move({ x: dx, y: dy });
+    }
+  }
+
   private onPhotoDragEnd(view: PhotoView): void {
     view.endGesture();
     this.commitFrame(view, view.frameBox(), true);
@@ -487,4 +510,9 @@ export class CollageRenderer {
       this.callbacks.onTextChange(view.id, props);
     }
   }
+}
+
+/** True if the native event of a drag step has the Alt (Option) key held. */
+function isAltPressed(event: Event | undefined): boolean {
+  return event !== undefined && 'altKey' in event && event.altKey === true;
 }

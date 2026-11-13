@@ -56,6 +56,14 @@
   }
 }
 
+/* Toggle-like toolbar button in its "on" state (snap grid): tonal background, primary icon. */
+.toolbar-active {
+  --mat-icon-button-icon-color: var(--mat-sys-primary);
+  --mat-icon-button-state-layer-color: var(--mat-sys-primary);
+
+  background-color: var(--mat-sys-secondary-container);
+}
+
 .editor-body {
   display: flex;
   flex: 1;

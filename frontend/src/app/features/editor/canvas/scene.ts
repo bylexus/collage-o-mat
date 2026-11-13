@@ -5,6 +5,7 @@ import type { NormalizedRect, Photo, PhotoProps } from '../../../core/models/pho
 import type { TextProps } from '../../../core/models/text';
 import type { EditorSelection } from '../selection';
 import { finiteOr } from '../geometry/numbers';
+import type { SnapGrid } from '../geometry/snap-grid';
 import { normalizeRotationDeg } from '../geometry/transform';
 import type { ImageSize } from '../geometry/transform';
 
@@ -34,6 +35,8 @@ export interface Scene {
   /** Overlay texts; photos and texts are drawn together in `props.z` order. */
   texts: readonly SceneText[];
   selection: EditorSelection;
+  /** Snap grid for moving elements by hand; `null` = free move (grid off, or a static scene). */
+  snapGrid: SnapGrid | null;
 }
 
 /** The placed photos of a collage as scene photos (not placed photos are skipped). */

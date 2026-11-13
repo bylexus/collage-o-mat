@@ -61,6 +61,16 @@ export interface CenterSettings {
   bottomCount: number | null;
 }
 
+/**
+ * Invisible snap grid for moving and resizing elements by hand (not related to the "grid"
+ * arrangement mode). Lines start at the margin of the active arrangement mode.
+ */
+export interface SnapGridSettings {
+  enabled: boolean;
+  /** Side of a square grid cell. */
+  sizeMm: number;
+}
+
 /** The `settings` JSON document of a collage. */
 export interface CollageSettings {
   page: PageSettings;
@@ -69,6 +79,7 @@ export interface CollageSettings {
   mode: ArrangementMode;
   grid: GridSettings;
   center: CenterSettings;
+  snapGrid: SnapGridSettings;
 }
 
 /** List entry of `GET /api/collages`; also returned by create and rename. */
@@ -190,7 +201,10 @@ export function customPageSettings(size: PageSize, dpi = DEFAULT_DPI): PageSetti
   };
 }
 
-/** Settings of a new collage: A4 landscape, 300 DPI, white background, no border, grid mode. */
+/**
+ * Settings of a new collage: A4 landscape, 300 DPI, white background, no border, grid mode,
+ * snap grid off (5 mm).
+ */
 export function defaultCollageSettings(): CollageSettings {
   return {
     page: fixedPageSettings('A4', 'landscape'),
@@ -207,6 +221,7 @@ export function defaultCollageSettings(): CollageSettings {
       middleCount: null,
       bottomCount: null,
     },
+    snapGrid: { enabled: false, sizeMm: 5 },
   };
 }
 
@@ -214,8 +229,9 @@ export function defaultCollageSettings(): CollageSettings {
  * Settings from the API as a complete `CollageSettings` document: every known field with the right type
  * is kept, a missing or wrongly typed field gets its value from `defaultCollageSettings()` (e.g. the lane
  * counts in collages saved before they existed), unknown fields are dropped. Only types are checked (a
- * finite number, a string, one of the allowed ids, `null` where allowed); ranges are the job of the users
- * of the settings. Fields are merged one by one, so an invalid page size keeps the stored preset.
+ * finite number, a boolean, a string, one of the allowed ids, `null` where allowed); ranges are the job
+ * of the users of the settings. Fields are merged one by one, so an invalid page size keeps the stored
+ * preset.
  */
 export function normalizeSettings(raw: unknown): CollageSettings {
   const defaults = defaultCollageSettings();
@@ -227,6 +243,7 @@ export function normalizeSettings(raw: unknown): CollageSettings {
     mode: oneOf(source['mode'], ARRANGEMENT_MODES, defaults.mode),
     grid: normalizeGrid(source['grid'], defaults.grid),
     center: normalizeCenter(source['center'], defaults.center),
+    snapGrid: normalizeSnapGrid(source['snapGrid'], defaults.snapGrid),
   };
 }
 
@@ -272,6 +289,14 @@ function normalizeCenter(raw: unknown, defaults: CenterSettings): CenterSettings
   };
 }
 
+function normalizeSnapGrid(raw: unknown, defaults: SnapGridSettings): SnapGridSettings {
+  const source = asRecord(raw);
+  return {
+    enabled: booleanOr(source['enabled'], defaults.enabled),
+    sizeMm: numberOr(source['sizeMm'], defaults.sizeMm),
+  };
+}
+
 /** The value as a record of fields if it is a plain object (not `null`, not an array), else `{}`. */
 function asRecord(value: unknown): Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
@@ -292,6 +317,11 @@ function numberOr(value: unknown, fallback: number): number {
 /** The value if it is `null` or a finite number, else `fallback`. */
 function nullableNumberOr(value: unknown, fallback: number | null): number | null {
   return value === null || isFiniteNumber(value) ? value : fallback;
+}
+
+/** The value if it is a boolean, else `fallback`. */
+function booleanOr(value: unknown, fallback: boolean): boolean {
+  return typeof value === 'boolean' ? value : fallback;
 }
 
 /** The value if it is a string, else `fallback`. */

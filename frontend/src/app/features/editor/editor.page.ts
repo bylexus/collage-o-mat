@@ -1,4 +1,14 @@
-import { afterNextRender, Component, computed, inject, Injector, viewChild } from '@angular/core';
+import { CdkTrapFocus } from '@angular/cdk/a11y';
+import { CdkConnectedOverlay, CdkOverlayOrigin, ConnectedPosition } from '@angular/cdk/overlay';
+import {
+  afterNextRender,
+  Component,
+  computed,
+  inject,
+  Injector,
+  signal,
+  viewChild,
+} from '@angular/core';
 import { MatButtonModule } from '@angular/material/button';
 import { MatDialog } from '@angular/material/dialog';
 import { MatIconModule } from '@angular/material/icon';
@@ -7,7 +17,7 @@ import { MatTooltipModule } from '@angular/material/tooltip';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { firstValueFrom } from 'rxjs';
 import { PhotoApi } from '../../core/api/photo.api';
-import { pageLabel } from '../../core/models/collage';
+import { pageLabel, SnapGridSettings } from '../../core/models/collage';
 import { ImportResult } from '../../core/models/photo';
 import { NotificationService } from '../../shared/notification.service';
 import { resolveCentrePhotoId } from './arrange/arrange';
@@ -21,6 +31,7 @@ import { importResultMessage } from './import/import-result-message';
 import { PhotoPropertiesPanel } from './photo-panel/photo-properties-panel';
 import { SaveStatusIndicator } from './save-status-indicator';
 import { CollageSettingsPanel } from './settings-panel/collage-settings-panel';
+import { SnapGridPopover } from './snap-grid/snap-grid-popover';
 import { TextPropertiesPanel } from './text-panel/text-properties-panel';
 import { undoRedoCommand, undoRedoShortcutLabels } from './undo-shortcut';
 
@@ -36,11 +47,15 @@ import { undoRedoCommand, undoRedoShortcutLabels } from './undo-shortcut';
     MatIconModule,
     MatProgressSpinnerModule,
     MatTooltipModule,
+    CdkOverlayOrigin,
+    CdkConnectedOverlay,
+    CdkTrapFocus,
     EditorCanvas,
     CollageSettingsPanel,
     PhotoPropertiesPanel,
     TextPropertiesPanel,
     SaveStatusIndicator,
+    SnapGridPopover,
   ],
   providers: [EditorStore],
   templateUrl: './editor.page.html',
@@ -73,6 +88,20 @@ export class EditorPage {
   protected readonly exportLabel = $localize`:@@editor.export.button:Export`;
   protected readonly addTextLabel = $localize`:@@editor.text.addButton:Add text`;
   protected readonly importLabel = $localize`:@@editor.importButton:Import from Immich`;
+  protected readonly snapGridLabel = $localize`:@@editor.snapGrid.button:Snap grid`;
+
+  /** The snap grid popover is open. */
+  protected readonly snapGridOpen = signal(false);
+  /** The committed snap grid is on (the toolbar button is highlighted). */
+  protected readonly snapGridEnabled = computed(
+    () => this.store.settings()?.snapGrid.enabled ?? false,
+  );
+  /** Below the button, right-aligned to it; left-aligned or above it if there is no space. */
+  protected readonly snapGridPositions: ConnectedPosition[] = [
+    { originX: 'end', originY: 'bottom', overlayX: 'end', overlayY: 'top' },
+    { originX: 'start', originY: 'bottom', overlayX: 'start', overlayY: 'top' },
+    { originX: 'end', originY: 'top', overlayX: 'end', overlayY: 'bottom' },
+  ];
 
   /** Label of the toolbar Delete button for the selected element. */
   protected readonly deleteLabel = computed(() =>
@@ -153,6 +182,22 @@ export class EditorPage {
       width: '400px',
       maxWidth: 'calc(100vw - 32px)',
     });
+  }
+
+  protected toggleSnapGrid(): void {
+    this.snapGridOpen.update((open) => !open);
+  }
+
+  protected closeSnapGrid(): void {
+    this.snapGridOpen.set(false);
+  }
+
+  /** Saves a snap grid change of the popover (one undo step). */
+  protected updateSnapGrid(snapGrid: SnapGridSettings): void {
+    const settings = this.store.settings();
+    if (settings) {
+      this.store.updateSettings({ ...settings, snapGrid });
+    }
   }
 
   protected setSelectedAsCentre(): void {

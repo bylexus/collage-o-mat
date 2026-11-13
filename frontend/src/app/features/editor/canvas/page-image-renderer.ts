@@ -68,6 +68,7 @@ function exportScene(content: ExportContent): Scene {
     ),
     texts: content.texts,
     selection: null,
+    snapGrid: null,
   };
 }
 

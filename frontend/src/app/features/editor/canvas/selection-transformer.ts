@@ -61,7 +61,7 @@ export abstract class SelectionTransformer<V extends TransformableView> {
       borderStroke: SELECTION_COLOR,
       borderStrokeWidth: SELECTION_STROKE_PX,
       ignoreStroke: options.ignoreStroke ?? false,
-      boundBoxFunc: (oldBox, newBox) => this.limitSize(oldBox, newBox),
+      boundBoxFunc: (oldBox, newBox) => this.limitSize(oldBox, this.adjustBox(newBox)),
     };
     if (options.enabledAnchors) {
       config.enabledAnchors = options.enabledAnchors;
@@ -102,6 +102,14 @@ export abstract class SelectionTransformer<V extends TransformableView> {
   /** Hook: a transform of the view starts (before the first `transformed`). */
   protected transformStarted(_view: V): void {
     // Nothing by default.
+  }
+
+  /**
+   * Hook: changes the box of one transform step (resize or rotation; screen px, see Konva's
+   * `boundBoxFunc`) before the minimum size is checked. Unchanged by default.
+   */
+  protected adjustBox(newBox: Box): Box {
+    return newBox;
   }
 
   /** After each pointer move of a transform, with the view as Konva has scaled/rotated it. */

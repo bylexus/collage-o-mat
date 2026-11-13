@@ -47,6 +47,42 @@
       </button>
     </div>
     <span class="toolbar-spacer"></span>
+    <button
+      matIconButton
+      type="button"
+      cdkOverlayOrigin
+      #snapGridOrigin="cdkOverlayOrigin"
+      [class.toolbar-active]="snapGridEnabled()"
+      aria-haspopup="dialog"
+      [attr.aria-expanded]="snapGridOpen()"
+      (click)="toggleSnapGrid()"
+      [attr.aria-label]="snapGridLabel"
+      [matTooltip]="snapGridLabel"
+    >
+      <mat-icon>{{ snapGridEnabled() ? 'grid_on' : 'grid_off' }}</mat-icon>
+    </button>
+    <ng-template
+      cdkConnectedOverlay
+      [cdkConnectedOverlayOrigin]="snapGridOrigin"
+      [cdkConnectedOverlayOpen]="snapGridOpen()"
+      [cdkConnectedOverlayPositions]="snapGridPositions"
+      [cdkConnectedOverlayOffsetY]="4"
+      [cdkConnectedOverlayViewportMargin]="8"
+      cdkConnectedOverlayHasBackdrop
+      cdkConnectedOverlayBackdropClass="cdk-overlay-transparent-backdrop"
+      (backdropClick)="closeSnapGrid()"
+      (detach)="closeSnapGrid()"
+    >
+      <!-- Esc closes through the directive (detach); the focus trap returns the focus to the button. -->
+      @if (store.settings(); as settings) {
+        <app-snap-grid-popover
+          cdkTrapFocus
+          cdkTrapFocusAutoCapture
+          [snapGrid]="settings.snapGrid"
+          (snapGridChange)="updateSnapGrid($event)"
+        />
+      }
+    </ng-template>
     @if (isCenterMode()) {
       <!-- disabledInteractive: the tooltip explains why the button is disabled. -->
       <button
