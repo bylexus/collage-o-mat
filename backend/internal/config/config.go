@@ -4,6 +4,7 @@ package config
 import (
 	"errors"
 	"fmt"
+	"net/http"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -15,6 +16,8 @@ const (
 	// photosDirName is the name of the photo directory inside the data
 	// directory.
 	photosDirName = "photos"
+	// DefaultCookieName is the session cookie name if COLLAGEOMAT_COOKIE_NAME is not set.
+	DefaultCookieName = "collageomat_session"
 )
 
 // Config holds the runtime configuration of the server.
@@ -23,6 +26,7 @@ type Config struct {
 	DataDir      string // COLLAGEOMAT_DATA_DIR
 	Secret       string // COLLAGEOMAT_SECRET
 	CookieSecure bool   // COLLAGEOMAT_COOKIE_SECURE
+	CookieName   string // COLLAGEOMAT_COOKIE_NAME
 }
 
 // FromEnv reads the configuration from the environment and applies defaults.
@@ -34,6 +38,10 @@ func FromEnv() (Config, error) {
 		DataDir:      envOr("COLLAGEOMAT_DATA_DIR", "./data"),
 		Secret:       os.Getenv("COLLAGEOMAT_SECRET"),
 		CookieSecure: true,
+		CookieName:   envOr("COLLAGEOMAT_COOKIE_NAME", DefaultCookieName),
+	}
+	if err := validCookieName(cfg.CookieName); err != nil {
+		return Config{}, err
 	}
 	if v := os.Getenv("COLLAGEOMAT_COOKIE_SECURE"); v != "" {
 		b, err := strconv.ParseBool(v)
@@ -70,6 +78,14 @@ func (c Config) DBPath() string {
 // PhotosDir returns the directory of the imported photo files.
 func (c Config) PhotosDir() string {
 	return filepath.Join(c.DataDir, photosDirName)
+}
+
+// validCookieName checks that name is a valid cookie name (an RFC 6265 token).
+func validCookieName(name string) error {
+	if err := (&http.Cookie{Name: name}).Valid(); err != nil {
+		return fmt.Errorf("COLLAGEOMAT_COOKIE_NAME: invalid cookie name %q", name)
+	}
+	return nil
 }
 
 func envOr(key, def string) string {

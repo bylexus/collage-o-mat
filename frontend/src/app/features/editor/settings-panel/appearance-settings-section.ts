@@ -10,7 +10,7 @@ import { syncFromInput } from '../fields/sync-from-input';
 
 /**
  * Background colour, default photo border and "Apply to all photos" (removes the borders of
- * single photos). Emits each valid change.
+ * single photos). Emits each valid change, and a preview while a colour is changed in a picker.
  */
 @Component({
   selector: 'app-appearance-settings-section',
@@ -20,11 +20,13 @@ import { syncFromInput } from '../fields/sync-from-input';
       [control]="form.controls.backgroundColor"
       i18n-label="@@editor.settings.backgroundColor"
       label="Background colour"
+      (previewed)="backgroundColorPreview.emit($event)"
       (committed)="commitBackground()"
     />
     <app-border-fields
       [widthControl]="form.controls.borderWidthMm"
       [colorControl]="form.controls.borderColor"
+      (colorPreview)="previewBorderColor($event)"
       (committed)="commitBorder()"
     />
     <p class="settings-note" i18n="@@editor.settings.borderHint">
@@ -58,6 +60,10 @@ export class AppearanceSettingsSection {
   readonly hasBorderOverrides = input(false);
   readonly backgroundColorChange = output<string>();
   readonly defaultBorderChange = output<BorderSettings>();
+  /** Background colour while it is changed in the picker (not committed). */
+  readonly backgroundColorPreview = output<string>();
+  /** Default border while its colour is changed in the picker (not committed). */
+  readonly defaultBorderPreview = output<BorderSettings>();
   readonly applyBorderToAll = output<void>();
 
   private readonly defaults = defaultCollageSettings();
@@ -79,6 +85,13 @@ export class AppearanceSettingsSection {
 
   protected commitBackground(): void {
     this.backgroundColorChange.emit(this.form.controls.backgroundColor.value);
+  }
+
+  protected previewBorderColor(color: string): void {
+    const { borderWidthMm } = this.form.controls;
+    if (borderWidthMm.valid) {
+      this.defaultBorderPreview.emit({ widthMm: borderWidthMm.value, color });
+    }
   }
 
   protected commitBorder(): void {

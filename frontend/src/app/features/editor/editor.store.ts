@@ -66,11 +66,20 @@ export class EditorStore {
   private readonly borderPreviewSignal = signal<BorderPreview | null>(null);
   /** Text shown on the canvas before it is committed (panel edit in progress). */
   private readonly textPreviewSignal = signal<CollageText | null>(null);
+  /** Settings shown on the canvas before they are committed (colour picker open). */
+  private readonly settingsPreviewSignal = signal<CollageSettings | null>(null);
 
   /** `null` until loaded. */
   readonly collage = this.collageSignal.asReadonly();
   /** `null` until loaded. */
   readonly settings = this.settingsSignal.asReadonly();
+  /**
+   * Settings as the canvas draws them: the settings preview if there is one, else `settings`. Not
+   * saved and not part of the undo history.
+   */
+  readonly displayedSettings = computed(
+    () => this.settingsPreviewSignal() ?? this.settingsSignal(),
+  );
   /** Photos in import order (id ascending). */
   readonly photos = this.photosSignal.asReadonly();
   /** Overlay texts (any order; drawn by `props.z`). */
@@ -176,6 +185,14 @@ export class EditorStore {
       );
       return 'failed';
     }
+  }
+
+  /**
+   * Shows settings on the canvas without committing them (colour picker open). The next commit,
+   * undo/redo or selection change removes the preview.
+   */
+  previewSettings(settings: CollageSettings): void {
+    this.settingsPreviewSignal.set(settings);
   }
 
   /** Replaces the collage settings (does not re-arrange). */
@@ -550,8 +567,9 @@ export class EditorStore {
     return takeSnapshot(this.requireSettings(), this.photosSignal(), this.textsSignal());
   }
 
-  /** Removes the border and text previews (the canvas shows the committed state again). */
+  /** Removes the settings, border and text previews (the canvas shows the committed state again). */
   private clearPreviews(): void {
+    this.settingsPreviewSignal.set(null);
     this.borderPreviewSignal.set(null);
     this.textPreviewSignal.set(null);
   }

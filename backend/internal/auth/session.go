@@ -13,9 +13,15 @@ import (
 	"gorm.io/gorm"
 )
 
+// CookieOptions configures the session cookie.
+type CookieOptions struct {
+	// Name is the cookie name (must be a valid cookie token).
+	Name string
+	// Secure sets the Secure flag (send only over HTTPS).
+	Secure bool
+}
+
 const (
-	// CookieName is the name of the session cookie.
-	CookieName = "collageomat_session"
 	// sessionLifetime is the lifetime of a session after login or extension.
 	sessionLifetime = 30 * 24 * time.Hour
 	// extendBelow: a session with less time left is extended (sliding expiry).
@@ -57,7 +63,7 @@ func (h *Handler) createSession(w http.ResponseWriter, userID uint) error {
 // of the request cookie. It returns a nil session if there is no cookie or
 // the session is unknown or expired. Expired sessions are deleted.
 func (h *Handler) lookupSession(r *http.Request) (string, *Session, error) {
-	c, err := r.Cookie(CookieName)
+	c, err := r.Cookie(h.cookie.Name)
 	if err != nil || c.Value == "" {
 		return "", nil, nil
 	}
@@ -105,25 +111,25 @@ func (h *Handler) deleteSessionByToken(raw string) error {
 
 func (h *Handler) setCookie(w http.ResponseWriter, raw string, expires time.Time) {
 	http.SetCookie(w, &http.Cookie{
-		Name:     CookieName,
+		Name:     h.cookie.Name,
 		Value:    raw,
 		Path:     "/",
 		Expires:  expires,
 		MaxAge:   int(time.Until(expires).Seconds()),
 		HttpOnly: true,
-		Secure:   h.cookieSecure,
+		Secure:   h.cookie.Secure,
 		SameSite: http.SameSiteLaxMode,
 	})
 }
 
 func (h *Handler) clearCookie(w http.ResponseWriter) {
 	http.SetCookie(w, &http.Cookie{
-		Name:     CookieName,
+		Name:     h.cookie.Name,
 		Value:    "",
 		Path:     "/",
 		MaxAge:   -1,
 		HttpOnly: true,
-		Secure:   h.cookieSecure,
+		Secure:   h.cookie.Secure,
 		SameSite: http.SameSiteLaxMode,
 	})
 }

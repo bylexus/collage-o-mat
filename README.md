@@ -62,5 +62,6 @@ docker exec -it collageomat /app/collageomat user add --username alex --admin
 | `COLLAGEOMAT_DATA_DIR` | `/data` | SQLite database and photos |
 | `COLLAGEOMAT_LISTEN` | `:8080` | Listen address |
 | `COLLAGEOMAT_COOKIE_SECURE` | `true` | Set `false` only without HTTPS |
+| `COLLAGEOMAT_COOKIE_NAME` | `collageomat_session` | Name of the session cookie |
 
 The container runs as uid/gid 10001. For a bind mount on a Linux host, `chown 10001:10001 <dir>` first.

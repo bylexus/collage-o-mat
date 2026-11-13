@@ -17,20 +17,20 @@ const msgInvalidLogin = "invalid username or password"
 
 // Handler serves the auth API and provides the RequireAuth middleware.
 type Handler struct {
-	db           *gorm.DB
-	cookieSecure bool
+	db     *gorm.DB
+	cookie CookieOptions
 	// dummyHash is compared for unknown usernames so that the response time
 	// is similar to a wrong password.
 	dummyHash string
 }
 
 // NewHandler returns the auth handler.
-func NewHandler(db *gorm.DB, cookieSecure bool) (*Handler, error) {
+func NewHandler(db *gorm.DB, cookie CookieOptions) (*Handler, error) {
 	dummy, err := hashPassword(rand.Text())
 	if err != nil {
 		return nil, err
 	}
-	return &Handler{db: db, cookieSecure: cookieSecure, dummyHash: dummy}, nil
+	return &Handler{db: db, cookie: cookie, dummyHash: dummy}, nil
 }
 
 // RegisterRoutes implements httpapi.Module.
@@ -108,7 +108,7 @@ func (h *Handler) login(w http.ResponseWriter, r *http.Request) {
 
 	// Housekeeping: drop the session of an old cookie and expired sessions
 	// of this user. Errors here do not block the login.
-	if c, err := r.Cookie(CookieName); err == nil {
+	if c, err := r.Cookie(h.cookie.Name); err == nil {
 		if err := h.deleteSessionByToken(c.Value); err != nil {
 			slog.Warn("login: delete old session", "err", err)
 		}
@@ -126,7 +126,7 @@ func (h *Handler) login(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) logout(w http.ResponseWriter, r *http.Request) {
-	if c, err := r.Cookie(CookieName); err == nil {
+	if c, err := r.Cookie(h.cookie.Name); err == nil {
 		if err := h.deleteSessionByToken(c.Value); err != nil {
 			slog.Error("logout: delete session", "err", err)
 			httpapi.WriteError(w, http.StatusInternalServerError, "internal server error")

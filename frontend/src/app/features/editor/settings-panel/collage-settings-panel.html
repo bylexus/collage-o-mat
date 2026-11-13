@@ -10,7 +10,9 @@
     [defaultBorder]="settings().defaultBorder"
     [hasBorderOverrides]="hasBorderOverrides()"
     (backgroundColorChange)="update({ backgroundColor: $event })"
+    (backgroundColorPreview)="preview({ backgroundColor: $event })"
     (defaultBorderChange)="update({ defaultBorder: $event })"
+    (defaultBorderPreview)="preview({ defaultBorder: $event })"
     (applyBorderToAll)="applyBorderToAll.emit()"
   />
 </section>

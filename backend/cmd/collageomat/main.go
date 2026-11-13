@@ -82,7 +82,7 @@ func runServe(args []string) error {
 	}
 	defer db.Close(gdb)
 
-	authHandler, err := auth.NewHandler(gdb, cfg.CookieSecure)
+	authHandler, err := auth.NewHandler(gdb, auth.CookieOptions{Name: cfg.CookieName, Secure: cfg.CookieSecure})
 	if err != nil {
 		return err
 	}

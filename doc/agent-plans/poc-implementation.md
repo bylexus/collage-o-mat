@@ -177,6 +177,7 @@ Dev URL: `http://localhost:4200` (ng serve, proxies `/api` to Go). Built binary:
 | `COLLAGEOMAT_DATA_DIR` | `./data` | SQLite file `collageomat.db` and `photos/` live here |
 | `COLLAGEOMAT_SECRET` | — (required) | any string; AES-256 key = SHA-256(secret). Server refuses to start without it. Changing it makes stored API keys unreadable. |
 | `COLLAGEOMAT_COOKIE_SECURE` | `true` | `Secure` flag of the session cookie; `false` in the dev container |
+| `COLLAGEOMAT_COOKIE_NAME` | `collageomat_session` | name of the session cookie; must be a valid cookie token, else the server does not start (added 2026-11-13) |
 
 - compose sets in the dev container: `COLLAGEOMAT_SECRET=dev-only-secret`, `COLLAGEOMAT_DATA_DIR=/workspace/data`,
   `COLLAGEOMAT_COOKIE_SECURE=false`.
@@ -326,7 +327,7 @@ existence). Errors: `{"error": "<message>"}`.
 | Method | Path | Body / Result |
 |---|---|---|
 | GET | `/api/health` | `{"status":"ok"}` |
-| POST | `/api/auth/login` | `{username, password}` → sets cookie `collageomat_session` (HttpOnly, SameSite=Lax, Secure per config, 30 days); `{id, username, isAdmin}` |
+| POST | `/api/auth/login` | `{username, password}` → sets the session cookie (`COLLAGEOMAT_COOKIE_NAME`, default `collageomat_session`) (HttpOnly, SameSite=Lax, Secure per config, 30 days); `{id, username, isAdmin}` |
 | POST | `/api/auth/logout` | deletes session, clears cookie |
 | GET | `/api/auth/me` | `{id, username, isAdmin}` |
 | GET | `/api/collages` | `[{id, name, settings, photoCount, updatedAt}]` |
@@ -574,6 +575,9 @@ show a confirm dialog first. Arrangement result is one undo step.
     for all browsers.
   - DPI: the export dialog pre-fills the DPI from the page settings and allows a different DPI for this
     export only (pixel size updates live); the collage setting does not change. Rejected: read-only DPI.
+- **Session cookie name (2026-11-13):** configurable with `COLLAGEOMAT_COOKIE_NAME` (default
+  `collageomat_session`, checked with `http.Cookie.Valid`). `config.DefaultCookieName`;
+  `auth.NewHandler(db, auth.CookieOptions{Name, Secure})` replaces the constant `auth.CookieName`.
 - **Architecture (step 3+):** SOLID/DRY/clean code required by the developer; see section "Architecture
   conventions".
 - **Backend module wiring (step 2):** `httpapi` must not import domain packages (import cycle, because domain
@@ -902,8 +906,10 @@ results) and the developer reviews before the next step starts.
     "Done" button (crop mode ends with Esc or a click outside the frame).
   - Review round 2: crop slider has a semi-transparent pill background (75 % surface colour); "Set as
     centre" swaps frames instead of re-arranging (see decision log "Centre photo selection").
-  - Only the photo border colour has the live preview; background colour and default border colour still
-    apply on picker close.
+  - Later change (2026-11-13, after step 11): background colour and default border colour also have the
+    live preview (`AppearanceSettingsSection` `backgroundColorPreview`/`defaultBorderPreview` →
+    `CollageSettingsPanel.settingsPreview` → `EditorStore.previewSettings`; canvas draws
+    `displayedSettings`; cleared like the other previews).
 
 ### Step 9 — Overlay texts
 - **Status:** done (reviewed 2026-11-13)
@@ -1036,6 +1042,14 @@ Added 2026-11-13 after the step 9 review. Not part of any step yet; the develope
   crop centre).
 - **Move grid:** a toggle for a configurable, invisible grid; when on, moving images snaps to the grid.
   Note: snapping was out of PoC scope ("Multi-select, snapping, keyboard nudging"), so this extends the scope.
+
+- **Page background types** (added 2026-11-13): options for the page background:
+  - solid colour (as today, `settings.backgroundColor`);
+  - gradient with 2 colours;
+  - image: select an image to be used as the background, dimmable with an overlay of a solid colour with
+    transparency.
+  Open for grilling: gradient direction/type, image source (Immich import, a photo of the collage, upload),
+  image fit (cover/contain), export behaviour.
 
 ## Open questions
 

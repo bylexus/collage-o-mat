@@ -95,7 +95,7 @@
       <div class="editor-canvas-area">
         <app-editor-canvas
           class="editor-canvas"
-          [settings]="settings"
+          [settings]="store.displayedSettings() ?? settings"
           [photos]="store.displayedPhotos()"
           [texts]="store.displayedTexts()"
           [collageId]="collage.id"
@@ -139,6 +139,7 @@
           [photoCount]="store.photos().length"
           [hasBorderOverrides]="store.hasBorderOverrides()"
           (settingsChange)="store.updateSettings($event)"
+          (settingsPreview)="store.previewSettings($event)"
           (rearrange)="store.rearrange()"
           (applyBorderToAll)="store.applyDefaultBorderToAll()"
         />

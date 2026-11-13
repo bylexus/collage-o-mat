@@ -6,7 +6,8 @@ import { PageSettingsSection } from './page-settings-section';
 
 /**
  * Side panel with the collage settings (presentational). Emits a new settings object on each
- * committed, valid change; changes do not re-arrange the photos (the user clicks "Re-arrange").
+ * committed, valid change (`settingsChange`) and while a colour is changed in a picker
+ * (`settingsPreview`, not committed); changes do not re-arrange the photos (the user clicks "Re-arrange").
  * Actions on the photos ("Re-arrange", "Apply to all photos") are separate outputs.
  */
 @Component({
@@ -22,6 +23,8 @@ export class CollageSettingsPanel {
   readonly hasBorderOverrides = input(false);
 
   readonly settingsChange = output<CollageSettings>();
+  /** Settings while a colour is changed in a picker (not committed). */
+  readonly settingsPreview = output<CollageSettings>();
   readonly rearrange = output<void>();
   /** "Apply to all photos" of the default border: remove the own borders of all photos. */
   readonly applyBorderToAll = output<void>();
@@ -29,5 +32,10 @@ export class CollageSettingsPanel {
   /** Emits the current settings with the changed parts replaced (a new object). */
   protected update(change: Partial<CollageSettings>): void {
     this.settingsChange.emit({ ...this.settings(), ...change });
+  }
+
+  /** Emits the current settings with the changed parts replaced, as a preview (not committed). */
+  protected preview(change: Partial<CollageSettings>): void {
+    this.settingsPreview.emit({ ...this.settings(), ...change });
   }
 }
