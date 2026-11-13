@@ -71,10 +71,54 @@ export interface SnapGridSettings {
   sizeMm: number;
 }
 
+/** What the page background shows; `BackgroundSettings.type`. */
+export type BackgroundType = 'color' | 'gradient' | 'image';
+
+/** All background types. */
+export const BACKGROUND_TYPES: readonly BackgroundType[] = ['color', 'gradient', 'image'];
+
+/** Shape of a gradient background: along an angle, or from the page centre outwards. */
+export type GradientKind = 'linear' | 'radial';
+
+/** All gradient kinds. */
+export const GRADIENT_KINDS: readonly GradientKind[] = ['linear', 'radial'];
+
+/** Two-colour gradient of the page background. */
+export interface GradientSettings {
+  kind: GradientKind;
+  /** Start colour (linear: start of the gradient line; radial: page centre). */
+  from: string;
+  /** End colour (linear: end of the gradient line; radial: farthest page corner). */
+  to: string;
+  /** Direction of a linear gradient in degrees, CSS convention (0 = towards top, 90 = towards right). */
+  angleDeg: number;
+}
+
+/** Image background: a collage photo covers the page, dimmed by an overlay colour. */
+export interface ImageBackgroundSettings {
+  /** Id of the background photo (a photo of the collage); `null` = no image. */
+  photoId: number | null;
+  overlayColor: string;
+  /** Opacity of the overlay colour, 0..100. */
+  overlayOpacityPercent: number;
+}
+
+/**
+ * Page background. Keeps the values of all types, so switching the type restores earlier values;
+ * `type` selects what is drawn.
+ */
+export interface BackgroundSettings {
+  type: BackgroundType;
+  /** Solid colour; also drawn under the image (visible while loading or without a photo). */
+  color: string;
+  gradient: GradientSettings;
+  image: ImageBackgroundSettings;
+}
+
 /** The `settings` JSON document of a collage. */
 export interface CollageSettings {
   page: PageSettings;
-  backgroundColor: string;
+  background: BackgroundSettings;
   defaultBorder: BorderSettings;
   mode: ArrangementMode;
   grid: GridSettings;
@@ -202,13 +246,19 @@ export function customPageSettings(size: PageSize, dpi = DEFAULT_DPI): PageSetti
 }
 
 /**
- * Settings of a new collage: A4 landscape, 300 DPI, white background, no border, grid mode,
+ * Settings of a new collage: A4 landscape, 300 DPI, white colour background (gradient white to
+ * black at 180°, image without photo and with a transparent black overlay), no border, grid mode,
  * snap grid off (5 mm).
  */
 export function defaultCollageSettings(): CollageSettings {
   return {
     page: fixedPageSettings('A4', 'landscape'),
-    backgroundColor: '#ffffff',
+    background: {
+      type: 'color',
+      color: '#ffffff',
+      gradient: { kind: 'linear', from: '#ffffff', to: '#000000', angleDeg: 180 },
+      image: { photoId: null, overlayColor: '#000000', overlayOpacityPercent: 0 },
+    },
     defaultBorder: { widthMm: 0, color: '#ffffff' },
     mode: 'grid',
     grid: { rows: null, cols: null, gapMm: 5, marginMm: 10 },
@@ -231,14 +281,19 @@ export function defaultCollageSettings(): CollageSettings {
  * counts in collages saved before they existed), unknown fields are dropped. Only types are checked (a
  * finite number, a boolean, a string, one of the allowed ids, `null` where allowed); ranges are the job
  * of the users of the settings. Fields are merged one by one, so an invalid page size keeps the stored
- * preset.
+ * preset. The legacy string `backgroundColor` (before `background` existed) becomes `background.color`
+ * and is dropped.
  */
 export function normalizeSettings(raw: unknown): CollageSettings {
   const defaults = defaultCollageSettings();
   const source = asRecord(raw);
   return {
     page: normalizePage(source['page'], defaults.page),
-    backgroundColor: stringOr(source['backgroundColor'], defaults.backgroundColor),
+    background: normalizeBackground(
+      source['background'],
+      source['backgroundColor'],
+      defaults.background,
+    ),
     defaultBorder: normalizeBorder(source['defaultBorder'], defaults.defaultBorder),
     mode: oneOf(source['mode'], ARRANGEMENT_MODES, defaults.mode),
     grid: normalizeGrid(source['grid'], defaults.grid),
@@ -255,6 +310,49 @@ function normalizePage(raw: unknown, defaults: PageSettings): PageSettings {
     widthMm: numberOr(source['widthMm'], defaults.widthMm),
     heightMm: numberOr(source['heightMm'], defaults.heightMm),
     dpi: numberOr(source['dpi'], defaults.dpi),
+  };
+}
+
+/**
+ * Background merged field by field. Migration: without a stored `background.color` string the
+ * legacy `backgroundColor` string is used, if there is one.
+ */
+function normalizeBackground(
+  raw: unknown,
+  legacyColor: unknown,
+  defaults: BackgroundSettings,
+): BackgroundSettings {
+  const source = asRecord(raw);
+  return {
+    type: oneOf(source['type'], BACKGROUND_TYPES, defaults.type),
+    color: stringOr(source['color'], stringOr(legacyColor, defaults.color)),
+    gradient: normalizeGradient(source['gradient'], defaults.gradient),
+    image: normalizeImageBackground(source['image'], defaults.image),
+  };
+}
+
+function normalizeGradient(raw: unknown, defaults: GradientSettings): GradientSettings {
+  const source = asRecord(raw);
+  return {
+    kind: oneOf(source['kind'], GRADIENT_KINDS, defaults.kind),
+    from: stringOr(source['from'], defaults.from),
+    to: stringOr(source['to'], defaults.to),
+    angleDeg: numberOr(source['angleDeg'], defaults.angleDeg),
+  };
+}
+
+function normalizeImageBackground(
+  raw: unknown,
+  defaults: ImageBackgroundSettings,
+): ImageBackgroundSettings {
+  const source = asRecord(raw);
+  return {
+    photoId: nullableNumberOr(source['photoId'], defaults.photoId),
+    overlayColor: stringOr(source['overlayColor'], defaults.overlayColor),
+    overlayOpacityPercent: numberOr(
+      source['overlayOpacityPercent'],
+      defaults.overlayOpacityPercent,
+    ),
   };
 }
 

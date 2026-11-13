@@ -19,6 +19,8 @@ import { PageSettingsSection } from './page-settings-section';
 export class CollageSettingsPanel {
   readonly settings = input.required<CollageSettings>();
   readonly photoCount = input<number>(0);
+  /** File URL of the bg photo (Appearance thumbnail); `null` without a bg photo. */
+  readonly backgroundImageUrl = input<string | null>(null);
   /** True if at least one photo has an own border (enables "Apply to all photos"). */
   readonly hasBorderOverrides = input(false);
 

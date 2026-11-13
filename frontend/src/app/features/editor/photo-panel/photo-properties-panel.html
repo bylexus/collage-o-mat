@@ -31,6 +31,21 @@
   </button>
 </div>
 
+<button
+  matButton="outlined"
+  type="button"
+  class="background-button"
+  [disabled]="isBackground()"
+  (click)="useAsBackground.emit()"
+>
+  <mat-icon>wallpaper</mat-icon>
+  @if (isBackground()) {
+    <span i18n="@@editor.photo.isBackground">Background image</span>
+  } @else {
+    <span i18n="@@editor.photo.useAsBackground">Use as background</span>
+  }
+</button>
+
 <button matButton="outlined" type="button" class="delete-button" (click)="delete.emit()">
   <mat-icon>delete</mat-icon>
   <span i18n="@@editor.photo.delete">Delete photo</span>

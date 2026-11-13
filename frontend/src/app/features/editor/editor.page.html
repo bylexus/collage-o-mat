@@ -181,10 +181,14 @@
             class="photo-panel"
             [photo]="photo"
             [defaultBorder]="settings.defaultBorder"
+            [isBackground]="
+              settings.background.type === 'image' && settings.background.image.photoId === photo.id
+            "
             (borderChange)="store.setPhotoBorder(photo.id, $event)"
             (borderPreview)="store.previewPhotoBorder(photo.id, $event)"
             (bringToFront)="store.bringToFront(photo.id)"
             (sendToBack)="store.sendToBack(photo.id)"
+            (useAsBackground)="store.useAsBackground(photo.id)"
             (delete)="store.deletePhoto(photo.id)"
           />
         } @else if (store.selectedText(); as text) {
@@ -201,6 +205,7 @@
         <app-collage-settings-panel
           [settings]="settings"
           [photoCount]="store.photos().length"
+          [backgroundImageUrl]="backgroundImageUrl()"
           [hasBorderOverrides]="store.hasBorderOverrides()"
           (settingsChange)="store.updateSettings($event)"
           (settingsPreview)="store.previewSettings($event)"

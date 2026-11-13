@@ -1,6 +1,5 @@
 // Offscreen rendering of the collage page into an image file (export). Plain module without Angular.
 import Konva from 'konva/lib/Core';
-import { Rect as KonvaRect } from 'konva/lib/shapes/Rect';
 import type { PageSize } from '../../../core/models/collage';
 import {
   ExportContent,
@@ -13,19 +12,34 @@ import {
 } from '../export/page-export';
 import { loadFonts } from './font-loader';
 import { loadImage } from './image-cache';
+import { PageBackgroundView } from './page-background-view';
 import { PhotoView } from './photo-view';
-import { elementsByZ, Scene, ScenePhoto, scenePhotos, SceneText } from './scene';
+import {
+  elementsByZ,
+  Scene,
+  SceneBackground,
+  sceneBackground,
+  ScenePhoto,
+  scenePhotos,
+  SceneText,
+} from './scene';
 import { textFontFace, TextView } from './text-view';
 import { frameBounds, rectsOverlap } from './viewport';
 
 /** Photo id → loaded source image. */
 type LoadedImages = ReadonlyMap<number, HTMLImageElement>;
 
+/** The loaded source images of the scene: the photos and the bg photo (`null`: none). */
+interface SceneImages {
+  photos: LoadedImages;
+  background: HTMLImageElement | null;
+}
+
 /**
  * Renders the page (only the page area, no selection, no workspace) at `options.dpi` and encodes it
  * as PNG or JPG. Rejects with `ExportError` (`tooLarge`, `browserLimit`, `imageLoad`).
  *
- * Steps: size check → load the photo images and the text fonts → draw the scene with the editor's
+ * Steps: size check → load the photo images, the bg photo image and the text fonts → draw the scene with the editor's
  * views (`PhotoView`, `TextView`) on an offscreen Konva stage of exactly the image size → encode.
  * Elements beside the page are outside the canvas and so not in the image; photos that do not
  * touch the page are not even loaded.
@@ -40,7 +54,11 @@ export async function renderPageImage(
   }
   const scene = exportScene(content);
   // Load first, then allocate the (large) canvas: it is not held while the loads run.
-  const images = await loadPhotoImages(scene.photos);
+  const [photos, background] = await Promise.all([
+    loadPhotoImages(scene.photos),
+    loadBackgroundImage(scene.background),
+  ]);
+  const images: SceneImages = { photos, background };
   await loadFonts(
     scene.texts.map((text) => ({ face: textFontFace(text.props), text: text.props.text })),
   );
@@ -61,7 +79,7 @@ function exportScene(content: ExportContent): Scene {
   const page = { x: 0, y: 0, width: settings.page.widthMm, height: settings.page.heightMm };
   return {
     page: settings.page,
-    backgroundColor: settings.backgroundColor,
+    background: sceneBackground(settings.background, content.photos, content.collageId),
     defaultBorder: settings.defaultBorder,
     photos: scenePhotos(content.photos, content.collageId).filter((photo) =>
       rectsOverlap(frameBounds(photo.props), page),
@@ -86,6 +104,26 @@ async function loadPhotoImages(photos: readonly ScenePhoto[]): Promise<LoadedIma
     ),
   );
   return new Map(entries);
+}
+
+/**
+ * Loads the image of the bg photo (`null` without `imageFile`); rejects with
+ * `ExportError('imageLoad')` if it fails.
+ */
+async function loadBackgroundImage(background: SceneBackground): Promise<HTMLImageElement | null> {
+  const file = background.imageFile;
+  if (!file) {
+    return null;
+  }
+  try {
+    return await loadImage(file.url);
+  } catch (error) {
+    const reason = error instanceof Error ? `: ${error.message}` : '';
+    throw new ExportError(
+      'imageLoad',
+      `background photo ${background.image.photoId} could not be loaded${reason}`,
+    );
+  }
 }
 
 /**
@@ -127,23 +165,20 @@ function createStage(size: PixelSize): Konva.Stage {
  * is px per mm per axis, so the page fills the image exactly (both scales are `dpi / 25.4` up to
  * the rounding of the pixel size).
  */
-function drawScene(layer: Konva.Layer, scene: Scene, images: LoadedImages, size: PixelSize): void {
+function drawScene(layer: Konva.Layer, scene: Scene, images: SceneImages, size: PixelSize): void {
   const stage = layer.getStage();
   stage.scale(pxPerMm(scene.page, size));
   // Large photos are drawn scaled down; the default ('low') quality would alias them.
   layer.getContext()._context.imageSmoothingQuality = 'high';
-  layer.add(
-    new KonvaRect({
-      x: 0,
-      y: 0,
-      width: scene.page.widthMm,
-      height: scene.page.heightMm,
-      fill: scene.backgroundColor,
-    }),
-  );
+  const background = new PageBackgroundView();
+  background.setImage(images.background);
+  background.update(scene.page, scene.background);
+  layer.add(background.group);
   for (const element of elementsByZ(scene)) {
     layer.add(
-      element.kind === 'photo' ? photoGroup(element.photo, scene, images) : textGroup(element.text),
+      element.kind === 'photo'
+        ? photoGroup(element.photo, scene, images.photos)
+        : textGroup(element.text),
     );
   }
   layer.draw();

@@ -1,5 +1,5 @@
 // Input model of the collage renderer. Pure types and helpers: no Angular, no Konva.
-import type { BorderSettings, PageSize } from '../../../core/models/collage';
+import type { BackgroundSettings, BorderSettings, PageSize } from '../../../core/models/collage';
 import { isPlaced, photoFileUrl } from '../../../core/models/photo';
 import type { NormalizedRect, Photo, PhotoProps } from '../../../core/models/photo';
 import type { TextProps } from '../../../core/models/text';
@@ -25,10 +25,19 @@ export interface SceneText {
   props: TextProps;
 }
 
+/** The page background as the renderer needs it. */
+export interface SceneBackground extends BackgroundSettings {
+  /**
+   * File URL and pixel size of the background photo; set only when the type is `image` and the
+   * photo exists. (Not named `image`: that is `BackgroundSettings.image`.)
+   */
+  imageFile?: { url: string; image: ImageSize };
+}
+
 /** Everything the renderer draws. World units are mm, page origin top-left. */
 export interface Scene {
   page: PageSize;
-  backgroundColor: string;
+  background: SceneBackground;
   defaultBorder: BorderSettings;
   /** Only placed photos; drawn in `props.z` order. */
   photos: readonly ScenePhoto[];
@@ -53,6 +62,32 @@ export function scenePhotos(photos: readonly Photo[], collageId: number): SceneP
         ]
       : [],
   );
+}
+
+/**
+ * The background settings as scene background: with type `image` and a bg photo that is in
+ * `photos` (placed or not), `imageFile` is the file URL and pixel size of that photo.
+ */
+export function sceneBackground(
+  background: BackgroundSettings,
+  photos: readonly Photo[],
+  collageId: number,
+): SceneBackground {
+  const photoId = background.image.photoId;
+  const photo =
+    background.type === 'image' && photoId !== null
+      ? photos.find((candidate) => candidate.id === photoId)
+      : undefined;
+  if (!photo) {
+    return background;
+  }
+  return {
+    ...background,
+    imageFile: {
+      url: photoFileUrl(collageId, photo.id),
+      image: { widthPx: photo.widthPx, heightPx: photo.heightPx },
+    },
+  };
 }
 
 /** A photo or a text of the scene (photos and texts share one z scale). */

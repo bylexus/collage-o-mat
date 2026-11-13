@@ -1,7 +1,6 @@
 // Konva rendering of a collage. Plain class without Angular; owned by `EditorCanvas`.
 // Core + the used shapes only (smaller bundle than the full 'konva' entry).
 import Konva from 'konva/lib/Core';
-import { Rect as KonvaRect } from 'konva/lib/shapes/Rect';
 import type { PhotoProps } from '../../../core/models/photo';
 import type { TextProps } from '../../../core/models/text';
 import { snapRectDelta } from '../geometry/snap-grid';
@@ -10,6 +9,7 @@ import { EditorSelection, sameSelection, selectedPhotoIdOf } from '../selection'
 import { CropMode, CropModeState } from './crop-mode';
 import { FontLoader } from './font-loader';
 import { ImageCache } from './image-cache';
+import { PageBackgroundView } from './page-background-view';
 import { PhotoTransformer } from './photo-transformer';
 import { photoGroupOf, PhotoView } from './photo-view';
 import { PressGestureTracker } from './press-gesture';
@@ -50,9 +50,10 @@ export interface RendererCallbacks {
 }
 
 /**
- * Owns a Konva stage in a container element and draws a `Scene`: page rectangle, photos
- * (`PhotoView`, matched by photo id, images loaded once) and texts (`TextView`, matched by text id,
- * web fonts loaded by `FontLoader`), stacked together by `props.z`. The stage scale is px per mm.
+ * Owns a Konva stage in a container element and draws a `Scene`: page background
+ * (`PageBackgroundView`, at the bottom), photos (`PhotoView`, matched by photo id, images loaded
+ * once) and texts (`TextView`, matched by text id, web fonts loaded by `FontLoader`), stacked
+ * together by `props.z`. The stage scale is px per mm.
  * This class is the only entry point for the owning component; the interactions are delegated:
  *
  * - `StageNavigator`: pan and zoom of the view.
@@ -72,7 +73,7 @@ export interface RendererCallbacks {
 export class CollageRenderer {
   private readonly stage: Konva.Stage;
   private readonly layer = new Konva.Layer();
-  private readonly pageRect = new KonvaRect({ x: 0, y: 0, listening: false });
+  private readonly background = new PageBackgroundView();
   private readonly views = new Map<number, PhotoView>();
   private readonly viewsByGroup = new WeakMap<Konva.Node, PhotoView>();
   private readonly textViews = new Map<string, TextView>();
@@ -85,6 +86,11 @@ export class CollageRenderer {
   private readonly textTransformer: TextTransformer;
   private readonly cropMode: CropMode;
   private scene: Scene | null = null;
+  /**
+   * Photo id of the bg photo drawn by the background view (`null`: none). Its image shares the
+   * `images` entry of the photo view (same file, same key); the entry is kept while either uses it.
+   */
+  private backgroundPhotoId: number | null = null;
   /** Swap mode is on (see `setSwapMode`). */
   private swapMode = false;
 
@@ -97,7 +103,7 @@ export class CollageRenderer {
       width: container.clientWidth,
       height: container.clientHeight,
     });
-    this.layer.add(this.pageRect);
+    this.layer.add(this.background.group);
     this.stage.add(this.layer);
     // First stage listener: clears the gesture flag before the others can set it.
     this.gestures = new PressGestureTracker(this.stage);
@@ -131,11 +137,7 @@ export class CollageRenderer {
   render(scene: Scene): void {
     const previousPhotoId = selectedPhotoIdOf(this.scene?.selection ?? null);
     this.scene = scene;
-    this.pageRect.setAttrs({
-      width: scene.page.widthMm,
-      height: scene.page.heightMm,
-      fill: scene.backgroundColor,
-    });
+    this.syncBackground(scene);
     this.transformer.setSnapGrid(scene.snapGrid);
     this.syncPhotos(scene);
     this.syncTexts(scene);
@@ -253,6 +255,23 @@ export class CollageRenderer {
     }
   }
 
+  /**
+   * Updates the background view and requests the image of the bg photo from the cache (the bg photo
+   * may be not placed, so it has no photo view that would load it). The image of a former bg photo
+   * is forgotten unless its photo view still uses it.
+   */
+  private syncBackground(scene: Scene): void {
+    const file = scene.background.imageFile;
+    const photoId = file ? scene.background.image.photoId : null;
+    const previousId = this.backgroundPhotoId;
+    if (previousId !== null && previousId !== photoId && !this.views.has(previousId)) {
+      this.images.delete(previousId);
+    }
+    this.backgroundPhotoId = photoId;
+    this.background.setImage(file && photoId !== null ? this.images.get(photoId, file.url) : null);
+    this.background.update(scene.page, scene.background);
+  }
+
   /** Removes views of photos that are gone and updates or creates the others. */
   private syncPhotos(scene: Scene): void {
     const ids = new Set(scene.photos.map((photo) => photo.id));
@@ -357,7 +376,10 @@ export class CollageRenderer {
   private removePhoto(id: number): void {
     this.views.get(id)?.destroy();
     this.views.delete(id);
-    this.images.delete(id);
+    // The background view may still draw this image (see `backgroundPhotoId`).
+    if (id !== this.backgroundPhotoId) {
+      this.images.delete(id);
+    }
   }
 
   private createText(text: SceneText): TextView {
@@ -378,6 +400,12 @@ export class CollageRenderer {
       view.setImage(image);
       // The crop mode overlay shows the source image too.
       this.cropMode.redraw();
+    }
+    const isBackground = photoId === this.backgroundPhotoId;
+    if (isBackground) {
+      this.background.setImage(image);
+    }
+    if (view || isBackground) {
       this.layer.batchDraw();
     }
   }

@@ -7,6 +7,10 @@
   gap: 8px;
 }
 
+.background-button {
+  align-self: flex-start;
+}
+
 .delete-button {
   align-self: flex-start;
   color: var(--mat-sys-error);

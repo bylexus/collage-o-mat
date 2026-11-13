@@ -6,11 +6,12 @@
 <section class="panel-section">
   <h3 class="panel-heading" i18n="@@editor.settings.appearanceHeading">Appearance</h3>
   <app-appearance-settings-section
-    [backgroundColor]="settings().backgroundColor"
+    [background]="settings().background"
+    [backgroundImageUrl]="backgroundImageUrl()"
     [defaultBorder]="settings().defaultBorder"
     [hasBorderOverrides]="hasBorderOverrides()"
-    (backgroundColorChange)="update({ backgroundColor: $event })"
-    (backgroundColorPreview)="preview({ backgroundColor: $event })"
+    (backgroundChange)="update({ background: $event })"
+    (backgroundPreview)="preview({ background: $event })"
     (defaultBorderChange)="update({ defaultBorder: $event })"
     (defaultBorderPreview)="preview({ defaultBorder: $event })"
     (applyBorderToAll)="applyBorderToAll.emit()"

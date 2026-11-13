@@ -14,4 +14,8 @@ export const SETTINGS_LIMITS = {
   sizePercent: { min: 10, max: 100, step: 5 },
   /** Cell size of the snap grid (toolbar popover). */
   snapGridSizeMm: { min: 1, max: 100, step: 0.5 },
+  /** Direction of a linear background gradient in degrees (CSS convention). */
+  gradientAngleDeg: { min: 0, max: 359, step: 1, integer: true },
+  /** Opacity of the overlay colour over a background image (slider). */
+  overlayOpacityPercent: { min: 0, max: 100, step: 1, integer: true },
 } as const satisfies Record<string, NumberLimits>;

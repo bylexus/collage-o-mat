@@ -21,7 +21,7 @@ interface BorderFormValue {
 
 /**
  * Properties of the selected photo (presentational): border ("Use collage default border" or an
- * own width and colour), z-order and delete. Emits committed, valid changes (`borderChange`) and
+ * own width and colour), z-order, "Use as background" and delete. Emits committed, valid changes (`borderChange`) and
  * the live border while the colour is changed in the picker (`borderPreview`).
  */
 @Component({
@@ -33,12 +33,16 @@ interface BorderFormValue {
 export class PhotoPropertiesPanel {
   readonly photo = input.required<Photo>();
   readonly defaultBorder = input.required<BorderSettings>();
+  /** True if the photo is the bg photo and the background type is `image` (button disabled). */
+  readonly isBackground = input(false);
 
   readonly borderChange = output<PhotoBorder>();
   /** Border while the colour is changed in the picker (not committed). */
   readonly borderPreview = output<PhotoBorder>();
   readonly bringToFront = output<void>();
   readonly sendToBack = output<void>();
+  /** Make the photo the page background image. */
+  readonly useAsBackground = output<void>();
   readonly delete = output<void>();
 
   private readonly defaults = defaultCollageSettings().defaultBorder;

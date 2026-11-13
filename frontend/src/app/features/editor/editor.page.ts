@@ -19,7 +19,7 @@ import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { firstValueFrom } from 'rxjs';
 import { PhotoApi } from '../../core/api/photo.api';
 import { pageLabel, SnapGridSettings } from '../../core/models/collage';
-import { ImportResult, isPlaced } from '../../core/models/photo';
+import { ImportResult, isPlaced, photoFileUrl } from '../../core/models/photo';
 import { NotificationService } from '../../shared/notification.service';
 import { resolveCentrePhotoId } from './arrange/arrange';
 import { EditorCanvas } from './canvas/editor-canvas';
@@ -81,6 +81,17 @@ export class EditorPage {
   protected readonly pageLabel = computed(() => {
     const settings = this.store.settings();
     return settings ? pageLabel(settings.page) : '';
+  });
+
+  /**
+   * File URL of the bg photo for the Appearance thumbnail; `null` if no photo is set or the photo
+   * is not in the collage (any more).
+   */
+  protected readonly backgroundImageUrl = computed(() => {
+    const collage = this.store.collage();
+    const photoId = this.store.settings()?.background.image.photoId ?? null;
+    const exists = photoId !== null && this.store.photos().some((photo) => photo.id === photoId);
+    return collage && exists ? photoFileUrl(collage.id, photoId) : null;
   });
 
   private readonly shortcuts = undoRedoShortcutLabels();

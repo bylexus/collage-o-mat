@@ -20,7 +20,7 @@ import type { Photo, PhotoProps } from '../../../core/models/photo';
 import type { CollageText, TextProps } from '../../../core/models/text';
 import type { EditorSelection } from '../selection';
 import { CollageRenderer, CropModeState, Scene } from './collage-renderer';
-import { scenePhotos } from './scene';
+import { sceneBackground, scenePhotos } from './scene';
 import { snapGridOf } from '../geometry/snap-grid';
 import { CropModeControls } from './crop-mode-controls';
 
@@ -192,7 +192,7 @@ export class EditorCanvas {
     const collageId = this.collageId();
     return {
       page: settings.page,
-      backgroundColor: settings.backgroundColor,
+      background: sceneBackground(settings.background, this.photos(), collageId),
       defaultBorder: settings.defaultBorder,
       photos: scenePhotos(this.photos(), collageId),
       texts: this.texts(),

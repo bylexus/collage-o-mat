@@ -382,6 +382,22 @@ export class EditorStore {
   }
 
   /**
+   * Makes the photo the bg photo: background type `image` with this photo (the photo stays on the
+   * page). No change if it already is. One undo step.
+   */
+  useAsBackground(photoId: number): void {
+    const settings = this.requireSettings();
+    const { background } = settings;
+    if (background.type === 'image' && background.image.photoId === photoId) {
+      return;
+    }
+    this.updateSettings({
+      ...settings,
+      background: { ...background, type: 'image', image: { ...background.image, photoId } },
+    });
+  }
+
+  /**
    * Swaps the places of two placed photos (see `swapFrames`); all other photos stay. If one of
    * them is the centre photo, the other one becomes the centre photo. Unknown, not placed and
    * equal photos change nothing. The selection stays. One undo step.
@@ -428,9 +444,10 @@ export class EditorStore {
       this.selectionSignal.set(null);
     }
     const settings = this.requireSettings();
-    if (settings.center.centerPhotoId === id) {
+    const resetSettings = withoutDeletedPhoto(settings, id);
+    if (resetSettings !== settings) {
       // Part of the delete, so no undo step: only saved.
-      this.settingsSignal.set({ ...settings, center: { ...settings.center, centerPhotoId: null } });
+      this.settingsSignal.set(resetSettings);
       this.autoSaver.schedule();
     }
     this.notification.success($localize`:@@editor.deletePhoto.done:Photo deleted`);
@@ -654,4 +671,24 @@ function withTextPreview(
     return texts;
   }
   return texts.map((text) => (text.id === preview.id ? { ...text, props: preview.props } : text));
+}
+
+/**
+ * The settings without references to a deleted photo: the centre photo and the bg photo become
+ * `null` if they are that photo. Returns `settings` itself if nothing refers to it.
+ */
+function withoutDeletedPhoto(settings: CollageSettings, photoId: number): CollageSettings {
+  const { center, background } = settings;
+  const isCentre = center.centerPhotoId === photoId;
+  const isBackground = background.image.photoId === photoId;
+  if (!isCentre && !isBackground) {
+    return settings;
+  }
+  return {
+    ...settings,
+    center: isCentre ? { ...center, centerPhotoId: null } : center,
+    background: isBackground
+      ? { ...background, image: { ...background.image, photoId: null } }
+      : background,
+  };
 }
