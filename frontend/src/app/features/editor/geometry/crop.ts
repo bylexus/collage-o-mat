@@ -5,6 +5,16 @@ import { clamp, isPositiveFinite } from './numbers';
 /** Centre of the image in normalized coordinates. */
 const IMAGE_CENTER: Readonly<{ x: number; y: number }> = { x: 0.5, y: 0.5 };
 
+/** Aspect used for an image with an invalid pixel size. */
+const FALLBACK_IMAGE_ASPECT = 1;
+
+/** Image aspect (width / height) from a pixel size; `FALLBACK_IMAGE_ASPECT` if the size is invalid. */
+export function imageAspect(widthPx: number, heightPx: number): number {
+  return isPositiveFinite(widthPx) && isPositiveFinite(heightPx)
+    ? widthPx / heightPx
+    : FALLBACK_IMAGE_ASPECT;
+}
+
 /** The whole image. */
 export function fullCrop(): NormalizedRect {
   return { x: 0, y: 0, width: 1, height: 1 };

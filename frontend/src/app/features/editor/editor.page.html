@@ -24,6 +24,28 @@
       </p>
     </div>
     <app-save-status-indicator [status]="store.saveStatus()" />
+    <div class="toolbar-group">
+      <button
+        matIconButton
+        type="button"
+        [disabled]="!store.canUndo()"
+        (click)="store.undo()"
+        [attr.aria-label]="undoLabel"
+        [matTooltip]="undoLabel"
+      >
+        <mat-icon>undo</mat-icon>
+      </button>
+      <button
+        matIconButton
+        type="button"
+        [disabled]="!store.canRedo()"
+        (click)="store.redo()"
+        [attr.aria-label]="redoLabel"
+        [matTooltip]="redoLabel"
+      >
+        <mat-icon>redo</mat-icon>
+      </button>
+    </div>
     <span class="toolbar-spacer"></span>
     @if (isCenterMode()) {
       <!-- disabledInteractive: the tooltip explains why the button is disabled. -->
@@ -63,10 +85,11 @@
         <app-editor-canvas
           class="editor-canvas"
           [settings]="settings"
-          [photos]="store.photos()"
+          [photos]="store.displayedPhotos()"
           [collageId]="collage.id"
           [selectedPhotoId]="store.selectedPhotoId()"
           (photoSelected)="store.selectPhoto($event)"
+          (photoChange)="store.updatePhotoProps($event.id, $event.props)"
         />
         @if (store.photos().length === 0) {
           <p class="editor-hint" i18n="@@editor.noPhotos">
@@ -75,11 +98,25 @@
         }
       </div>
       <aside class="editor-panel">
+        @if (store.selectedPhoto(); as photo) {
+          <app-photo-properties-panel
+            class="photo-panel"
+            [photo]="photo"
+            [defaultBorder]="settings.defaultBorder"
+            (borderChange)="store.setPhotoBorder(photo.id, $event)"
+            (borderPreview)="store.previewPhotoBorder(photo.id, $event)"
+            (bringToFront)="store.bringToFront(photo.id)"
+            (sendToBack)="store.sendToBack(photo.id)"
+            (delete)="store.deletePhoto(photo.id)"
+          />
+        }
         <app-collage-settings-panel
           [settings]="settings"
           [photoCount]="store.photos().length"
+          [hasBorderOverrides]="store.hasBorderOverrides()"
           (settingsChange)="store.updateSettings($event)"
           (rearrange)="store.rearrange()"
+          (applyBorderToAll)="store.applyDefaultBorderToAll()"
         />
       </aside>
     </div>

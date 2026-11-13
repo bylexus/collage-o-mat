@@ -1,16 +1,20 @@
 import { Component, inject, input, output } from '@angular/core';
 import { NonNullableFormBuilder } from '@angular/forms';
+import { MatButtonModule } from '@angular/material/button';
+import { MatIconModule } from '@angular/material/icon';
 import { BorderSettings, defaultCollageSettings } from '../../../core/models/collage';
 import { limitValidators } from '../../../shared/number-limits';
-import { ColorField } from './color-field';
-import { NumberField } from './number-field';
-import { SETTINGS_LIMITS } from './settings-limits';
-import { syncFromInput } from './sync-from-input';
+import { BORDER_WIDTH_LIMITS, BorderFields } from '../fields/border-fields';
+import { ColorField } from '../fields/color-field';
+import { syncFromInput } from '../fields/sync-from-input';
 
-/** Background colour and default photo border. Emits each valid change. */
+/**
+ * Background colour, default photo border and "Apply to all photos" (removes the borders of
+ * single photos). Emits each valid change.
+ */
 @Component({
   selector: 'app-appearance-settings-section',
-  imports: [ColorField, NumberField],
+  imports: [MatButtonModule, MatIconModule, BorderFields, ColorField],
   template: `
     <app-color-field
       [control]="form.controls.backgroundColor"
@@ -18,45 +22,48 @@ import { syncFromInput } from './sync-from-input';
       label="Background colour"
       (committed)="commitBackground()"
     />
-    <div class="field-row">
-      <app-number-field
-        [control]="form.controls.borderWidthMm"
-        [limits]="borderWidthLimits"
-        i18n-label="@@editor.settings.borderWidthMm"
-        label="Border (mm)"
-        (committed)="commitBorder()"
-      />
-      <app-color-field
-        class="border-color"
-        [control]="form.controls.borderColor"
-        i18n-label="@@editor.settings.borderColor"
-        label="Border colour"
-        (committed)="commitBorder()"
-      />
-    </div>
+    <app-border-fields
+      [widthControl]="form.controls.borderWidthMm"
+      [colorControl]="form.controls.borderColor"
+      (committed)="commitBorder()"
+    />
     <p class="settings-note" i18n="@@editor.settings.borderHint">
       Default border of all photos without an own border.
     </p>
+    <button
+      matButton="outlined"
+      type="button"
+      class="apply-border-button"
+      [disabled]="!hasBorderOverrides()"
+      (click)="applyBorderToAll.emit()"
+    >
+      <mat-icon>border_outer</mat-icon>
+      <span i18n="@@editor.settings.applyBorderToAll">Apply to all photos</span>
+    </button>
+    <p class="settings-note" i18n="@@editor.settings.applyBorderToAllHint">
+      Removes the individual borders of all photos.
+    </p>
   `,
-  styleUrl: './settings-section.scss',
+  styleUrl: '../fields/panel-section.scss',
   styles: `
-    .border-color {
-      align-self: center;
+    .apply-border-button {
+      align-self: flex-start;
     }
   `,
 })
 export class AppearanceSettingsSection {
   readonly backgroundColor = input.required<string>();
   readonly defaultBorder = input.required<BorderSettings>();
+  /** True if at least one photo has an own border ("Apply to all photos" is enabled only then). */
+  readonly hasBorderOverrides = input(false);
   readonly backgroundColorChange = output<string>();
   readonly defaultBorderChange = output<BorderSettings>();
-
-  protected readonly borderWidthLimits = SETTINGS_LIMITS.borderWidthMm;
+  readonly applyBorderToAll = output<void>();
 
   private readonly defaults = defaultCollageSettings();
   protected readonly form = inject(NonNullableFormBuilder).group({
     backgroundColor: [this.defaults.backgroundColor],
-    borderWidthMm: [this.defaults.defaultBorder.widthMm, limitValidators(this.borderWidthLimits)],
+    borderWidthMm: [this.defaults.defaultBorder.widthMm, limitValidators(BORDER_WIDTH_LIMITS)],
     borderColor: [this.defaults.defaultBorder.color],
   });
 

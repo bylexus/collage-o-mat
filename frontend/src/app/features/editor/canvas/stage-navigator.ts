@@ -1,6 +1,8 @@
 // Pan and zoom of the editor stage. Plain class without Angular; owned by `CollageRenderer`.
 import type Konva from 'konva/lib/Core';
 import type { KonvaEventObject } from 'konva/lib/Node';
+import { pointInElement } from './pointer';
+import type { PressGestureTracker } from './press-gesture';
 import {
   centreOf,
   fitRect,
@@ -33,10 +35,17 @@ const CURSOR_GRAB = 'grab';
 const CURSOR_GRABBING = 'grabbing';
 
 export interface StageNavigatorOptions {
+  /** Marks a press that became a pan, so that the following click is ignored. */
+  gestures: PressGestureTracker;
   /** Bounds (world mm) that "zoom to fit" shows; `null` while there is nothing to show. */
   contentBounds: () => Rect | null;
   /** Called with the zoom (1 = real size) after each view change. */
   onZoomChange: (zoom: number) => void;
+  /**
+   * Gets plain (vertical) wheel events first, with the pointer in container px and the vertical
+   * delta in px; returns true if it handled the event (no view pan then). Used by crop mode.
+   */
+  interceptWheel?: (pointer: Point, deltaYPx: number) => boolean;
 }
 
 /** A press of the primary button on the empty workspace. */
@@ -55,15 +64,15 @@ interface PressGesture {
  *
  * - Wheel / trackpad scroll pans (Shift + wheel pans horizontally).
  * - Ctrl/Cmd + wheel and trackpad pinch zoom at the pointer.
+ * - Plain wheel events go to `interceptWheel` first (crop mode zooms the crop over the frame).
  * - Dragging the empty workspace (page included, photos excluded) pans; the cursor shows grab /
- *   grabbing. A press without movement stays a click (see `wasPanGesture`).
+ *   grabbing. A press without movement stays a click (a pan is marked in `PressGestureTracker`).
  * - Zoom buttons zoom around the view centre.
  * - Resize: until the user moves the view (and again after each "zoom to fit") the content is
  *   fitted again; after a manual pan or zoom, the zoom stays and the view centre stays in place.
  */
 export class StageNavigator {
   private press: PressGesture | null = null;
-  private lastPressPanned = false;
   /** True after the first successful "zoom to fit". */
   private fitted = false;
   /** True when the user panned or zoomed since the last "zoom to fit". */
@@ -77,14 +86,6 @@ export class StageNavigator {
     stage.on(`pointerdown${EVENT_NAMESPACE}`, (event) => this.onPointerDown(event));
     stage.on(`pointermove${EVENT_NAMESPACE}`, (event) => this.updateHoverCursor(event.target));
     stage.on(`pointerleave${EVENT_NAMESPACE}`, () => this.updateHoverCursor(null));
-  }
-
-  /**
-   * True if the last press on the stage became a pan. The click that the browser and Konva still
-   * fire after such a press must not change the selection.
-   */
-  wasPanGesture(): boolean {
-    return this.lastPressPanned;
   }
 
   /** Shows the content as large as possible. Returns false if there is nothing to fit. */
@@ -164,9 +165,12 @@ export class StageNavigator {
     const size = this.stage.size();
     const dx = wheelDeltaPx(event.deltaX, event.deltaMode, size.width);
     const dy = wheelDeltaPx(event.deltaY, event.deltaMode, size.height);
+    const pointer = pointInElement(this.container, event);
     if (event.ctrlKey || event.metaKey) {
       // Trackpad pinch arrives as a wheel event with `ctrlKey`.
-      this.navigate(zoomBy(this.view(), wheelZoomFactor(dy), this.pointerInContainer(event)));
+      this.navigate(zoomBy(this.view(), wheelZoomFactor(dy), pointer));
+    } else if (!event.shiftKey && this.options.interceptWheel?.(pointer, dy)) {
+      return;
     } else if (event.shiftKey && dx === 0) {
       // Mouse wheel with Shift: browsers that do not swap the axes themselves.
       this.navigate(panBy(this.view(), -dy, 0));
@@ -176,7 +180,6 @@ export class StageNavigator {
   };
 
   private onPointerDown(event: KonvaEventObject<PointerEvent>): void {
-    this.lastPressPanned = false;
     const evt = event.evt;
     if (event.target !== this.stage || evt.button !== PRIMARY_BUTTON || this.press) {
       return;
@@ -200,7 +203,7 @@ export class StageNavigator {
         return;
       }
       press.panning = true;
-      this.lastPressPanned = true;
+      this.options.gestures.markGesture();
       this.setCursor(CURSOR_GRABBING);
     }
     this.navigate(panBy(this.view(), point.x - press.last.x, point.y - press.last.y));
@@ -237,11 +240,6 @@ export class StageNavigator {
     if (this.container.style.cursor !== cursor) {
       this.container.style.cursor = cursor;
     }
-  }
-
-  private pointerInContainer(event: MouseEvent): Point {
-    const bounds = this.container.getBoundingClientRect();
-    return { x: event.clientX - bounds.left, y: event.clientY - bounds.top };
   }
 }
 

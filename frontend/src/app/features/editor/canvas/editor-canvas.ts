@@ -16,20 +16,41 @@ import { MatButtonModule } from '@angular/material/button';
 import { MatIconModule } from '@angular/material/icon';
 import { MatTooltipModule } from '@angular/material/tooltip';
 import { CollageSettings, PageSize } from '../../../core/models/collage';
-import { isPlaced, Photo, photoFileUrl } from '../../../core/models/photo';
-import { CollageRenderer, Scene, ScenePhoto } from './collage-renderer';
+import { isPlaced, Photo, photoFileUrl, PhotoProps } from '../../../core/models/photo';
+import { CollageRenderer, CropModeState, Scene, ScenePhoto } from './collage-renderer';
+import { CropModeControls } from './crop-mode-controls';
+
+/** A committed change of one photo made on the canvas. */
+export interface PhotoChange {
+  id: number;
+  /** The complete new props. */
+  props: PhotoProps;
+}
 
 /**
  * Konva canvas of the editor (presentational): draws the page and the placed photos, reports
- * clicks and shows the zoom controls. Fills its container. The view is zoomed to fit on the first
- * render and when the page size or orientation changes; pan and zoom input is handled by the
- * renderer (see `StageNavigator`).
+ * clicks and committed photo edits (move, rotate, resize, crop) and shows the zoom controls and
+ * the crop mode controls. Fills its container. The view is zoomed to fit on the first render and
+ * when the page size or orientation changes. All canvas input is handled by the renderer (see
+ * `CollageRenderer`).
  */
 @Component({
   selector: 'app-editor-canvas',
-  imports: [PercentPipe, MatButtonModule, MatIconModule, MatTooltipModule],
+  imports: [PercentPipe, MatButtonModule, MatIconModule, MatTooltipModule, CropModeControls],
   template: `
     <div #host class="canvas-host"></div>
+    @if (cropMode(); as crop) {
+      <app-crop-mode-controls
+        class="crop-controls"
+        [style.--anchor-x.px]="crop.anchor.x"
+        [style.--anchor-y.px]="crop.anchor.y"
+        [zoom]="crop.zoom"
+        [minZoom]="crop.minZoom"
+        [maxZoom]="crop.maxZoom"
+        (zoomInput)="setCropZoom($event)"
+        (zoomCommit)="commitCropZoom()"
+      />
+    }
     <div
       class="zoom-controls"
       role="toolbar"
@@ -91,6 +112,14 @@ import { CollageRenderer, Scene, ScenePhoto } from './collage-renderer';
       touch-action: none;
     }
 
+    /* Directly below the frame in crop mode, kept inside the canvas. */
+    .crop-controls {
+      position: absolute;
+      top: clamp(0px, var(--anchor-y), calc(100% - 52px));
+      left: clamp(92px, var(--anchor-x), calc(100% - 92px));
+      transform: translateX(-50%);
+    }
+
     .zoom-controls {
       position: absolute;
       right: 12px;
@@ -120,12 +149,16 @@ export class EditorCanvas {
   readonly selectedPhotoId = input<number | null>(null);
   /** Click on a photo (its id) or on the empty area (`null`). */
   readonly photoSelected = output<number | null>();
+  /** A committed move, rotation, resize or crop change (once per gesture, never during it). */
+  readonly photoChange = output<PhotoChange>();
 
   private readonly destroyRef = inject(DestroyRef);
   private readonly host = viewChild.required<ElementRef<HTMLDivElement>>('host');
   private readonly renderer = signal<CollageRenderer | null>(null);
   /** Current zoom (1 = real size), reported by the renderer. */
   protected readonly zoom = signal(1);
+  /** Crop mode of the renderer (`null` when off). */
+  protected readonly cropMode = signal<CropModeState | null>(null);
   /** Page size of the last render; a change triggers "zoom to fit". */
   private renderedPageSize: PageSize | null = null;
 
@@ -138,7 +171,14 @@ export class EditorCanvas {
       defaultBorder: settings.defaultBorder,
       photos: this.photos().flatMap((photo): ScenePhoto[] =>
         isPlaced(photo.props)
-          ? [{ id: photo.id, url: photoFileUrl(collageId, photo.id), props: photo.props }]
+          ? [
+              {
+                id: photo.id,
+                url: photoFileUrl(collageId, photo.id),
+                image: { widthPx: photo.widthPx, heightPx: photo.heightPx },
+                props: photo.props,
+              },
+            ]
           : [],
       ),
       selectedPhotoId: this.selectedPhotoId(),
@@ -161,6 +201,14 @@ export class EditorCanvas {
 
   protected zoomOut(): void {
     this.renderer()?.zoomOut();
+  }
+
+  protected setCropZoom(zoom: number): void {
+    this.renderer()?.setCropZoom(zoom);
+  }
+
+  protected commitCropZoom(): void {
+    this.renderer()?.commitCropZoom();
   }
 
   /** Draws the scene; fits the view after a page size or orientation change. */
@@ -191,6 +239,8 @@ export class EditorCanvas {
     const renderer = new CollageRenderer(container, {
       onSelect: (id) => this.photoSelected.emit(id),
       onZoomChange: (zoom) => this.zoom.set(zoom),
+      onPhotoChange: (id, props) => this.photoChange.emit({ id, props }),
+      onCropModeChange: (state) => this.cropMode.set(state),
     });
     const resizeObserver = new ResizeObserver(() =>
       renderer.setSize(container.clientWidth, container.clientHeight),

@@ -8,8 +8,10 @@
   <app-appearance-settings-section
     [backgroundColor]="settings().backgroundColor"
     [defaultBorder]="settings().defaultBorder"
+    [hasBorderOverrides]="hasBorderOverrides()"
     (backgroundColorChange)="update({ backgroundColor: $event })"
     (defaultBorderChange)="update({ defaultBorder: $event })"
+    (applyBorderToAll)="applyBorderToAll.emit()"
   />
 </section>
 

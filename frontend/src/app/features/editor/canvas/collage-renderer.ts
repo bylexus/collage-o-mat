@@ -1,98 +1,96 @@
 // Konva rendering of a collage. Plain class without Angular; owned by `EditorCanvas`.
 // Core + the used shapes only (smaller bundle than the full 'konva' entry).
 import Konva from 'konva/lib/Core';
-import { Image as KonvaImage } from 'konva/lib/shapes/Image';
 import { Rect as KonvaRect } from 'konva/lib/shapes/Rect';
-import type { BorderSettings, PageSize } from '../../../core/models/collage';
-import type { NormalizedRect, PhotoProps } from '../../../core/models/photo';
+import type { PhotoProps } from '../../../core/models/photo';
+import { applyFrameBox, FrameBox } from '../geometry/transform';
+import { CropMode, CropModeState } from './crop-mode';
+import { ImageCache } from './image-cache';
+import { PhotoTransformer } from './photo-transformer';
+import { photoGroupOf, PhotoView } from './photo-view';
+import { PressGestureTracker } from './press-gesture';
+import { sameGeometry, Scene, ScenePhoto } from './scene';
 import { StageNavigator } from './stage-navigator';
 import { frameBounds, Rect, unionRects } from './viewport';
 
-/** A placed photo as the renderer needs it. */
-export interface ScenePhoto {
-  id: number;
-  /** URL of the image file. */
-  url: string;
-  props: PhotoProps;
-}
-
-/** Everything the renderer draws. World units are mm, page origin top-left. */
-export interface Scene {
-  page: PageSize;
-  backgroundColor: string;
-  defaultBorder: BorderSettings;
-  /** Only placed photos; drawn in `props.z` order. */
-  photos: readonly ScenePhoto[];
-  selectedPhotoId: number | null;
-}
+export type { Scene, ScenePhoto } from './scene';
+export type { CropModeState } from './crop-mode';
 
 /** Callbacks of the renderer to its owner. */
 export interface RendererCallbacks {
-  /** Click/tap with the photo id, or `null` for the empty area (not after a pan). */
+  /** Click/tap with the photo id, or `null` for the empty area (not after a gesture). */
   onSelect: (photoId: number | null) => void;
   /** The zoom (1 = real size) changed. */
   onZoomChange: (zoom: number) => void;
+  /** A committed move, rotation, resize or crop change: the complete new props of the photo. */
+  onPhotoChange: (photoId: number, props: PhotoProps) => void;
+  /** Crop mode started, its zoom changed, or it ended (`null`). */
+  onCropModeChange: (state: CropModeState | null) => void;
 }
-
-/** Konva nodes of one photo. */
-interface PhotoNode {
-  /** At the frame centre, rotated, clipped to the frame. */
-  group: Konva.Group;
-  image: KonvaImage;
-  border: KonvaRect;
-  crop: NormalizedRect;
-}
-
-const PHOTO_NAME = 'photo';
-const PLACEHOLDER_FILL = '#c8c8c8';
-const SELECTION_COLOR = '#005cbb';
-const SELECTION_STROKE_PX = 2;
 
 /**
- * Owns a Konva stage in a container element and draws a `Scene`: page rectangle, photos (image with
- * crop, border inside the frame) and the selection outline. `render` updates the existing nodes
- * (matched by photo id); images are loaded once per photo id. The stage scale is px per mm.
- * Pan and zoom are delegated to a `StageNavigator`; this class is the only entry point for the
- * owning component.
+ * Owns a Konva stage in a container element and draws a `Scene`: page rectangle and photos
+ * (`PhotoView`, matched by photo id, images loaded once). The stage scale is px per mm. This class
+ * is the only entry point for the owning component; the interactions are delegated:
+ *
+ * - `StageNavigator`: pan and zoom of the view.
+ * - `PhotoTransformer`: handles on the selected photo (rotate, resize).
+ * - `PhotoView` drag events: move (an unselected photo is selected first).
+ * - `CropMode`: double-click a photo to pan/zoom the image inside its frame.
+ *
+ * Each interaction reports one `onPhotoChange` when it is committed, never during the gesture.
  */
 export class CollageRenderer {
   private readonly stage: Konva.Stage;
   private readonly layer = new Konva.Layer();
   private readonly pageRect = new KonvaRect({ x: 0, y: 0, listening: false });
-  private readonly selection = new KonvaRect({
-    stroke: SELECTION_COLOR,
-    strokeWidth: SELECTION_STROKE_PX,
-    strokeScaleEnabled: false,
-    listening: false,
-    visible: false,
-  });
-  private readonly nodes = new Map<number, PhotoNode>();
-  private readonly photoIds = new WeakMap<Konva.Node, number>();
-  private readonly images = new Map<number, HTMLImageElement>();
+  private readonly views = new Map<number, PhotoView>();
+  private readonly viewsByGroup = new WeakMap<Konva.Node, PhotoView>();
+  private readonly images = new ImageCache((photoId, image) => this.onImageLoaded(photoId, image));
+  private readonly gestures: PressGestureTracker;
   private readonly navigator: StageNavigator;
+  private readonly transformer: PhotoTransformer;
+  private readonly cropMode: CropMode;
   private scene: Scene | null = null;
 
-  constructor(container: HTMLDivElement, callbacks: RendererCallbacks) {
+  constructor(
+    container: HTMLDivElement,
+    private readonly callbacks: RendererCallbacks,
+  ) {
     this.stage = new Konva.Stage({
       container,
       width: container.clientWidth,
       height: container.clientHeight,
     });
-    this.layer.add(this.pageRect, this.selection);
+    this.layer.add(this.pageRect);
     this.stage.add(this.layer);
+    // First stage listener: clears the gesture flag before the others can set it.
+    this.gestures = new PressGestureTracker(this.stage);
     this.navigator = new StageNavigator(this.stage, {
+      gestures: this.gestures,
       contentBounds: () => this.contentBounds(),
-      onZoomChange: callbacks.onZoomChange,
+      onZoomChange: (zoom) => {
+        callbacks.onZoomChange(zoom);
+        // Called on every pan/zoom; the crop mode controls follow the frame on screen.
+        this.cropMode?.viewChanged();
+      },
+      interceptWheel: (pointer, deltaYPx) => this.cropMode.handleWheel(pointer, deltaYPx),
     });
-    this.stage.on('click tap', (event) => {
-      if (!this.navigator.wasPanGesture()) {
-        callbacks.onSelect(this.photoIdOf(event.target));
-      }
+    this.transformer = new PhotoTransformer(this.layer, this.gestures, {
+      onTransform: (view, box, keepAspect) => this.previewFrame(view, box, keepAspect),
+      onTransformEnd: (view, box, keepAspect) => this.commitFrame(view, box, keepAspect),
     });
+    this.cropMode = new CropMode(this.layer, this.gestures, {
+      onCommit: callbacks.onPhotoChange,
+      onStateChange: (state) => this.onCropModeChange(state),
+    });
+    this.stage.on('click tap', (event) => this.onClick(event.target));
+    this.stage.on('dblclick dbltap', (event) => this.onDoubleClick(event.target));
   }
 
   /** Draws the scene. The first scene is also zoomed to fit. */
   render(scene: Scene): void {
+    const previousSelection = this.scene?.selectedPhotoId ?? null;
     this.scene = scene;
     this.pageRect.setAttrs({
       width: scene.page.widthMm,
@@ -100,9 +98,9 @@ export class CollageRenderer {
       fill: scene.backgroundColor,
     });
     this.syncPhotos(scene);
-    this.updateSelection(scene.selectedPhotoId);
+    this.syncCropMode(scene, previousSelection);
+    this.applyInteractionState();
     this.navigator.fitOnce();
-    this.layer.batchDraw();
   }
 
   /** Sets the stage size in px (call when the container size changes). */
@@ -125,13 +123,22 @@ export class CollageRenderer {
     this.navigator.zoomOut();
   }
 
-  /** Destroys the stage and stops pending image loads. */
+  /** Sets the crop zoom of the photo in crop mode while the slider moves (see `CropModeState`). */
+  setCropZoom(zoom: number): void {
+    this.cropMode.setZoom(zoom);
+  }
+
+  /** Commits the crop zoom of the slider (slider released). */
+  commitCropZoom(): void {
+    this.cropMode.commitZoom();
+  }
+
+  /** Destroys the stage and stops pending image loads, timers and listeners. */
   destroy(): void {
-    for (const image of this.images.values()) {
-      image.onload = null;
-    }
+    this.cropMode.destroy();
+    this.transformer.destroy();
     this.images.clear();
-    this.nodes.clear();
+    this.views.clear();
     this.navigator.destroy();
     this.stage.destroy();
   }
@@ -148,139 +155,173 @@ export class CollageRenderer {
     );
   }
 
-  private photoIdOf(target: Konva.Node): number | null {
-    const group = target.findAncestor(`.${PHOTO_NAME}`, true);
-    return (group && this.photoIds.get(group)) ?? null;
+  private scenePhoto(photoId: number): ScenePhoto | undefined {
+    return this.scene?.photos.find((photo) => photo.id === photoId);
   }
 
-  /** Removes nodes of photos that are gone, updates or creates the others and sorts them by z. */
+  private viewOf(target: Konva.Node): PhotoView | undefined {
+    const group = photoGroupOf(target);
+    return group ? this.viewsByGroup.get(group) : undefined;
+  }
+
+  /** Removes views of photos that are gone, updates or creates the others and sorts them by z. */
   private syncPhotos(scene: Scene): void {
     const ids = new Set(scene.photos.map((photo) => photo.id));
-    for (const id of this.nodes.keys()) {
+    for (const id of this.views.keys()) {
       if (!ids.has(id)) {
         this.removePhoto(id);
       }
     }
-    const byZ = [...scene.photos].sort((a, b) => a.props.z - b.props.z);
-    for (const photo of byZ) {
-      const node = this.nodes.get(photo.id) ?? this.createPhoto(photo.id);
-      this.updatePhoto(node, photo, scene.defaultBorder);
-      node.group.moveToTop();
+    for (const photo of scene.photos) {
+      const view = this.views.get(photo.id) ?? this.createPhoto(photo);
+      view.update(photo.props, scene.defaultBorder);
     }
-    this.selection.moveToTop();
+    this.orderByZ();
   }
 
-  private createPhoto(id: number): PhotoNode {
-    const group = new Konva.Group({ name: PHOTO_NAME });
-    const image = new KonvaImage({
-      image: undefined,
-      fill: PLACEHOLDER_FILL,
-      perfectDrawEnabled: false,
+  /** Stacks the photo views in `props.z` order (crop mode raises its photo above them). */
+  private orderByZ(): void {
+    const byZ = [...(this.scene?.photos ?? [])].sort((a, b) => a.props.z - b.props.z);
+    for (const photo of byZ) {
+      this.views.get(photo.id)?.group.moveToTop();
+    }
+  }
+
+  /**
+   * Keeps crop mode in line with the scene: another selected photo ends it (pending change
+   * committed); a removed or externally changed photo ends it inside `CropMode.sync`.
+   */
+  private syncCropMode(scene: Scene, previousSelection: number | null): void {
+    const photoId = this.cropMode.photoId;
+    if (photoId === null) {
+      return;
+    }
+    const selectionMovedAway =
+      scene.selectedPhotoId !== previousSelection && scene.selectedPhotoId !== photoId;
+    if (selectionMovedAway) {
+      this.cropMode.end(true);
+    } else {
+      this.cropMode.sync(this.views.get(photoId), this.scenePhoto(photoId));
+    }
+  }
+
+  /**
+   * Handles and dragging follow the mode: in crop mode no photo can be moved and the handles are
+   * hidden; otherwise the selected photo has the handles. Also restores the overlay order.
+   */
+  private applyInteractionState(): void {
+    const cropping = this.cropMode.photoId !== null;
+    for (const view of this.views.values()) {
+      view.setDraggable(!cropping);
+    }
+    const selectedId = this.scene?.selectedPhotoId ?? null;
+    const selected = selectedId === null ? undefined : this.views.get(selectedId);
+    this.transformer.attach(cropping ? null : (selected ?? null));
+    this.cropMode.raise();
+    this.transformer.refresh();
+    this.layer.batchDraw();
+  }
+
+  private createPhoto(photo: ScenePhoto): PhotoView {
+    const view = new PhotoView(photo.id, {
+      onDragStart: (dragged) => this.onDragStart(dragged),
+      onDragEnd: (dragged) => this.onDragEnd(dragged),
     });
-    const border = new KonvaRect({ listening: false, perfectDrawEnabled: false });
-    group.add(image, border);
-    this.layer.add(group);
-    this.photoIds.set(group, id);
-    const node: PhotoNode = { group, image, border, crop: { x: 0, y: 0, width: 1, height: 1 } };
-    this.nodes.set(id, node);
-    return node;
+    view.setImage(this.images.get(photo.id, photo.url));
+    this.layer.add(view.group);
+    this.views.set(photo.id, view);
+    this.viewsByGroup.set(view.group, view);
+    return view;
   }
 
   private removePhoto(id: number): void {
-    this.nodes.get(id)?.group.destroy();
-    this.nodes.delete(id);
-    const image = this.images.get(id);
-    if (image) {
-      image.onload = null;
-      this.images.delete(id);
+    this.views.get(id)?.destroy();
+    this.views.delete(id);
+    this.images.delete(id);
+  }
+
+  private onImageLoaded(photoId: number, image: HTMLImageElement): void {
+    const view = this.views.get(photoId);
+    if (view) {
+      view.setImage(image);
+      // The crop mode overlay shows the source image too.
+      this.cropMode.redraw();
+      this.layer.batchDraw();
     }
   }
 
-  private updatePhoto(node: PhotoNode, photo: ScenePhoto, defaultBorder: BorderSettings): void {
-    const { cxMm, cyMm, widthMm, heightMm, rotationDeg, crop, border } = photo.props;
-    node.group.setAttrs({
-      x: cxMm,
-      y: cyMm,
-      offsetX: widthMm / 2,
-      offsetY: heightMm / 2,
-      rotation: rotationDeg,
-      clip: { x: 0, y: 0, width: widthMm, height: heightMm },
-    });
-    node.image.size({ width: widthMm, height: heightMm });
-    node.crop = crop;
-    this.applyImage(node, this.imageOf(photo));
-
-    // The stroke is centred on its path: inset by half the width to keep it inside the frame.
-    const borderWidth = Math.min(
-      border.widthMm ?? defaultBorder.widthMm,
-      widthMm / 2,
-      heightMm / 2,
-    );
-    node.border.setAttrs({
-      x: borderWidth / 2,
-      y: borderWidth / 2,
-      width: widthMm - borderWidth,
-      height: heightMm - borderWidth,
-      stroke: border.color ?? defaultBorder.color,
-      strokeWidth: borderWidth,
-      visible: borderWidth > 0,
-    });
-  }
-
-  /** The cached image of a photo; starts loading it on first use. */
-  private imageOf(photo: ScenePhoto): HTMLImageElement {
-    let image = this.images.get(photo.id);
-    if (!image) {
-      const loading = new Image();
-      loading.onload = () => {
-        const node = this.nodes.get(photo.id);
-        if (node) {
-          this.applyImage(node, loading);
-          this.layer.batchDraw();
-        }
-      };
-      loading.src = photo.url;
-      this.images.set(photo.id, loading);
-      image = loading;
-    }
-    return image;
-  }
-
-  /** Shows the image with the node's crop (in source pixels), or the placeholder until it is loaded. */
-  private applyImage(node: PhotoNode, image: HTMLImageElement): void {
-    const loaded = image.complete && image.naturalWidth > 0;
-    // Remove the placeholder colour instead of `fillEnabled(false)`: a disabled fill also removes the
-    // shape from Konva's hit graph, and the photo could no longer be clicked.
-    node.image.fill(loaded ? '' : PLACEHOLDER_FILL);
-    if (!loaded) {
-      node.image.image(undefined);
+  private onClick(target: Konva.Node): void {
+    if (this.gestures.wasGesture() || this.transformer.owns(target)) {
       return;
     }
-    node.image.image(image);
-    node.image.crop({
-      x: node.crop.x * image.naturalWidth,
-      y: node.crop.y * image.naturalHeight,
-      width: node.crop.width * image.naturalWidth,
-      height: node.crop.height * image.naturalHeight,
-    });
-  }
-
-  private updateSelection(selectedPhotoId: number | null): void {
-    const node = selectedPhotoId === null ? undefined : this.nodes.get(selectedPhotoId);
-    if (!node) {
-      this.selection.visible(false);
+    if (this.cropMode.photoId !== null) {
+      // In crop mode a click outside the frame only ends crop mode.
+      if (!this.cropMode.contains(target)) {
+        this.cropMode.end(true);
+      }
       return;
     }
-    const group = node.group;
-    this.selection.setAttrs({
-      visible: true,
-      x: group.x(),
-      y: group.y(),
-      offsetX: group.offsetX(),
-      offsetY: group.offsetY(),
-      rotation: group.rotation(),
-      width: node.image.width(),
-      height: node.image.height(),
-    });
+    this.callbacks.onSelect(this.viewOf(target)?.id ?? null);
+  }
+
+  /** Double-click on a photo starts crop mode for it (and selects it). */
+  private onDoubleClick(target: Konva.Node): void {
+    const view = this.viewOf(target);
+    const photo = view && this.scenePhoto(view.id);
+    if (!view || !photo || this.cropMode.photoId === view.id) {
+      return;
+    }
+    this.cropMode.start(view, photo);
+    if (this.scene?.selectedPhotoId !== view.id) {
+      this.callbacks.onSelect(view.id);
+    }
+    this.applyInteractionState();
+  }
+
+  private onCropModeChange(state: CropModeState | null): void {
+    if (state === null) {
+      this.orderByZ();
+      this.applyInteractionState();
+    }
+    this.callbacks.onCropModeChange(state);
+  }
+
+  /** A move starts: an unselected photo is selected first; scene updates keep the drag position. */
+  private onDragStart(view: PhotoView): void {
+    view.beginGesture();
+    if (this.scene?.selectedPhotoId !== view.id) {
+      this.callbacks.onSelect(view.id);
+    }
+  }
+
+  private onDragEnd(view: PhotoView): void {
+    view.endGesture();
+    this.commitFrame(view, view.frameBox(), true);
+  }
+
+  /** Live preview of a transform: the photo is redrawn with the props it would get (no scale). */
+  private previewFrame(view: PhotoView, box: FrameBox, keepAspect: boolean): void {
+    const photo = this.scenePhoto(view.id);
+    if (photo) {
+      view.showProps(applyFrameBox(photo.props, box, photo.image, keepAspect));
+    }
+  }
+
+  /**
+   * Commits a moved/transformed frame (new props from the scene props, i.e. the state before the
+   * gesture): draws the new props at once (no flicker until the owner sends
+   * the next scene) and reports them if they differ from the scene.
+   */
+  private commitFrame(view: PhotoView, box: FrameBox, keepAspect: boolean): void {
+    const photo = this.scenePhoto(view.id);
+    if (!photo) {
+      return;
+    }
+    const props = applyFrameBox(photo.props, box, photo.image, keepAspect);
+    view.showProps(props);
+    this.layer.batchDraw();
+    if (!sameGeometry(props, photo.props)) {
+      this.callbacks.onPhotoChange(view.id, props);
+    }
   }
 }

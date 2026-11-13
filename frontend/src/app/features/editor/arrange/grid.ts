@@ -29,7 +29,7 @@ interface CellSize {
  * Arranges the photos in a grid on the content area (page minus margin).
  *
  * - Photo `i` (in the given order) gets cell `i` (row-major), a centred cover crop and `z = i`.
- * - Photos beyond `rows × cols` are placed beside the page with frame width = cell width and z continuing.
+ * - Photos beyond `rows × cols` are placed beside the page (¼ page width) with z continuing.
  * - Empty cells stay empty.
  * - If the content area is too small for the cells, the cells get the minimal frame size (no NaN; frames
  *   can then overlap or leave the content area).
@@ -57,7 +57,7 @@ export function arrangeGrid(
       coverFrame(photo, cellRect(content, cell, gap, dimensions.cols, index), index),
     );
   });
-  const overflow = placeBesidePage(photos.slice(capacity), page, cell.width, capacity);
+  const overflow = placeBesidePage(photos.slice(capacity), page, capacity);
   overflow.forEach((props, id) => frames.set(id, props));
   return frames;
 }

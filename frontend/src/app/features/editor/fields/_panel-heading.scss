@@ -1,0 +1,7 @@
+// Heading of a side panel section (`<h3 class="panel-heading">`). Use with `@use`.
+
+.panel-heading {
+  margin: 0;
+  font: var(--mat-sys-title-small);
+  color: var(--mat-sys-on-surface-variant);
+}

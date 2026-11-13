@@ -15,12 +15,14 @@ import { EditorCanvas } from './canvas/editor-canvas';
 import { EditorStore } from './editor.store';
 import { ImportDialog, ImportDialogData } from './import/import-dialog';
 import { importResultMessage } from './import/import-result-message';
+import { PhotoPropertiesPanel } from './photo-panel/photo-properties-panel';
 import { SaveStatusIndicator } from './save-status-indicator';
 import { CollageSettingsPanel } from './settings-panel/collage-settings-panel';
+import { undoRedoCommand, undoRedoShortcutLabels } from './undo-shortcut';
 
 /**
- * Editor of one collage (container): toolbar, Konva canvas and settings panel. The state lives in
- * the page-scoped `EditorStore`.
+ * Editor of one collage (container): toolbar, Konva canvas and side panel (selected photo,
+ * collage settings). The state lives in the page-scoped `EditorStore`.
  */
 @Component({
   selector: 'app-editor-page',
@@ -32,12 +34,16 @@ import { CollageSettingsPanel } from './settings-panel/collage-settings-panel';
     MatTooltipModule,
     EditorCanvas,
     CollageSettingsPanel,
+    PhotoPropertiesPanel,
     SaveStatusIndicator,
   ],
   providers: [EditorStore],
   templateUrl: './editor.page.html',
   styleUrl: './editor.page.scss',
-  host: { '(window:beforeunload)': 'warnIfUnsaved($event)' },
+  host: {
+    '(window:beforeunload)': 'warnIfUnsaved($event)',
+    '(window:keydown)': 'handleUndoRedoKey($event)',
+  },
 })
 export class EditorPage {
   protected readonly store = inject(EditorStore);
@@ -51,6 +57,10 @@ export class EditorPage {
     const settings = this.store.settings();
     return settings ? pageLabel(settings.page) : '';
   });
+
+  private readonly shortcuts = undoRedoShortcutLabels();
+  protected readonly undoLabel = $localize`:@@editor.undo:Undo (${this.shortcuts.undo}:shortcut:)`;
+  protected readonly redoLabel = $localize`:@@editor.redo:Redo (${this.shortcuts.redo}:shortcut:)`;
 
   protected readonly isCenterMode = computed(() => this.store.settings()?.mode === 'center');
 
@@ -74,7 +84,7 @@ export class EditorPage {
     }
     return this.selectedIsCentrePhoto()
       ? $localize`:@@editor.setCentreCurrent:This is the centre photo`
-      : $localize`:@@editor.setCentreHint:Put the selected photo in the centre and re-arrange the others`;
+      : $localize`:@@editor.setCentreHint:Swap the selected photo with the centre photo`;
   });
 
   constructor() {
@@ -108,7 +118,7 @@ export class EditorPage {
   protected setSelectedAsCentre(): void {
     const id = this.store.selectedPhotoId();
     if (id !== null && !this.selectedIsCentrePhoto()) {
-      void this.store.setCenterPhoto(id);
+      this.store.setCenterPhoto(id);
     }
   }
 
@@ -116,6 +126,20 @@ export class EditorPage {
     const id = this.store.selectedPhotoId();
     if (id !== null) {
       void this.store.deletePhoto(id);
+    }
+  }
+
+  /** Undo/redo shortcuts; not while a dialog is open or a form field has the focus. */
+  protected handleUndoRedoKey(event: KeyboardEvent): void {
+    const command = undoRedoCommand(event);
+    if (command === null || this.dialog.openDialogs.length > 0) {
+      return;
+    }
+    event.preventDefault();
+    if (command === 'undo') {
+      this.store.undo();
+    } else {
+      this.store.redo();
     }
   }
 

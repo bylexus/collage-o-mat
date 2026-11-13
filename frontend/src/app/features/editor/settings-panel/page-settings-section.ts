@@ -11,10 +11,10 @@ import {
 } from '../../../core/models/collage';
 import { limitValidators } from '../../../shared/number-limits';
 import { createPageSizeForm, PAGE_SIDE_LIMITS } from '../../../shared/page-size-form';
+import { NumberField } from '../fields/number-field';
+import { syncFromInput } from '../fields/sync-from-input';
 import { mmToPx } from '../geometry/units';
-import { NumberField } from './number-field';
 import { SETTINGS_LIMITS } from './settings-limits';
-import { syncFromInput } from './sync-from-input';
 
 /** Page preset, orientation, custom size and DPI. Emits a new page on each valid change. */
 @Component({
@@ -27,7 +27,7 @@ import { syncFromInput } from './sync-from-input';
     NumberField,
   ],
   templateUrl: './page-settings-section.html',
-  styleUrl: './settings-section.scss',
+  styleUrl: '../fields/panel-section.scss',
 })
 export class PageSettingsSection {
   readonly page = input.required<PageSettings>();

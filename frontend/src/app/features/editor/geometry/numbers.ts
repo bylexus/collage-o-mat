@@ -10,6 +10,11 @@ export function nonNegative(value: number): number {
   return Number.isFinite(value) && value > 0 ? value : 0;
 }
 
+/** The value if it is finite, else `fallback`. */
+export function finiteOr(value: number, fallback: number): number {
+  return Number.isFinite(value) ? value : fallback;
+}
+
 /** Limits `value` to `min..max`; a non-finite value gives `fallback` (default `min`). */
 export function clamp(value: number, min: number, max: number, fallback = min): number {
   if (!Number.isFinite(value)) {

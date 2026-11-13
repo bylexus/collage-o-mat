@@ -1,0 +1,37 @@
+<h3 class="panel-heading" i18n="@@editor.photo.heading">Selected photo</h3>
+
+<mat-checkbox
+  [formControl]="form.controls.useDefault"
+  (change)="commitUseDefault()"
+  i18n="@@editor.photo.useDefaultBorder"
+>
+  Use collage default border
+</mat-checkbox>
+@if (useDefault()) {
+  <p class="settings-note" i18n="@@editor.photo.useDefaultBorderHint">
+    The photo has the default border of the collage (see Appearance).
+  </p>
+} @else {
+  <app-border-fields
+    [widthControl]="form.controls.widthMm"
+    [colorControl]="form.controls.color"
+    (colorPreview)="previewColor($event)"
+    (committed)="commitBorder()"
+  />
+}
+
+<div class="button-row">
+  <button matButton="outlined" type="button" (click)="bringToFront.emit()">
+    <mat-icon>flip_to_front</mat-icon>
+    <span i18n="@@editor.photo.bringToFront">Bring to front</span>
+  </button>
+  <button matButton="outlined" type="button" (click)="sendToBack.emit()">
+    <mat-icon>flip_to_back</mat-icon>
+    <span i18n="@@editor.photo.sendToBack">Send to back</span>
+  </button>
+</div>
+
+<button matButton="outlined" type="button" class="delete-button" (click)="delete.emit()">
+  <mat-icon>delete</mat-icon>
+  <span i18n="@@editor.photo.delete">Delete photo</span>
+</button>

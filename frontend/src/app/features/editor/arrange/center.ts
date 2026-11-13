@@ -58,8 +58,7 @@ interface CenterLanes {
  *   area (see `laneCapacities`). The middle count is split left = ceil(m / 2), right = floor(m / 2).
  * - The other photos keep their order and fill the lanes in the order top, middle left, middle right,
  *   bottom. Top/bottom are one justified row, each middle side one justified column, with cover crops.
- * - Photos that do not fit (beyond the total capacity) are placed beside the page with the width of the
- *   centre frame.
+ * - Photos that do not fit (beyond the total capacity) are placed beside the page (¼ page width).
  * - z: the other photos count up from 0 in their order, the centre photo gets the highest z.
  *
  * @param photos photos in arrangement order (the caller sorts by id)
@@ -87,7 +86,7 @@ export function arrangeCenter(
     addFrames(frames, justifiedLineFrames(lines[index], group, gap, z));
     z += group.length;
   });
-  addFrames(frames, placeBesidePage(rest, page, centre.width, z));
+  addFrames(frames, placeBesidePage(rest, page, z));
   frames.set(centrePhoto.id, fullFrame(centre, others.length));
   return frames;
 }

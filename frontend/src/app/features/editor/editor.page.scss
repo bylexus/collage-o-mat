@@ -30,6 +30,10 @@
   font: var(--mat-sys-body-small);
 }
 
+.toolbar-group {
+  display: flex;
+}
+
 .toolbar-spacer {
   flex: 1;
 }
@@ -65,12 +69,20 @@
 }
 
 .editor-panel {
+  display: flex;
   flex: 0 0 320px;
+  flex-direction: column;
+  gap: 24px;
   box-sizing: border-box;
   padding: 16px;
   overflow-y: auto;
   border-left: 1px solid var(--mat-sys-outline-variant);
   background-color: var(--mat-sys-surface);
+}
+
+.photo-panel {
+  padding-bottom: 24px;
+  border-bottom: 1px solid var(--mat-sys-outline-variant);
 }
 
 .editor-message {

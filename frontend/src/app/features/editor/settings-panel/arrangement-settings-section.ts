@@ -17,9 +17,9 @@ import {
   GridSettings,
 } from '../../../core/models/collage';
 import { limitValidators } from '../../../shared/number-limits';
-import { NumberField } from './number-field';
+import { NumberField } from '../fields/number-field';
+import { syncFromInput } from '../fields/sync-from-input';
 import { SETTINGS_LIMITS } from './settings-limits';
-import { syncFromInput } from './sync-from-input';
 
 /** Rows and columns: empty (`null`) = computed from the photo count. */
 const gridCountValidators = limitValidators(SETTINGS_LIMITS.gridCount, { optional: true });
@@ -42,7 +42,7 @@ const laneCountValidators = limitValidators(SETTINGS_LIMITS.laneCount, { optiona
     NumberField,
   ],
   templateUrl: './arrangement-settings-section.html',
-  styleUrl: './settings-section.scss',
+  styleUrl: '../fields/panel-section.scss',
 })
 export class ArrangementSettingsSection {
   readonly mode = input.required<ArrangementMode>();

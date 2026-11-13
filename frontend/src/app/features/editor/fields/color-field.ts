@@ -2,15 +2,21 @@ import { Component, input, output } from '@angular/core';
 import { FormControl, ReactiveFormsModule } from '@angular/forms';
 
 /**
- * Native colour picker with a label. Emits `committed` on the native `change` event (when the
- * picker value is confirmed), not while the colour is dragged.
+ * Native colour picker with a label. Emits `previewed` with the colour while it is changed in the
+ * picker (native `input` event) and `committed` on the native `change` event (when the picker
+ * value is confirmed).
  */
 @Component({
   selector: 'app-color-field',
   imports: [ReactiveFormsModule],
   template: `
     <label class="color-field">
-      <input type="color" [formControl]="control()" (change)="committed.emit()" />
+      <input
+        type="color"
+        [formControl]="control()"
+        (input)="previewed.emit(valueOf($event))"
+        (change)="committed.emit()"
+      />
       <span>{{ label() }}</span>
     </label>
   `,
@@ -36,5 +42,11 @@ import { FormControl, ReactiveFormsModule } from '@angular/forms';
 export class ColorField {
   readonly control = input.required<FormControl<string>>();
   readonly label = input.required<string>();
+  /** The colour while it is changed in the picker (not committed yet). */
+  readonly previewed = output<string>();
   readonly committed = output<void>();
+
+  protected valueOf(event: Event): string {
+    return (event.target as HTMLInputElement).value;
+  }
 }

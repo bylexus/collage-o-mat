@@ -528,9 +528,12 @@ show a confirm dialog first. Arrangement result is one undo step.
     Ctrl/Cmd + wheel and trackpad pinch zoom at the pointer, drag on the empty workspace pans, zoom controls
     (−, zoom %, +, fit) as a floating overlay on the canvas, auto zoom-to-fit when the page size or
     orientation changes. Rejected: native scrollbars; auto-fit only.
-  - **Centre photo selection:** a "Set as centre" toolbar button (center mode, a photo selected), then the
-    other photos are re-arranged (confirm rule). No double-click (reserved for crop mode), no context menu.
-    The hidden "Selection" section at the bottom of the settings panel is removed.
+  - **Centre photo selection:** a "Set as centre" toolbar button (center mode, a photo selected). No
+    double-click (reserved for crop mode), no context menu. The hidden "Selection" section at the bottom of
+    the settings panel is removed. Changed in the step 8 review (2026-11-13): no re-arrange and no confirm;
+    the selected photo and the current centre photo swap their frames (centre, size, rotation, z; frame
+    sizes stay, crop = centred cover crop of the own image, border stays with the photo; one undo step).
+    `centerPhotoId` is set too. Rejected: re-arrange all photos.
   - **Center lane model:** counts per lane top / middle / bottom (middle split evenly left/right); photos in
     a lane justified by aspect; empty count = auto (by lane area), extra photos beside the page. Rejected:
     separate left/right counts; equal cells; counts as maximums with shrinking lanes. Spec: "Algorithms" →
@@ -538,6 +541,11 @@ show a confirm dialog first. Arrangement result is one undo step.
 - **Settings normalization:** settings loaded from the API are merged with `defaultCollageSettings()`
   (missing fields, e.g. the new lane counts in older collages, get defaults) by a pure
   `normalizeSettings(raw)` in `core/models/collage.ts`, used by the editor store on load.
+- **Photo delete and undo (step 8):** deleting a photo stays an explicit action with confirm that deletes row
+  and file at once and is NOT undoable. Undo/redo covers all other changes. Snapshots are applied only to
+  photos that still exist. Rejected: soft delete.
+- **Beside-page width (step 8):** photos placed beside the page always get ¼ of the page width (grid overflow,
+  center overflow, declined re-arrange after import). Rejected: centre photo width / cell width.
 - **Architecture (step 3+):** SOLID/DRY/clean code required by the developer; see section "Architecture
   conventions".
 - **Backend module wiring (step 2):** `httpapi` must not import domain packages (import cycle, because domain
@@ -898,8 +906,6 @@ results) and the developer reviews before the next step starts.
 
 - **Text resize behaviour (step 9):** proposal: transformer handles change the text box width (text wraps),
   font size only in the panel. Confirm at step 9.
-- **Photo delete and undo (step 8):** proposal: deleting a photo is an explicit action with confirm that
-  deletes the file at once and is not undoable (texts are fully undoable). Confirm at step 8.
 - **Risk — SSRF:** the Immich URL is user input, so the server makes requests to any URL a logged-in user
   enters. Accepted for a private PoC; revisit before multi-tenant use.
 - **Risk — no login rate limiting** in the PoC.
@@ -919,4 +925,19 @@ results) and the developer reviews before the next step starts.
   harmless `nice(5) failed` warning; `nohup` cannot detach (use a background task). The developer's dev
   container may be running and bound to `:8080`/`:4200`; use other ports (`COLLAGEOMAT_LISTEN`) and a scratch
   proxy config targeting `127.0.0.1:<port>` for host tests.
-- Next action: Step 8 — Editing interactions (parallel sub-agents).
+- Implemented, waiting for the developer's browser review (uncommitted): **Step 8** — pure logic
+  (`geometry/transform.ts`: `applyFrameBox`, `panCrop`, `zoomCrop`, `normalizeRotationDeg`, `MIN_CROP_SIZE`;
+  `geometry/frame-size.ts`; `history.ts`), canvas (`canvas/photo-view.ts`, `photo-transformer.ts`,
+  `crop-mode.ts`, `crop-mode-controls.ts`, `scene.ts`, `image-cache.ts`, `press-gesture.ts`, `pointer.ts`,
+  `canvas-theme.ts`; `collage-renderer.ts` is a facade), store/UI (`layout-snapshot.ts`, `z-order.ts`,
+  `photo-border.ts`, `undo-history.ts`, `undo-shortcut.ts`, `photo-panel/*`, shared form fields moved to
+  `features/editor/fields/`). Beside-page width = ¼ page width for all callers. Not browser-tested by agents.
+  After approval: fill the Notes of step 8 and set it to done.
+- Step 8 review round 1 (2026-11-13), fixed, waiting for re-review: photo border colour is shown live while
+  the picker changes it (`ColorField.previewed` → `EditorStore.previewPhotoBorder`, canvas draws
+  `displayedPhotos`; preview is not saved, no undo step; committed on `change`); crop zoom slider zooms live
+  (native `input`), commits on release (`CropMode.setZoom`/`commitZoom`); crop controls = only a 160 px
+  slider directly below the frame (follows pan/zoom via `CropModeState.anchor`), no hint, no "Done" button
+  (crop mode ends with Esc / click outside).
+- Step 8 review round 2 (2026-11-13): crop slider has a semi-transparent pill background; "Set as centre"
+  swaps frames instead of re-arranging (`swap-frames.ts`, `EditorStore.setCenterPhoto`).

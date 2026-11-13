@@ -13,23 +13,25 @@ export const BESIDE_PAGE_STACK_OFFSET_MM = 10;
 /** Top edge of the first photo beside the page (the page top). */
 const BESIDE_PAGE_TOP_MM = 0;
 
+/** Frame width of photos beside the page, as a fraction of the page width (one rule for all callers). */
+export const BESIDE_PAGE_WIDTH_RATIO = 0.25;
+
 /**
  * Places photos unarranged to the right of the page (x = page width + 10 mm), stacked with 10 mm vertical
- * offset, frame width `widthMm`, image aspect kept, full crop, z starting at `zStart`.
- * Used for grid overflow and for new photos that the user did not want to re-arrange.
+ * offset, frame width ¼ of the page width (`BESIDE_PAGE_WIDTH_RATIO`), image aspect kept, full crop, z starting
+ * at `zStart`. Used for grid and center overflow and for new photos that the user did not want to re-arrange.
  *
  * The stack is a cascade: photo `i` has its top edge at `i × 10 mm` from the page top, so later photos
- * overlap earlier ones and are in front of them (higher z). A non-positive `widthMm` uses the minimal
+ * overlap earlier ones and are in front of them (higher z). A non-positive page width uses the minimal
  * frame size.
  */
 export function placeBesidePage(
   photos: readonly ArrangePhoto[],
   page: PageSize,
-  widthMm: number,
   zStart: number,
 ): FrameMap {
   const left = nonNegative(page.widthMm) + BESIDE_PAGE_OFFSET_MM;
-  const width = Math.max(MIN_FRAME_SIZE_MM, nonNegative(widthMm));
+  const width = Math.max(MIN_FRAME_SIZE_MM, nonNegative(page.widthMm) * BESIDE_PAGE_WIDTH_RATIO);
   const frames: FrameMap = new Map();
   photos.forEach((photo, index) => {
     const rect = {
