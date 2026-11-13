@@ -1,7 +1,11 @@
+<div class="login-backdrop" aria-hidden="true"></div>
+
 <mat-card class="login-card" appearance="outlined">
-  <mat-card-header>
-    <mat-card-title i18n="@@login.title">Sign in</mat-card-title>
-  </mat-card-header>
+  <div class="login-brand">
+    <img class="login-logo" src="icon.svg" alt="" width="56" height="56" />
+    <h1 class="login-app-name" i18n="@@appName">Collage-o-mat</h1>
+    <p class="login-subtitle" i18n="@@login.title">Sign in</p>
+  </div>
 
   <form [formGroup]="form" (ngSubmit)="submit()">
     <mat-card-content class="login-fields">
@@ -32,8 +36,8 @@
       }
     </mat-card-content>
 
-    <mat-card-actions align="end">
-      <button matButton="filled" type="submit" [disabled]="submitting()">
+    <mat-card-actions class="login-actions">
+      <button class="login-submit" matButton="filled" type="submit" [disabled]="submitting()">
         @if (submitting()) {
           <mat-spinner class="login-spinner" diameter="18" />
         }
