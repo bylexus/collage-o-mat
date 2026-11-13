@@ -951,7 +951,7 @@ results) and the developer reviews before the next step starts.
     `angular.json` styles. The dev container needs `make install` (own `node_modules` volume).
 
 ### Step 10 — Export PNG/JPG
-- **Status:** in progress
+- **Status:** done (reviewed 2026-11-13)
 - **What:** "Export" dialog (format PNG/JPG, JPG quality 0.6–1.0, shows the pixel size
   `round(widthMm/25.4×dpi) × round(heightMm/25.4×dpi)`); render the page into an offscreen Konva stage at
   `dpi/25.4` px per mm (no selection, no workspace, only page area), wait for `document.fonts.ready`,
@@ -983,7 +983,7 @@ results) and the developer reviews before the next step starts.
     `imageLoad` error shows "The export failed. A photo could not be loaded.".
 
 ### Step 11 — Prod image and publish
-- **Status:** open
+- **Status:** in progress
 - **What:** `docker/Dockerfile` multi-stage: `node:26` stage (`npm ci`, `ng build`) → `golang:1.27` stage
   (copy SPA build to `internal/web/dist`, `CGO_ENABLED=0 go build` with `TARGETOS/TARGETARCH`) → `alpine`
   runtime (non-root user, `COLLAGEOMAT_DATA_DIR=/data`, `VOLUME /data`, `EXPOSE 8080`,
@@ -999,6 +999,32 @@ results) and the developer reviews before the next step starts.
   - `make publish` pushes both architectures (check with `docker buildx imagetools inspect
     registry.alexi.ch/collageomat:latest`). Needs a prior `docker login registry.alexi.ch` by the developer.
 - **Notes:**
+  - `docker/Dockerfile`: `node:26.13.1-alpine3.24` (npm ci, ng build, checks exactly one `dist/*/browser`)
+    → `golang:1.27.4-alpine3.24` (cross-compile `CGO_ENABLED=0`, `-trimpath -ldflags='-s -w'`, SPA copied to
+    `internal/web/dist/`) → `alpine:3.24.4` (`ca-certificates`, `tzdata`, user/group `collageomat`
+    10001:10001, `/data` owned by it). Build stages on `$BUILDPLATFORM`. Image size 32.1 MB.
+  - `.dockerignore`: `/.env`, `.git`, `.claude`, `data`, `data-prod`, `bin`, `doc`, `frontend/node_modules`,
+    `frontend/dist`, `frontend/.angular`, `backend/internal/web/dist/`, ...
+  - Makefile: variables `REGISTRY`, `IMAGE`, `IMAGE_REF`, `GIT_SHA`, `PLATFORMS`, `BUILDER`; targets `image`
+    (local single-arch, `--load`, tags `latest` + short SHA) and `publish` (amd64+arm64, `--push`,
+    default buildx builder).
+  - Tested (2026-11-13): `make image`, container on :18080 → health, SPA, deep link, `user add` via
+    `docker exec -i`, login; data files owned by 10001 inside, no permission problem on an OrbStack bind
+    mount; multi-arch build without push works on a docker-container builder. The default OrbStack builder
+    (docker driver) cannot build multi-platform. Decision (developer): the Makefile selects no builder;
+    configuring a multi-platform builder (docker-container driver or containerd image store) before
+    `make publish` is the user's responsibility. Rejected: own project builder, fixed `kind_dewdney`.
+  - Run instructions:
+    ```sh
+    make image
+    docker run -d --name collageomat -p 8080:8080 -e COLLAGEOMAT_SECRET=<secret> \
+      -v collageomat-data:/data registry.alexi.ch/collageomat:latest
+    # add -e COLLAGEOMAT_COOKIE_SECURE=false only for plain HTTP (no TLS proxy)
+    docker exec -it collageomat /app/collageomat user add --username alex --admin
+    docker exec -it collageomat /app/collageomat user passwd --username alex
+    ```
+    Named volume: `/data` is already owned by 10001. Bind mount on a Linux host: `chown 10001:10001 <dir>`
+    first; macOS/OrbStack needs no chown.
 
 ## Backlog (requested by the developer, not scheduled yet)
 
@@ -1025,7 +1051,7 @@ Added 2026-11-13 after the step 9 review. Not part of any step yet; the develope
 
 ## Current state / Next action
 
-- Done: research and grilling; Steps 1–9 (reviewed; 1–8 committed).
+- Done: research and grilling; Steps 1–10 (reviewed and committed).
 - Nothing half-finished, no temporary changes to revert.
 - Sandbox notes for agents on the host: `pkill`/process listing is blocked → stop own servers with
   `lsof -ti tcp:<port> | xargs kill`, or ask the developer to run a kill command. Background `&` prints a
@@ -1033,5 +1059,5 @@ Added 2026-11-13 after the step 9 review. Not part of any step yet; the develope
   container may be running and bound to `:8080`/`:4200`; use other ports (`COLLAGEOMAT_LISTEN`) and a scratch
   proxy config targeting `127.0.0.1:<port>` for host tests.
 - Step 8 done (reviewed and committed 2026-11-13, commit `c504234`).
-- Step 9 done (reviewed 2026-11-13; not committed yet by the developer at the time of this note).
-- Next: **Step 10 — Export PNG/JPG**. The backlog items (section "Backlog") are not scheduled yet.
+- Steps 9 and 10 done (reviewed and committed 2026-11-13).
+- Next: **Step 11 — Prod image and publish**. The backlog items (section "Backlog") are not scheduled yet.

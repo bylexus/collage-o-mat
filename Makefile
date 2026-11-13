@@ -1,12 +1,22 @@
 # Collage-o-mat - central Makefile.
-# Host targets: dev-up, dev-shell, dev-down.
+# Host targets: dev-up, dev-shell, dev-down, image, publish.
 # All other targets run inside the dev container (/workspace).
 
 .DEFAULT_GOAL := help
 
 WEB_DIST := backend/internal/web/dist
 
-.PHONY: help dev-up dev-shell dev-down install backend-run frontend-serve build user-add user-passwd
+# Prod image (docker/Dockerfile)
+REGISTRY  ?= registry.alexi.ch
+IMAGE     ?= collageomat
+IMAGE_REF := $(REGISTRY)/$(IMAGE)
+GIT_SHA   := $(shell git rev-parse --short HEAD 2>/dev/null)
+PLATFORMS ?= linux/amd64,linux/arm64
+# publish uses the current default buildx builder. Configuring a builder that can build and push
+# multi-platform images (docker-container driver, or containerd image store) is up to the user.
+IMAGE_TAGS = -t $(IMAGE_REF):latest -t $(IMAGE_REF):$(GIT_SHA)
+
+.PHONY: help dev-up dev-shell dev-down image publish install backend-run frontend-serve build user-add user-passwd
 
 help: ## Show this help
 	@awk 'BEGIN {FS = ":.*## "} /^[a-zA-Z_-]+:.*## / {printf "  %-16s %s\n", $$1, $$2}' $(MAKEFILE_LIST)
@@ -21,6 +31,14 @@ dev-shell: ## [host] Open a shell in the dev container
 
 dev-down: ## [host] Stop and remove the dev container
 	docker compose down
+
+image: ## [host] Build the prod image for the local platform and load it (tags latest + git sha)
+	@test -n "$(GIT_SHA)" || { echo "no git commit found (git rev-parse --short HEAD)" >&2; exit 1; }
+	docker buildx build --load -f docker/Dockerfile $(IMAGE_TAGS) .
+
+publish: ## [host] Build amd64+arm64 prod image and push (needs docker login + multi-platform buildx builder)
+	@test -n "$(GIT_SHA)" || { echo "no git commit found (git rev-parse --short HEAD)" >&2; exit 1; }
+	docker buildx build --platform $(PLATFORMS) -f docker/Dockerfile $(IMAGE_TAGS) --push .
 
 ## --- Dev container ---
 
