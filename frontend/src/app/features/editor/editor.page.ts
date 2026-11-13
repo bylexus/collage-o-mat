@@ -69,6 +69,10 @@ export class EditorPage {
   private readonly shortcuts = undoRedoShortcutLabels();
   protected readonly undoLabel = $localize`:@@editor.undo:Undo (${this.shortcuts.undo}:shortcut:)`;
   protected readonly redoLabel = $localize`:@@editor.redo:Redo (${this.shortcuts.redo}:shortcut:)`;
+  protected readonly setCentreLabel = $localize`:@@editor.setCentre:Set as centre`;
+  protected readonly exportLabel = $localize`:@@editor.export.button:Export`;
+  protected readonly addTextLabel = $localize`:@@editor.text.addButton:Add text`;
+  protected readonly importLabel = $localize`:@@editor.importButton:Import from Immich`;
 
   /** Label of the toolbar Delete button for the selected element. */
   protected readonly deleteLabel = computed(() =>

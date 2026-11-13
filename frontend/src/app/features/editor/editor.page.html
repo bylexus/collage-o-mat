@@ -50,15 +50,15 @@
     @if (isCenterMode()) {
       <!-- disabledInteractive: the tooltip explains why the button is disabled. -->
       <button
-        matButton="outlined"
+        matIconButton
         type="button"
         disabledInteractive
         [disabled]="store.selectedPhotoId() === null || selectedIsCentrePhoto()"
         (click)="setSelectedAsCentre()"
+        [attr.aria-label]="setCentreLabel"
         [matTooltip]="setCentreHint()"
       >
         <mat-icon>center_focus_strong</mat-icon>
-        <span i18n="@@editor.setCentre">Set as centre</span>
       </button>
     }
     <button
@@ -72,21 +72,33 @@
       <mat-icon>delete</mat-icon>
     </button>
     <button
-      matButton="tonal"
+      matIconButton
       type="button"
       [disabled]="store.exportContent() === null"
       (click)="openExport()"
+      [attr.aria-label]="exportLabel"
+      [matTooltip]="exportLabel"
     >
       <mat-icon>download</mat-icon>
-      <span i18n="@@editor.export.button">Export</span>
     </button>
-    <button matButton="tonal" type="button" (click)="addText()">
+    <button
+      matIconButton
+      type="button"
+      (click)="addText()"
+      [attr.aria-label]="addTextLabel"
+      [matTooltip]="addTextLabel"
+    >
       <mat-icon>text_fields</mat-icon>
-      <span i18n="@@editor.text.addButton">Add text</span>
     </button>
-    <button matButton="filled" type="button" (click)="openImport()">
+    <button
+      matIconButton
+      class="toolbar-primary"
+      type="button"
+      (click)="openImport()"
+      [attr.aria-label]="importLabel"
+      [matTooltip]="importLabel"
+    >
       <mat-icon>add_photo_alternate</mat-icon>
-      <span i18n="@@editor.importButton">Import from Immich</span>
     </button>
   </header>
 

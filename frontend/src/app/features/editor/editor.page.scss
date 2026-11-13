@@ -38,6 +38,24 @@
   flex: 1;
 }
 
+/* Main toolbar action: filled primary look for an icon-only button. */
+.toolbar-primary {
+  --mat-icon-button-icon-color: var(--mat-sys-on-primary);
+  --mat-icon-button-state-layer-color: var(--mat-sys-on-primary);
+  --mat-icon-button-ripple-color: color-mix(
+    in srgb,
+    var(--mat-sys-on-primary) calc(var(--mat-sys-pressed-state-layer-opacity) * 100%),
+    transparent
+  );
+
+  background-color: var(--mat-sys-primary);
+
+  &:disabled,
+  &.mat-mdc-button-disabled {
+    background-color: color-mix(in srgb, var(--mat-sys-on-surface) 12%, transparent);
+  }
+}
+
 .editor-body {
   display: flex;
   flex: 1;
