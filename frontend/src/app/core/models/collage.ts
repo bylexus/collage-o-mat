@@ -45,6 +45,8 @@ export interface GridSettings {
   cols: number | null;
   gapMm: number;
   marginMm: number;
+  /** Photos in random order instead of import order. */
+  randomOrder: boolean;
 }
 
 export interface CenterSettings {
@@ -59,6 +61,8 @@ export interface CenterSettings {
   middleCount: number | null;
   /** Photos in the bottom lane; `null` = auto. */
   bottomCount: number | null;
+  /** Photos in random order instead of import order (the centre photo stays fixed). */
+  randomOrder: boolean;
 }
 
 /**
@@ -270,7 +274,8 @@ export function customPageSettings(size: PageSize, dpi = DEFAULT_DPI): PageSetti
 /**
  * Settings of a new collage: A4 landscape, 300 DPI, white colour background (gradient white to
  * black at 180°, image without photo and with a transparent black overlay), no border, grid mode,
- * heap mode with the whole image, 120 % coverage, ±20 % size, ±15° rotation, snap grid off (5 mm).
+ * grid and center mode in import order (random order off), heap mode with the whole image,
+ * 120 % coverage, ±20 % size, ±15° rotation, snap grid off (5 mm).
  */
 export function defaultCollageSettings(): CollageSettings {
   return {
@@ -283,7 +288,7 @@ export function defaultCollageSettings(): CollageSettings {
     },
     defaultBorder: { widthMm: 0, color: '#ffffff' },
     mode: 'grid',
-    grid: { rows: null, cols: null, gapMm: 5, marginMm: 10 },
+    grid: { rows: null, cols: null, gapMm: 5, marginMm: 10, randomOrder: false },
     center: {
       centerPhotoId: null,
       sizePercent: 50,
@@ -292,6 +297,7 @@ export function defaultCollageSettings(): CollageSettings {
       topCount: null,
       middleCount: null,
       bottomCount: null,
+      randomOrder: false,
     },
     heap: {
       aspect: 'full',
@@ -401,6 +407,7 @@ function normalizeGrid(raw: unknown, defaults: GridSettings): GridSettings {
     cols: nullableNumberOr(source['cols'], defaults.cols),
     gapMm: numberOr(source['gapMm'], defaults.gapMm),
     marginMm: numberOr(source['marginMm'], defaults.marginMm),
+    randomOrder: booleanOr(source['randomOrder'], defaults.randomOrder),
   };
 }
 
@@ -414,6 +421,7 @@ function normalizeCenter(raw: unknown, defaults: CenterSettings): CenterSettings
     topCount: nullableNumberOr(source['topCount'], defaults.topCount),
     middleCount: nullableNumberOr(source['middleCount'], defaults.middleCount),
     bottomCount: nullableNumberOr(source['bottomCount'], defaults.bottomCount),
+    randomOrder: booleanOr(source['randomOrder'], defaults.randomOrder),
   };
 }
 

@@ -6,6 +6,7 @@ import {
   ValidatorFn,
 } from '@angular/forms';
 import { MatButtonModule } from '@angular/material/button';
+import { MatCheckboxModule } from '@angular/material/checkbox';
 import { MAT_DIALOG_DATA, MatDialogModule, MatDialogRef } from '@angular/material/dialog';
 import { MatFormFieldModule } from '@angular/material/form-field';
 import { MatSelectModule } from '@angular/material/select';
@@ -44,6 +45,7 @@ export type ArrangementSettingsDialogResult = ArrangementSettings;
   imports: [
     ReactiveFormsModule,
     MatButtonModule,
+    MatCheckboxModule,
     MatDialogModule,
     MatFormFieldModule,
     MatSelectModule,
@@ -91,6 +93,7 @@ export class ArrangementSettingsDialog {
       cols: this.autoCountControl(this.data.grid.cols, gridCountValidators),
       gapMm: [this.data.grid.gapMm, limitValidators(this.limits.gapMm)],
       marginMm: [this.data.grid.marginMm, limitValidators(this.limits.marginMm)],
+      randomOrder: [this.data.grid.randomOrder],
     }),
     center: this.fb.group({
       sizePercent: [this.data.center.sizePercent, limitValidators(this.limits.sizePercent)],
@@ -99,6 +102,7 @@ export class ArrangementSettingsDialog {
       topCount: this.autoCountControl(this.data.center.topCount, laneCountValidators),
       middleCount: this.autoCountControl(this.data.center.middleCount, laneCountValidators),
       bottomCount: this.autoCountControl(this.data.center.bottomCount, laneCountValidators),
+      randomOrder: [this.data.center.randomOrder],
     }),
     heap: this.fb.group({
       aspect: this.fb.control<HeapAspect>(this.data.heap.aspect),

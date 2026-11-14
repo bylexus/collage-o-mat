@@ -49,6 +49,9 @@
             label="Margin (mm)"
           />
         </div>
+        <mat-checkbox [formControl]="grid.randomOrder" i18n="@@editor.settings.randomOrder">
+          Random order
+        </mat-checkbox>
       }
       @case ('center') {
         @let center = form.controls.center.controls;
@@ -101,6 +104,9 @@
             label="Margin (mm)"
           />
         </div>
+        <mat-checkbox [formControl]="center.randomOrder" i18n="@@editor.settings.randomOrder">
+          Random order
+        </mat-checkbox>
       }
       @case ('heap') {
         @let heap = form.controls.heap.controls;
