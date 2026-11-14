@@ -24,4 +24,6 @@ export const SETTINGS_LIMITS = {
   gradientAngleDeg: { min: 0, max: 359, step: 1, integer: true },
   /** Opacity of the overlay colour over a background image (slider). */
   overlayOpacityPercent: { min: 0, max: 100, step: 1, integer: true },
+  /** Blur radius of a background image in mm (slider). */
+  backgroundBlurMm: { min: 0, max: 30, step: 0.5 },
 } as const satisfies Record<string, NumberLimits>;

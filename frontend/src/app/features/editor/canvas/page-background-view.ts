@@ -3,17 +3,20 @@ import Konva from 'konva/lib/Core';
 import { Image as KonvaImage } from 'konva/lib/shapes/Image';
 import { Rect as KonvaRect } from 'konva/lib/shapes/Rect';
 import type { GradientSettings, PageSize } from '../../../core/models/collage';
+import type { NormalizedRect } from '../../../core/models/photo';
 import { coverCrop, imageAspect } from '../geometry/crop';
 import { linearGradientLine, radialGradientCircle } from '../geometry/gradient';
 import type { ImageSize } from '../geometry/transform';
+import { blurredImage } from './blurred-image';
 import { isLoaded } from './image-cache';
 import type { SceneBackground } from './scene';
 
 /**
  * The Konva nodes of the page background: a group (not listening) that covers the page. From
  * bottom to top: the solid colour rect (always), the gradient rect (type `gradient`), the bg photo
- * (type `image`, cover crop, centred; only once its image has loaded) and the overlay rect (type
- * `image`, overlay colour with its opacity; hidden at 0 %). World units are mm, page origin top-left.
+ * (type `image`, cover crop, centred; only once its image has loaded; with `blurMm` > 0 a blurred
+ * copy of the crop) and the overlay rect (type `image`, overlay colour with its opacity; hidden at
+ * 0 %). World units are mm, page origin top-left.
  */
 export class PageBackgroundView {
   readonly group = new Konva.Group({ listening: false });
@@ -30,6 +33,14 @@ export class PageBackgroundView {
   private source: HTMLImageElement | null = null;
   private page: PageSize | null = null;
   private background: SceneBackground | null = null;
+  /** Last blurred copy and what it was built from; rebuilt only when one of these changes. */
+  private blurred: {
+    source: HTMLImageElement;
+    widthMm: number;
+    heightMm: number;
+    blurMm: number;
+    canvas: HTMLCanvasElement;
+  } | null = null;
 
   constructor() {
     this.group.add(this.colorRect, this.gradientRect, this.image, this.overlayRect);
@@ -85,25 +96,69 @@ export class PageBackgroundView {
     const page = this.page;
     const show = image !== null && file !== undefined && page !== null;
     this.image.visible(show);
-    this.image.image(show ? image : undefined);
     if (show) {
-      this.drawImage(image, file.image, page);
+      this.drawImage(image, file.image, page, this.background?.image.blurMm ?? 0);
+    } else {
+      this.image.image(undefined);
+      this.blurred = null;
     }
   }
 
-  /** Sizes the image node to the page and sets the cover crop (normalized → source pixels). */
-  private drawImage(image: HTMLImageElement, size: ImageSize, page: PageSize): void {
+  /**
+   * Sizes the image node to the page and draws the cover crop (normalized → source pixels), or the
+   * blurred copy of the crop (no node crop, the copy is the crop) if `blurMm` > 0.
+   */
+  private drawImage(
+    image: HTMLImageElement,
+    size: ImageSize,
+    page: PageSize,
+    blurMm: number,
+  ): void {
     const crop = coverCrop(
       imageAspect(size.widthPx, size.heightPx),
       imageAspect(page.widthMm, page.heightMm),
     );
     this.image.size({ width: page.widthMm, height: page.heightMm });
+    if (blurMm > 0) {
+      this.image.image(this.blurredCopy(image, crop, page, blurMm));
+      this.image.crop({ x: 0, y: 0, width: 0, height: 0 });
+      return;
+    }
+    this.blurred = null;
+    this.image.image(image);
     this.image.crop({
       x: crop.x * image.naturalWidth,
       y: crop.y * image.naturalHeight,
       width: crop.width * image.naturalWidth,
       height: crop.height * image.naturalHeight,
     });
+  }
+
+  /** The blurred copy of the crop; reuses the last one while image, page size and radius stay. */
+  private blurredCopy(
+    image: HTMLImageElement,
+    crop: NormalizedRect,
+    page: PageSize,
+    blurMm: number,
+  ): HTMLCanvasElement {
+    const last = this.blurred;
+    if (
+      last?.source === image &&
+      last.widthMm === page.widthMm &&
+      last.heightMm === page.heightMm &&
+      last.blurMm === blurMm
+    ) {
+      return last.canvas;
+    }
+    const canvas = blurredImage(image, crop, page, blurMm);
+    this.blurred = {
+      source: image,
+      widthMm: page.widthMm,
+      heightMm: page.heightMm,
+      blurMm,
+      canvas,
+    };
+    return canvas;
   }
 
   /** Sets the gradient fill of the gradient rect (linear or radial, colour stops From → To). */

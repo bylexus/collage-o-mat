@@ -147,6 +147,8 @@ export interface ImageBackgroundSettings {
   overlayColor: string;
   /** Opacity of the overlay colour, 0..100. */
   overlayOpacityPercent: number;
+  /** Blur radius of the background photo in mm; 0 = no blur. The overlay is not blurred. */
+  blurMm: number;
 }
 
 /**
@@ -323,7 +325,7 @@ export function defaultCollageSettings(): CollageSettings {
       type: 'color',
       color: '#ffffff',
       gradient: { kind: 'linear', from: '#ffffff', to: '#000000', angleDeg: 180 },
-      image: { photoId: null, overlayColor: '#000000', overlayOpacityPercent: 0 },
+      image: { photoId: null, overlayColor: '#000000', overlayOpacityPercent: 0, blurMm: 0 },
     },
     defaultBorder: { widthMm: 0, color: '#ffffff' },
     defaultShadow: {
@@ -439,6 +441,7 @@ function normalizeImageBackground(
       source['overlayOpacityPercent'],
       defaults.overlayOpacityPercent,
     ),
+    blurMm: numberOr(source['blurMm'], defaults.blurMm),
   };
 }
 

@@ -147,6 +147,25 @@ import { SETTINGS_LIMITS } from './settings-limits';
             />
           </mat-slider>
         </div>
+        <div class="background-blur">
+          <span class="slider-label" i18n="@@editor.settings.backgroundBlur">
+            Blur: {{ blurMm() }} mm
+          </span>
+          <mat-slider
+            [min]="limits.backgroundBlurMm.min"
+            [max]="limits.backgroundBlurMm.max"
+            [step]="limits.backgroundBlurMm.step"
+            i18n-aria-label="@@editor.settings.backgroundBlurAria"
+            aria-label="Background blur"
+          >
+            <input
+              matSliderThumb
+              [value]="blurMm()"
+              (input)="previewBlur($event)"
+              (change)="commitBackground()"
+            />
+          </mat-slider>
+        </div>
       }
     }
     <app-border-fields
@@ -212,7 +231,8 @@ import { SETTINGS_LIMITS } from './settings-limits';
       border-radius: var(--mat-sys-corner-small);
     }
 
-    .overlay-opacity {
+    .overlay-opacity,
+    .background-blur {
       display: flex;
       flex-direction: column;
     }
@@ -242,8 +262,8 @@ export class AppearanceSettingsSection {
   readonly defaultBorderChange = output<BorderSettings>();
   readonly defaultShadowChange = output<Shadow>();
   /**
-   * The whole background while a colour is changed in a picker or the overlay opacity slider
-   * moves (not committed).
+   * The whole background while a colour is changed in a picker or the overlay opacity or blur
+   * slider moves (not committed).
    */
   readonly backgroundPreview = output<BackgroundSettings>();
   /** Default border while its colour is changed in the picker (not committed). */
@@ -292,6 +312,8 @@ export class AppearanceSettingsSection {
 
   /** Overlay opacity (%) shown by the slider; follows the thumb while it moves. */
   protected readonly overlayOpacity = signal(this.defaults.background.image.overlayOpacityPercent);
+  /** Blur radius (mm) of the bg photo shown by the slider; follows the thumb while it moves. */
+  protected readonly blurMm = signal(this.defaults.background.image.blurMm);
 
   constructor() {
     syncFromInput(this.background, ({ type, color, gradient, image }) => {
@@ -302,6 +324,7 @@ export class AppearanceSettingsSection {
         overlayColor: image.overlayColor,
       });
       this.overlayOpacity.set(image.overlayOpacityPercent);
+      this.blurMm.set(image.blurMm);
     });
     syncFromInput(this.defaultBorder, ({ widthMm, color }) => {
       this.form.controls.borderWidthMm.reset(widthMm);
@@ -340,6 +363,13 @@ export class AppearanceSettingsSection {
     const percent = (event.target as HTMLInputElement).valueAsNumber;
     this.overlayOpacity.set(percent);
     this.previewImage({ overlayOpacityPercent: percent });
+  }
+
+  /** The blur slider thumb moves: shows the value and previews it (committed on release). */
+  protected previewBlur(event: Event): void {
+    const blurMm = (event.target as HTMLInputElement).valueAsNumber;
+    this.blurMm.set(blurMm);
+    this.previewImage({ blurMm });
   }
 
   /** Emits the background of the form with a changed value as a preview (not committed). */
@@ -407,6 +437,7 @@ export class AppearanceSettingsSection {
         ...current.image,
         overlayColor,
         overlayOpacityPercent: this.overlayOpacity(),
+        blurMm: this.blurMm(),
       },
     };
   }
