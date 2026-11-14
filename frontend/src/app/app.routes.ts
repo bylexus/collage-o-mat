@@ -24,5 +24,10 @@ export const routes: Routes = [
     loadComponent: () =>
       import('./features/connectors/connectors.page').then((m) => m.ConnectorsPage),
   },
+  {
+    path: 'about',
+    canActivate: [authGuard],
+    loadComponent: () => import('./features/about/about.page').then((m) => m.AboutPage),
+  },
   { path: '**', redirectTo: '' },
 ];

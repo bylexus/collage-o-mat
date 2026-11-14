@@ -1,0 +1,28 @@
+:host {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  box-sizing: border-box;
+  max-width: 560px;
+  margin: 0 auto;
+  padding: 48px 16px 24px;
+  text-align: center;
+}
+
+.about-logo {
+  margin-bottom: 8px;
+  border-radius: 14px;
+  box-shadow: var(--mat-sys-level1);
+}
+
+.about-title {
+  margin: 0;
+  font: var(--mat-sys-headline-small);
+}
+
+.about-text {
+  margin: 0 0 16px;
+  color: var(--mat-sys-on-surface-variant);
+  font: var(--mat-sys-body-large);
+}

@@ -8,11 +8,13 @@ import { MatInputModule } from '@angular/material/input';
 import { MatProgressSpinnerModule } from '@angular/material/progress-spinner';
 import { ActivatedRoute, Router } from '@angular/router';
 import { AuthService } from '../../core/auth.service';
+import { CopyrightNotice } from '../../shared/copyright-notice';
 import { errorMessage } from '../../shared/error-message';
 
 @Component({
   selector: 'app-login-page',
   imports: [
+    CopyrightNotice,
     ReactiveFormsModule,
     MatButtonModule,
     MatCardModule,

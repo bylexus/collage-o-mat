@@ -29,6 +29,7 @@ Makefile variables: `REGISTRY` (default `registry.alexi.ch`), `IMAGE` (`collageo
 `PLATFORMS` (`linux/amd64,linux/arm64`). Tags: `latest` and the short git SHA of `HEAD`.
 
 ```sh
+make release VERSION=1.2.0   # set the UI version (app-version.ts), commit only that file, tag "1.2.0"
 make image     # local platform only, loaded into the local Docker (--load)
 make publish   # linux/amd64 + linux/arm64, pushed to the registry (--push)
 ```

@@ -1,5 +1,5 @@
 # Collage-o-mat - central Makefile.
-# Host targets: dev-up, dev-shell, dev-down, image, publish.
+# Host targets: dev-up, dev-shell, dev-down, image, publish, release.
 # All other targets run inside the dev container (/workspace).
 
 .DEFAULT_GOAL := help
@@ -16,7 +16,10 @@ PLATFORMS ?= linux/amd64,linux/arm64
 # multi-platform images (docker-container driver, or containerd image store) is up to the user.
 IMAGE_TAGS = -t $(IMAGE_REF):latest -t $(IMAGE_REF):$(GIT_SHA)
 
-.PHONY: help dev-up dev-shell dev-down image publish install backend-run frontend-serve build user-add user-passwd
+# Version shown in the UI (about page, login page copyright line). Set by `make release`.
+VERSION_FILE := frontend/src/app/shared/app-version.ts
+
+.PHONY: help dev-up dev-shell dev-down image publish release install backend-run frontend-serve build user-add user-passwd
 
 help: ## Show this help
 	@awk 'BEGIN {FS = ":.*## "} /^[a-zA-Z_-]+:.*## / {printf "  %-16s %s\n", $$1, $$2}' $(MAKEFILE_LIST)
@@ -39,6 +42,20 @@ image: ## [host] Build the prod image for the local platform and load it (tags l
 publish: ## [host] Build amd64+arm64 prod image and push (needs docker login + multi-platform buildx builder)
 	@test -n "$(GIT_SHA)" || { echo "no git commit found (git rev-parse --short HEAD)" >&2; exit 1; }
 	docker buildx build --platform $(PLATFORMS) -f docker/Dockerfile $(IMAGE_TAGS) --push .
+
+release: ## [host] Set the UI version, commit it and tag the commit: make release VERSION=1.2.0
+	@test -n "$(VERSION)" || { echo "usage: make release VERSION=<version>" >&2; exit 1; }
+	@echo '$(VERSION)' | grep -Eq '^v?[0-9]+\.[0-9]+\.[0-9]+([-+][0-9A-Za-z.-]+)?$$' || \
+		{ echo "invalid version '$(VERSION)' (expected e.g. 1.2.0, v1.2.0, 1.2.0-rc.1)" >&2; exit 1; }
+	@! git rev-parse -q --verify 'refs/tags/$(VERSION)' >/dev/null || \
+		{ echo "tag '$(VERSION)' exists already" >&2; exit 1; }
+	perl -pi -e "s/^export const APP_VERSION = .*/export const APP_VERSION = '$(VERSION)';/" $(VERSION_FILE)
+	@grep -q "^export const APP_VERSION = '$(VERSION)';$$" $(VERSION_FILE) || \
+		{ echo "could not set the version in $(VERSION_FILE)" >&2; exit 1; }
+	git add -- $(VERSION_FILE)
+	git commit -m "Release $(VERSION)" -- $(VERSION_FILE)
+	git tag -a '$(VERSION)' -m "Release $(VERSION)"
+	@echo "tagged $(VERSION). Push with: git push && git push origin '$(VERSION)'"
 
 ## --- Dev container ---
 

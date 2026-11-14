@@ -87,7 +87,7 @@ library. UI language English, all texts marked for i18n (build-time Angular i18n
 
 | Path | Content |
 |---|---|
-| `src/app/app.routes.ts` | Routes: `login`, `collages`, `collages/:id` (editor), `settings/connectors` |
+| `src/app/app.routes.ts` | Routes: `login`, `collages`, `collages/:id` (editor), `settings/connectors`, `about` |
 | `src/app/core/api/` | One API service per resource (`CollageApi`, `PhotoApi`, `ConnectorApi`, `ImmichApi`, `AuthApi`) |
 | `src/app/core/models/` | Typed DTOs and JSON props models (`collage.ts`, `photo.ts`, `text.ts`, `layout.ts`) |
 | `src/app/features/editor/` | Editor page and store (`editor.store.ts`), undo history, auto save |

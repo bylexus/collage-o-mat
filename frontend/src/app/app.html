@@ -19,6 +19,18 @@
     @if (user.isAdmin) {
       <span class="admin-badge" i18n="@@toolbar.adminBadge">Admin</span>
     }
+    <a
+      class="toolbar-about"
+      matIconButton
+      routerLink="/about"
+      routerLinkActive="active-link"
+      i18n-aria-label="@@toolbar.about"
+      aria-label="About"
+      i18n-matTooltip="@@toolbar.about"
+      matTooltip="About"
+    >
+      <mat-icon>info</mat-icon>
+    </a>
     <button
       matIconButton
       type="button"
