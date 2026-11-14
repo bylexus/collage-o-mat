@@ -1,7 +1,24 @@
 /** Overlay text DTOs of a collage (table `collage_texts`, JSON `props`). */
 
 /** Fonts bundled with the app (self-hosted `@fontsource` packages). Value = CSS font family. */
-export const TEXT_FONT_FAMILIES = ['Inter', 'Lora', 'Caveat', 'Bebas Neue'] as const;
+export const TEXT_FONT_FAMILIES = [
+  'Abril Fatface',
+  'Bebas Neue',
+  'Caveat',
+  'Dancing Script',
+  'EB Garamond',
+  'Indie Flower',
+  'Inter',
+  'Lobster',
+  'Lora',
+  'Merriweather',
+  'Montserrat',
+  'Open Sans',
+  'Pacifico',
+  'Playfair Display',
+  'Poppins',
+  'Righteous',
+] as const;
 export type TextFontFamily = (typeof TEXT_FONT_FAMILIES)[number];
 
 export type TextAlign = 'left' | 'center' | 'right';
