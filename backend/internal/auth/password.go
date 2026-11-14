@@ -39,6 +39,13 @@ func ValidatePassword(password string) error {
 	return nil
 }
 
+// loginInputTooLong tells if the login username or password is longer than
+// the rules of NormalizeUsername and ValidatePassword allow.
+func loginInputTooLong(username, password string) bool {
+	return utf8.RuneCountInString(strings.TrimSpace(username)) > maxUsernameLen ||
+		len(password) > maxPasswordLen
+}
+
 func hashPassword(password string) (string, error) {
 	h, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
 	if err != nil {

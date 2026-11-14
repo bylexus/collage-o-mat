@@ -93,14 +93,22 @@ func (h *Handler) login(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	key := LoginKey(req.Username, ClientIP(r))
+	// Reject oversized input before the limiter, the DB and bcrypt; no
+	// limiter entry is stored for it.
+	if loginInputTooLong(req.Username, req.Password) {
+		httpapi.WriteError(w, http.StatusUnauthorized, msgInvalidLogin)
+		return
+	}
+	username := strings.TrimSpace(req.Username)
+
+	key := LoginKey(username, ClientIP(r))
 	if remaining, blocked := h.limiter.Blocked(key); blocked {
 		httpapi.WriteError(w, http.StatusTooManyRequests, blockedLoginMessage(remaining))
 		return
 	}
 
 	var user User
-	err := h.db.Where("username = ?", strings.TrimSpace(req.Username)).First(&user).Error
+	err := h.db.Where("username = ?", username).First(&user).Error
 	if errors.Is(err, gorm.ErrRecordNotFound) {
 		checkPassword(h.dummyHash, req.Password)
 		h.limiter.Fail(key)
