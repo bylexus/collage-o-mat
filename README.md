@@ -1,15 +1,17 @@
 # Collage-o-mat
 
-A Photo collage web app inspired by CollageIt! Pro
+A Photo collage web app inspired by CollageIt! Pro, in Go / Angular.
 
-This app is a work-in-progress. Updates coming soon.
+![Main screen screenshot](doc/screens/main-screen.png)
 
 ## Features
 
 * Import Photos from [an Immich Server](https://immich.app/), local files
 * Arrange photos automatically in several modes (grid, center mode, free placement)
+* Background (color, gradient, image)
+* individual photo border
+* free placement and rotation
 * Export final image to png, jpg
-* ... TODO ...
 
 ## Development
 

@@ -13,6 +13,8 @@ var (
 	// ErrConflict means the request conflicts with the current state (for
 	// example a duplicate). Use Conflict to create one with a client message.
 	ErrConflict = errors.New("conflict")
+	// ErrTooLarge means the request body is larger than allowed.
+	ErrTooLarge = errors.New("request body too large")
 )
 
 // ValidationError means the client sent invalid input. Its message is shown

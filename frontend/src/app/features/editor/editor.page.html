@@ -140,6 +140,30 @@
     >
       <mat-icon>text_fields</mat-icon>
     </button>
+    @if (uploadProgress() !== null) {
+      <span class="upload-progress" role="status">
+        <mat-spinner diameter="18" />
+        {{ uploadProgressLabel() }}
+      </span>
+    }
+    <input
+      #fileInput
+      class="upload-input"
+      type="file"
+      multiple
+      [accept]="uploadAccept"
+      (change)="uploadFiles(fileInput)"
+    />
+    <button
+      matIconButton
+      type="button"
+      [disabled]="uploadProgress() !== null"
+      (click)="fileInput.click()"
+      [attr.aria-label]="uploadLabel"
+      [matTooltip]="uploadLabel"
+    >
+      <mat-icon>upload_file</mat-icon>
+    </button>
     <button
       matIconButton
       class="toolbar-primary"

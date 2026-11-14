@@ -4,6 +4,8 @@ import (
 	"bytes"
 	"cmp"
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
 	"io"
 	"log/slog"
@@ -37,6 +39,9 @@ type Store interface {
 	FindInCollage(ctx context.Context, collageID, id uint) (*Photo, error)
 	ListByCollage(ctx context.Context, collageID uint) ([]Photo, error)
 	ExistingSourceAssetIDs(ctx context.Context, collageID, connectorID uint, assetIDs []string) ([]string, error)
+	// UploadExists reports whether the collage has an uploaded photo (no
+	// connector) with the source asset ID.
+	UploadExists(ctx context.Context, collageID uint, sourceAssetID string) (bool, error)
 	CountByCollages(ctx context.Context, collageIDs []uint) (map[uint]int, error)
 	// UpdatePropsInCollage returns false if the photo does not exist or
 	// belongs to another collage.
@@ -82,12 +87,12 @@ type Source interface {
 	Preview(ctx context.Context, assetID string) (io.ReadCloser, string, error)
 }
 
-// ImportResult is the result of an import.
+// ImportResult is the result of an import or upload.
 type ImportResult struct {
 	// Photos are the newly imported photos, id ascending.
 	Photos []Photo
 	// Skipped is the number of requested assets that were already in the
-	// collage (same connector and asset ID).
+	// collage (same connector and asset ID; for uploads: same file content).
 	Skipped int
 }
 
@@ -99,11 +104,20 @@ type Service struct {
 	files    FileStorage
 	collages Collages
 	sources  Sources
+	// decodeSlots limits the uploads that are decoded and processed at the
+	// same time (server-wide, maxConcurrentDecodes).
+	decodeSlots chan struct{}
 }
 
 // NewService returns a photo service.
 func NewService(store Store, files FileStorage, collages Collages, sources Sources) *Service {
-	return &Service{store: store, files: files, collages: collages, sources: sources}
+	return &Service{
+		store:       store,
+		files:       files,
+		collages:    collages,
+		sources:     sources,
+		decodeSlots: make(chan struct{}, maxConcurrentDecodes),
+	}
 }
 
 // Import copies the preview images of the given assets of a connector into
@@ -202,17 +216,23 @@ func (s *Service) importOne(ctx context.Context, src Source, collageID, connecto
 	if err != nil {
 		return Photo{}, err
 	}
+	return s.createPhoto(ctx, collageID, &connectorID, assetID, img)
+}
+
+// createPhoto creates the photo row and its file together. connectorID is
+// nil for uploads. If a step fails, neither the row nor the file is left.
+func (s *Service) createPhoto(ctx context.Context, collageID uint, connectorID *uint, sourceAssetID string, img preview) (Photo, error) {
 	p := Photo{
 		CollageID:     collageID,
-		ConnectorID:   &connectorID,
-		SourceAssetID: assetID,
+		ConnectorID:   connectorID,
+		SourceAssetID: sourceAssetID,
 		MimeType:      img.mimeType,
 		WidthPx:       img.width,
 		HeightPx:      img.height,
 		Props:         jsoncol.JSON("{}"),
 	}
 	written := false
-	err = s.store.CreateWithFile(ctx, &p, func(p *Photo) error {
+	err := s.store.CreateWithFile(ctx, &p, func(p *Photo) error {
 		p.FileName = fileName(collageID, p.ID, img.ext)
 		if err := s.files.Save(p.FileName, bytes.NewReader(img.data)); err != nil {
 			return err
@@ -228,6 +248,80 @@ func (s *Service) importOne(ctx context.Context, src Source, collageID, connecto
 		return Photo{}, err
 	}
 	return p, nil
+}
+
+// Upload stores an image file uploaded by the user in the collage. The
+// Content-Type must be image/jpeg, image/png or image/webp. The image is
+// converted to a JPEG (see processUpload). A file with the same content
+// (SHA-256) that was uploaded to the collage before is skipped
+// (ImportResult.Skipped = 1).
+//
+// A body larger than MaxUploadBytes gives an error that matches
+// apperr.ErrTooLarge; bad image data gives an apperr validation error.
+func (s *Service) Upload(ctx context.Context, userID, collageID uint, contentType string, body io.Reader) (ImportResult, error) {
+	if _, err := s.collages.Get(ctx, userID, collageID); err != nil {
+		return ImportResult{}, err
+	}
+	format, err := uploadFormat(contentType)
+	if err != nil {
+		return ImportResult{}, err
+	}
+	data, err := readUpload(body)
+	if err != nil {
+		return ImportResult{}, err
+	}
+	assetID := uploadAssetID(data)
+	exists, err := s.store.UploadExists(ctx, collageID, assetID)
+	if err != nil {
+		return ImportResult{}, err
+	}
+	if exists {
+		return ImportResult{Skipped: 1}, nil
+	}
+	img, err := s.processLimited(ctx, data, format)
+	if err != nil {
+		return ImportResult{}, err
+	}
+	p, err := s.createPhoto(ctx, collageID, nil, assetID, img)
+	if err != nil {
+		return ImportResult{}, fmt.Errorf("store upload in collage %d: %w", collageID, err)
+	}
+	return ImportResult{Photos: []Photo{p}}, nil
+}
+
+// processLimited runs processUpload when a decode slot is free, so that at
+// most maxConcurrentDecodes uploads are decoded at the same time. It stops
+// waiting when ctx is done.
+func (s *Service) processLimited(ctx context.Context, data []byte, format string) (preview, error) {
+	select {
+	case s.decodeSlots <- struct{}{}:
+	case <-ctx.Done():
+		return preview{}, fmt.Errorf("wait for decode slot: %w", ctx.Err())
+	}
+	defer func() { <-s.decodeSlots }()
+	return processUpload(data, format)
+}
+
+// readUpload reads an uploaded file of at most MaxUploadBytes.
+func readUpload(body io.Reader) ([]byte, error) {
+	data, err := io.ReadAll(io.LimitReader(body, MaxUploadBytes+1))
+	if err != nil {
+		return nil, fmt.Errorf("read upload: %w", err)
+	}
+	if len(data) > MaxUploadBytes {
+		return nil, fmt.Errorf("upload is larger than %d MiB: %w", MaxUploadBytes>>20, apperr.ErrTooLarge)
+	}
+	if len(data) == 0 {
+		return nil, apperr.Validation("the uploaded file is empty")
+	}
+	return data, nil
+}
+
+// uploadAssetID returns the source asset ID of an uploaded file:
+// "sha256:<hex of the SHA-256 of the original bytes>".
+func uploadAssetID(data []byte) string {
+	sum := sha256.Sum256(data)
+	return "sha256:" + hex.EncodeToString(sum[:])
 }
 
 // download fetches and checks the preview image of an asset.

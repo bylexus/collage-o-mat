@@ -26,6 +26,7 @@ func NewHandler(svc *Service) *Handler {
 // RegisterRoutes implements httpapi.Module. All routes need a session.
 func (h *Handler) RegisterRoutes(mux *http.ServeMux, requireAuth httpapi.Middleware) {
 	mux.Handle("POST /api/collages/{id}/import", requireAuth(http.HandlerFunc(h.importAssets)))
+	mux.Handle("POST /api/collages/{id}/uploads", requireAuth(http.HandlerFunc(h.upload)))
 	mux.Handle("DELETE /api/collages/{id}/photos/{photoId}", requireAuth(http.HandlerFunc(h.delete)))
 	mux.Handle("GET /api/collages/{id}/photos/{photoId}/file", requireAuth(http.HandlerFunc(h.file)))
 }
@@ -51,6 +52,24 @@ func (h *Handler) importAssets(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	res, err := h.svc.Import(r.Context(), auth.UserID(r), collageID, req.ConnectorID, req.AssetIDs)
+	if err != nil {
+		httpapi.WriteServiceError(w, err)
+		return
+	}
+	httpapi.WriteJSON(w, http.StatusOK, importResponse{Photos: views(res.Photos), Skipped: res.Skipped})
+}
+
+// upload stores one image file sent as the raw request body (Content-Type
+// image/jpeg, image/png or image/webp). The body is limited to
+// MaxUploadBytes (413 if larger).
+func (h *Handler) upload(w http.ResponseWriter, r *http.Request) {
+	collageID, err := httpapi.PathID(r, "id")
+	if err != nil {
+		httpapi.WriteServiceError(w, err)
+		return
+	}
+	body := http.MaxBytesReader(w, r.Body, MaxUploadBytes)
+	res, err := h.svc.Upload(r.Context(), auth.UserID(r), collageID, r.Header.Get("Content-Type"), body)
 	if err != nil {
 		httpapi.WriteServiceError(w, err)
 		return

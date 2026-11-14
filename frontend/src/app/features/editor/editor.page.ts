@@ -4,6 +4,7 @@ import {
   afterNextRender,
   Component,
   computed,
+  DestroyRef,
   effect,
   inject,
   Injector,
@@ -16,7 +17,7 @@ import { MatIconModule } from '@angular/material/icon';
 import { MatProgressSpinnerModule } from '@angular/material/progress-spinner';
 import { MatTooltipModule } from '@angular/material/tooltip';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
-import { firstValueFrom } from 'rxjs';
+import { firstValueFrom, Subscription } from 'rxjs';
 import { PhotoApi } from '../../core/api/photo.api';
 import { pageLabel, SnapGridSettings } from '../../core/models/collage';
 import { ImportResult, isPlaced, photoFileUrl } from '../../core/models/photo';
@@ -35,6 +36,8 @@ import { CollageSettingsPanel } from './settings-panel/collage-settings-panel';
 import { SnapGridPopover } from './snap-grid/snap-grid-popover';
 import { TextPropertiesPanel } from './text-panel/text-properties-panel';
 import { undoRedoCommand, undoRedoShortcutLabels } from './undo-shortcut';
+import { UPLOAD_MIME_TYPES, uploadBatch, UploadBatchState } from './upload/upload-batch';
+import { uploadFailureMessage } from './upload/upload-failure-message';
 
 /**
  * Editor of one collage (container): toolbar, Konva canvas and side panel (selected photo or
@@ -75,6 +78,7 @@ export class EditorPage {
   private readonly dialog = inject(MatDialog);
   private readonly notification = inject(NotificationService);
   private readonly injector = inject(Injector);
+  private readonly destroyRef = inject(DestroyRef);
 
   private readonly textPanel = viewChild(TextPropertiesPanel);
 
@@ -103,6 +107,20 @@ export class EditorPage {
   protected readonly addTextLabel = $localize`:@@editor.text.addButton:Add text`;
   protected readonly importLabel = $localize`:@@editor.importButton:Import from Immich`;
   protected readonly snapGridLabel = $localize`:@@editor.snapGrid.button:Snap grid`;
+  protected readonly uploadLabel = $localize`:@@editor.uploadButton:Upload from computer`;
+  /** `accept` of the hidden file input. */
+  protected readonly uploadAccept = UPLOAD_MIME_TYPES.join(',');
+
+  /** Progress of the running upload batch; `null` when no upload runs. */
+  protected readonly uploadProgress = signal<Pick<UploadBatchState, 'done' | 'total'> | null>(null);
+  protected readonly uploadProgressLabel = computed(() => {
+    const progress = this.uploadProgress();
+    if (!progress) {
+      return '';
+    }
+    const { done, total } = progress;
+    return $localize`:@@editor.upload.progress:Uploading ${done}:done: / ${total}:total:`;
+  });
 
   /** The snap grid popover is open. */
   protected readonly snapGridOpen = signal(false);
@@ -224,6 +242,61 @@ export class EditorPage {
         void this.store.applyImport(result);
       }
     });
+  }
+
+  /**
+   * Uploads the files chosen in the file input (at most 3 at the same time). At the end: one
+   * success snackbar and one `applyImport` for all new photos, one error snackbar for the failed
+   * files. Leaving the page cancels open requests; then nothing is applied or shown.
+   */
+  protected uploadFiles(input: HTMLInputElement): void {
+    const files = Array.from(input.files ?? []);
+    // Reset, so that the same files can be chosen again.
+    input.value = '';
+    const collage = this.store.collage();
+    if (!collage || files.length === 0 || this.uploadProgress() !== null) {
+      return;
+    }
+    let last: UploadBatchState | null = null;
+    // Unsubscribe (not complete) on destroy: cancels the requests, `complete` does not run.
+    const subscription = new Subscription();
+    const removeDestroyHook = this.destroyRef.onDestroy(() => subscription.unsubscribe());
+    subscription.add(
+      uploadBatch(files, (file) => this.photoApi.upload(collage.id, file)).subscribe({
+        next: (state) => {
+          last = state;
+          this.uploadProgress.set({ done: state.done, total: state.total });
+        },
+        complete: () => {
+          removeDestroyHook();
+          this.uploadProgress.set(null);
+          if (last) {
+            this.finishUpload(last);
+          }
+        },
+      }),
+    );
+  }
+
+  /**
+   * Shows the result and arranges the new photos. Only one snackbar is visible at a time, so with
+   * failed files the error snackbar also holds the success text.
+   */
+  private finishUpload({ result, failures }: UploadBatchState): void {
+    const hasResult = result.photos.length > 0 || result.skipped > 0;
+    if (failures.length > 0) {
+      const failed = uploadFailureMessage(failures);
+      const imported = importResultMessage(result);
+      this.notification.error(
+        hasResult
+          ? $localize`:@@editor.upload.partial:${imported}:imported:. ${failed}:failed:`
+          : failed,
+      );
+    } else if (hasResult) {
+      this.notification.success(importResultMessage(result));
+    }
+    // Does nothing for an empty photo list (e.g. only skipped files).
+    void this.store.applyImport(result);
   }
 
   /** Opens the export dialog; it renders the committed layout and downloads the image. */

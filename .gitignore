@@ -1,4 +1,5 @@
 /data/
+/data-prod/
 /bin/
 frontend/node_modules/
 frontend/dist/

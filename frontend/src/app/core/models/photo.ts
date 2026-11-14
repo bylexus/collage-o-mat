@@ -57,7 +57,7 @@ export interface ImportRequest {
   assetIds: string[];
 }
 
-/** Result of `POST /api/collages/{id}/import`. */
+/** Result of `POST /api/collages/{id}/import` and `POST /api/collages/{id}/uploads`. */
 export interface ImportResult {
   /** The new photos in import order. */
   photos: Photo[];

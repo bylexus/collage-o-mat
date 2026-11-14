@@ -1,4 +1,4 @@
-import { HttpClient } from '@angular/common/http';
+import { HttpClient, HttpHeaders } from '@angular/common/http';
 import { inject, Injectable } from '@angular/core';
 import { Observable } from 'rxjs';
 import { ImportRequest, ImportResult } from '../models/photo';
@@ -14,6 +14,16 @@ export class PhotoApi {
    */
   import(collageId: number, request: ImportRequest): Observable<ImportResult> {
     return this.http.post<ImportResult>(`/api/collages/${collageId}/import`, request);
+  }
+
+  /**
+   * Uploads one local image file (JPEG, PNG or WebP) into the collage. The raw file is the body,
+   * its MIME type the `Content-Type`. A file that is already in the collage is skipped.
+   */
+  upload(collageId: number, file: File): Observable<ImportResult> {
+    return this.http.post<ImportResult>(`/api/collages/${collageId}/uploads`, file, {
+      headers: new HttpHeaders({ 'Content-Type': file.type }),
+    });
   }
 
   /** Deletes the photo and its file. */

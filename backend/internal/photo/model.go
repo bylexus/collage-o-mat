@@ -1,6 +1,6 @@
 // Package photo contains the photos of collages: the Photo model, the photo
-// files on disk, the import from a photo source (e.g. Immich) and the photo
-// file and delete API.
+// files on disk, the import from a photo source (e.g. Immich), the upload of
+// local image files and the photo file and delete API.
 package photo
 
 import (
@@ -18,16 +18,18 @@ import (
 // The unique index on (collage_id, connector_id, source_asset_id) makes sure
 // an asset is in a collage only once (the import skips duplicates; the index
 // also protects against two parallel imports). Rows with a NULL connector_id
-// (connector deleted) do not conflict.
+// (upload, or connector deleted) do not conflict; the upload service checks
+// duplicates itself.
 type Photo struct {
 	ID        uint            `gorm:"primaryKey"`
 	CollageID uint            `gorm:"not null;uniqueIndex:idx_photos_source,priority:1"`
 	Collage   collage.Collage `gorm:"constraint:OnDelete:CASCADE"`
-	// ConnectorID is the connector the photo was imported from; nil after
-	// the connector was deleted.
+	// ConnectorID is the connector the photo was imported from; nil for an
+	// upload and after the connector was deleted.
 	ConnectorID *uint                `gorm:"uniqueIndex:idx_photos_source,priority:2"`
 	Connector   *connector.Connector `gorm:"constraint:OnDelete:SET NULL"`
-	// SourceAssetID is the asset ID in the source (e.g. the Immich asset ID).
+	// SourceAssetID is the asset ID in the source (e.g. the Immich asset ID);
+	// for an upload "sha256:<hex of the SHA-256 of the uploaded bytes>".
 	SourceAssetID string `gorm:"size:200;not null;uniqueIndex:idx_photos_source,priority:3"`
 	// FileName is the path of the file relative to the photo directory,
 	// e.g. "12/345.jpg".

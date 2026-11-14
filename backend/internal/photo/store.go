@@ -80,6 +80,20 @@ func (s *GormStore) ExistingSourceAssetIDs(ctx context.Context, collageID, conne
 	return existing, nil
 }
 
+// UploadExists reports whether the collage has a photo without connector
+// (an upload) with the source asset ID.
+func (s *GormStore) UploadExists(ctx context.Context, collageID uint, sourceAssetID string) (bool, error) {
+	var count int64
+	err := db.Conn(ctx, s.db).Model(&Photo{}).
+		Where("collage_id = ? AND connector_id IS NULL AND source_asset_id = ?", collageID, sourceAssetID).
+		Limit(1).
+		Count(&count).Error
+	if err != nil {
+		return false, fmt.Errorf("find upload in collage %d: %w", collageID, err)
+	}
+	return count > 0, nil
+}
+
 // CountByCollages returns the number of photos per collage id; collages
 // without photos are missing in the map.
 func (s *GormStore) CountByCollages(ctx context.Context, collageIDs []uint) (map[uint]int, error) {

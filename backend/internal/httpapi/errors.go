@@ -14,6 +14,8 @@ import (
 //   - apperr.ErrNotFound → 404 "not found"
 //   - apperr.Conflict / ErrConflict → 409 with the conflict message
 //   - apperr.ValidationError → 400 with the validation message
+//   - apperr.ErrTooLarge or an *http.MaxBytesError (a body limited with
+//     http.MaxBytesReader was too large) → 413 "request body too large"
 //   - apperr.UpstreamError → 502 with its message (an external service such
 //     as Immich failed; never 401/403, so that the client does not treat
 //     it as a lost session); the error is logged as a warning
@@ -29,6 +31,11 @@ func WriteServiceError(w http.ResponseWriter, err error) {
 	}
 	if v, ok := apperr.AsValidation(err); ok {
 		WriteError(w, http.StatusBadRequest, v.Message)
+		return
+	}
+	var maxErr *http.MaxBytesError
+	if errors.Is(err, apperr.ErrTooLarge) || errors.As(err, &maxErr) {
+		WriteError(w, http.StatusRequestEntityTooLarge, "request body too large")
 		return
 	}
 	if u, ok := apperr.AsUpstream(err); ok {
