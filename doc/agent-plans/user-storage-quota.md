@@ -60,7 +60,7 @@ Not decided yet (planning phase). Expected:
 ## Context for a new agent
 
 - **Read first:** `doc/architecture.md` (layering, `apperr`, data model, API); `doc/development.md` (env
-  vars); `doc/deployment.md`; `doc/agent-plans/local-upload-connector.md` (upload feature).
+  vars); `doc/deployment.md`; `doc/agent-plans/done/local-upload-connector.md` (upload feature).
 - **Facts from the code (2026-11-14):**
   - `Photo` (`backend/internal/photo/model.go`): `ID, CollageID, ConnectorID, SourceAssetID, FileName,
     MimeType, WidthPx, HeightPx, Props, CreatedAt, UpdatedAt`. No size column.

@@ -54,7 +54,7 @@ Not decided yet (planning phase). Expected:
 
 ## Context for a new agent
 
-- **Read first:** `doc/architecture.md` (layering, connectors, API); `doc/agent-plans/local-upload-connector.md`
+- **Read first:** `doc/architecture.md` (layering, connectors, API); `doc/agent-plans/done/local-upload-connector.md`
   (upload processing pipeline); `doc/agent-plans/done/poc-implementation.md` (Immich import decisions).
 - **Facts from the code (2026-11-14):**
   - `immich.Client.Thumbnail(ctx, assetID, size)` (`backend/internal/connector/immich/client.go`) calls

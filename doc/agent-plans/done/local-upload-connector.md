@@ -3,7 +3,7 @@
 **Ticket/Source:** Backlog of `doc/agent-plans/done/poc-implementation.md` (requested by the developer
 2026-11-13; was out of the PoC scope). Grilled 2026-11-14.
 **Branch:** none
-**Status:** in progress
+**Status:** done
 
 ## Goal
 
@@ -150,7 +150,7 @@ No automated tests, manual review only (same as the PoC).
 ## Steps
 
 ### Step 1 — Backend upload endpoint and image processing
-- **Status:** implemented, review pending
+- **Status:** done (reviewed 2026-11-14)
 - **What:** `goexif` dependency; `internal/photo/process.go`; decode semaphore; `Service.Upload` with
   duplicate check and shared row+file helper (refactor `importOne` to use it); store method for the
   `connector_id IS NULL` duplicate lookup; handler route `POST /api/collages/{id}/uploads` with
@@ -185,7 +185,7 @@ No automated tests, manual review only (same as the PoC).
     Immich import not tested (no Immich instance); the refactor only moved row+file code into `createPhoto`.
 
 ### Step 2 — Frontend upload button and batch handling
-- **Status:** implemented, review pending
+- **Status:** done (reviewed 2026-11-14)
 - **What:** `PhotoApi.upload`; toolbar button + hidden file input in `editor.page`; batch upload with 3
   parallel requests, progress "Uploading n / m", cancel on page leave; merged result → `applyImport`,
   success and error snackbars; i18n ids.
@@ -220,7 +220,5 @@ No automated tests, manual review only (same as the PoC).
 
 ## Current state / Next action
 
-- Plan approved 2026-11-14. The developer asked to implement all steps (via sub-agents) and then review.
-- Steps 1 and 2 implemented (not committed), waiting for the developer's manual review. After approval: set
-  both steps to `done (reviewed <date>)`, `**Status:** done`.
-- No temporary changes to revert. Agent scratch test data lives outside the repo.
+- Done. Steps 1 and 2 implemented, reviewed by the developer and committed (`b0caa8a local file upload and
+  docs`). Plan moved to `doc/agent-plans/done/` on 2026-11-14.
