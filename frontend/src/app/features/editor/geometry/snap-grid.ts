@@ -24,6 +24,7 @@ const MODE_MARGIN_MM: Readonly<Record<ArrangementMode, (settings: CollageSetting
   grid: (settings) => settings.grid.marginMm,
   center: (settings) => settings.center.marginMm,
   heap: (settings) => settings.heap.marginMm,
+  masonry: (settings) => settings.masonry.marginMm,
 };
 
 /** Shift (mm) that puts an element on the grid. */

@@ -8,6 +8,9 @@
   @case ('heap') {
     <h2 mat-dialog-title i18n="@@editor.arrangementDialog.titleHeap">Re-arrange: Random heap</h2>
   }
+  @case ('masonry') {
+    <h2 mat-dialog-title i18n="@@editor.arrangementDialog.titleMasonry">Re-arrange: Masonry</h2>
+  }
 }
 <form [formGroup]="form" (ngSubmit)="submit()">
   <mat-dialog-content class="arrangement-fields">
@@ -152,6 +155,61 @@
             label="Margin (mm)"
           />
         </div>
+      }
+      @case ('masonry') {
+        @let masonry = form.controls.masonry.controls;
+        <div class="field-row">
+          <mat-form-field subscriptSizing="dynamic">
+            <mat-label i18n="@@editor.settings.masonry.direction">Direction</mat-label>
+            <mat-select [formControl]="masonry.direction">
+              @for (direction of masonryDirections; track direction) {
+                <mat-option [value]="direction">
+                  @if (direction === 'rows') {
+                    <ng-container i18n="@@editor.settings.rows">Rows</ng-container>
+                  } @else {
+                    <ng-container i18n="@@editor.settings.cols">Columns</ng-container>
+                  }
+                </mat-option>
+              }
+            </mat-select>
+          </mat-form-field>
+          @if (masonryDirection() === 'rows') {
+            <app-number-field
+              [control]="masonry.count"
+              [limits]="limits.gridCount"
+              i18n-label="@@editor.settings.rows"
+              label="Rows"
+              i18n-placeholder="@@editor.settings.auto"
+              placeholder="Auto"
+            />
+          } @else {
+            <app-number-field
+              [control]="masonry.count"
+              [limits]="limits.gridCount"
+              i18n-label="@@editor.settings.cols"
+              label="Columns"
+              i18n-placeholder="@@editor.settings.auto"
+              placeholder="Auto"
+            />
+          }
+        </div>
+        <div class="field-row">
+          <app-number-field
+            [control]="masonry.gapMm"
+            [limits]="limits.gapMm"
+            i18n-label="@@editor.settings.gapMm"
+            label="Gap (mm)"
+          />
+          <app-number-field
+            [control]="masonry.marginMm"
+            [limits]="limits.marginMm"
+            i18n-label="@@editor.settings.marginMm"
+            label="Margin (mm)"
+          />
+        </div>
+        <mat-checkbox [formControl]="masonry.randomOrder" i18n="@@editor.settings.randomOrder">
+          Random order
+        </mat-checkbox>
       }
     }
     <p class="settings-note" i18n="@@editor.arrangementDialog.hint">

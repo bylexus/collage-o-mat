@@ -1,4 +1,5 @@
 import { Component, inject } from '@angular/core';
+import { toSignal } from '@angular/core/rxjs-interop';
 import {
   FormControl,
   NonNullableFormBuilder,
@@ -10,23 +11,32 @@ import { MatCheckboxModule } from '@angular/material/checkbox';
 import { MAT_DIALOG_DATA, MatDialogModule, MatDialogRef } from '@angular/material/dialog';
 import { MatFormFieldModule } from '@angular/material/form-field';
 import { MatSelectModule } from '@angular/material/select';
-import { CollageSettings, HEAP_ASPECTS, HeapAspect } from '../../../core/models/collage';
+import {
+  CollageSettings,
+  HEAP_ASPECTS,
+  HeapAspect,
+  MASONRY_DIRECTIONS,
+  MasonryDirection,
+} from '../../../core/models/collage';
 import { limitValidators } from '../../../shared/number-limits';
 import { NumberField } from '../fields/number-field';
 import { SETTINGS_LIMITS } from './settings-limits';
 
-/** Rows and columns: empty (`null`) = computed from the photo count. */
+/** Rows and columns (grid) and the masonry line count: empty (`null`) = computed automatically. */
 const gridCountValidators = limitValidators(SETTINGS_LIMITS.gridCount, { optional: true });
 
 /** Photos per center lane: empty (`null`) = distributed automatically. */
 const laneCountValidators = limitValidators(SETTINGS_LIMITS.laneCount, { optional: true });
 
 /** The arrangement part of the collage settings: the mode and the parameters of all modes. */
-export type ArrangementSettings = Pick<CollageSettings, 'mode' | 'grid' | 'center' | 'heap'>;
+export type ArrangementSettings = Pick<
+  CollageSettings,
+  'mode' | 'grid' | 'center' | 'heap' | 'masonry'
+>;
 
 /**
  * Input of the arrangement settings dialog: `mode` is the mode to edit (can differ from the saved
- * mode), `grid`, `center` and `heap` are the saved parameters.
+ * mode), `grid`, `center`, `heap` and `masonry` are the saved parameters.
  */
 export type ArrangementSettingsDialogData = ArrangementSettings;
 
@@ -86,6 +96,7 @@ export class ArrangementSettingsDialog {
   protected readonly mode = this.data.mode;
   protected readonly limits = SETTINGS_LIMITS;
   protected readonly heapAspects = HEAP_ASPECTS;
+  protected readonly masonryDirections = MASONRY_DIRECTIONS;
 
   protected readonly form = this.fb.group({
     grid: this.fb.group({
@@ -117,7 +128,20 @@ export class ArrangementSettingsDialog {
       maxRotationDeg: [this.data.heap.maxRotationDeg, limitValidators(this.limits.maxRotationDeg)],
       marginMm: [this.data.heap.marginMm, limitValidators(this.limits.marginMm)],
     }),
+    masonry: this.fb.group({
+      direction: this.fb.control<MasonryDirection>(this.data.masonry.direction),
+      count: this.autoCountControl(this.data.masonry.count, gridCountValidators),
+      gapMm: [this.data.masonry.gapMm, limitValidators(this.limits.gapMm)],
+      marginMm: [this.data.masonry.marginMm, limitValidators(this.limits.marginMm)],
+      randomOrder: [this.data.masonry.randomOrder],
+    }),
   });
+
+  /** Masonry direction shown in the select (the count label follows it: "Rows" / "Columns"). */
+  protected readonly masonryDirection = toSignal(
+    this.form.controls.masonry.controls.direction.valueChanges,
+    { initialValue: this.form.controls.masonry.controls.direction.value },
+  );
 
   /** The parameters of the edited mode are invalid (Re-arrange is disabled). */
   protected parametersInvalid(): boolean {
@@ -130,7 +154,7 @@ export class ArrangementSettingsDialog {
       parameters.markAllAsTouched();
       return;
     }
-    const { grid, center, heap } = this.data;
+    const { grid, center, heap, masonry } = this.data;
     this.ref.close({
       mode: this.mode,
       grid: this.mode === 'grid' ? this.form.controls.grid.getRawValue() : grid,
@@ -138,6 +162,7 @@ export class ArrangementSettingsDialog {
       center:
         this.mode === 'center' ? { ...center, ...this.form.controls.center.getRawValue() } : center,
       heap: this.mode === 'heap' ? this.form.controls.heap.getRawValue() : heap,
+      masonry: this.mode === 'masonry' ? this.form.controls.masonry.getRawValue() : masonry,
     });
   }
 

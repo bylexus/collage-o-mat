@@ -336,6 +336,7 @@ export class EditorPage {
       grid: settings.grid,
       center: settings.center,
       heap: settings.heap,
+      masonry: settings.masonry,
     });
     const current = this.store.settings();
     if (result && current) {

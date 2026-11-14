@@ -92,7 +92,7 @@ library. UI language English, all texts marked for i18n (build-time Angular i18n
 | `src/app/core/models/` | Typed DTOs and JSON props models (`collage.ts`, `photo.ts`, `text.ts`, `layout.ts`) |
 | `src/app/features/editor/` | Editor page and store (`editor.store.ts`), undo history, auto save |
 | `features/editor/canvas/` | Konva rendering, transformers, crop mode, viewport, export renderer |
-| `features/editor/arrange/` | Pure arrangement functions (grid, center, random heap, lanes, justified lines) |
+| `features/editor/arrange/` | Pure arrangement functions (grid, center, random heap, masonry, lanes, justified lines) |
 | `features/editor/geometry/` | Pure math: crop, units (mm/pt/px), gradients, snap grid |
 | `features/editor/import/`, `upload/` | Immich import dialog, local file upload |
 | `features/editor/export/` | PNG/JPG export dialog |
@@ -147,6 +147,7 @@ Unknown `/api/...` paths always return a JSON 404, never the SPA.
 - **Collage / Page:** one page (size in mm, DPI for export) with photos and texts, owned by one user.
 - **Frame:** the rectangle of a photo on the page. **Crop:** the visible part of the source image.
 - **Cover:** crop with the frame aspect, as large as possible (frame filled, image cut).
-- **Arrangement / mode:** algorithm that sets all frames at once (`grid`, `center`, `heap` = random heap, free placement).
+- **Arrangement / mode:** algorithm that sets all frames at once (`grid`, `center`, `heap` = random heap,
+  `masonry` = justified rows or columns, free placement).
 - **Connector:** a configured external photo source of a user (only `immich`).
 - **Layout:** collage settings + all photo props + all texts, saved together.

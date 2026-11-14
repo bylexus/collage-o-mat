@@ -4,6 +4,8 @@ import type { ArrangementMode, CollageSettings } from '../../../core/models/coll
 import { arrangeCenter } from './center';
 import { arrangeGrid } from './grid';
 import { arrangeHeap } from './heap';
+import { arrangeMasonry } from './masonry';
+import { shuffle } from './shuffle';
 import type { ArrangePhoto, FrameMap } from './types';
 
 export type { ArrangePhoto, FrameMap } from './types';
@@ -25,22 +27,30 @@ const STRATEGIES: Readonly<Record<ArrangementMode, ArrangeStrategy>> = {
   grid: (photos, settings) => arrangeGrid(photos, settings.page, settings.grid),
   center: (photos, settings) => arrangeCenter(photos, settings.page, settings.center),
   heap: (photos, settings, random) => arrangeHeap(photos, settings.page, settings.heap, random),
+  masonry: (photos, settings, random) =>
+    arrangeMasonry(photos, settings.page, settings.masonry, random),
 };
 
-/** Per mode: are the photos shuffled before the strategy runs? `heap` is random anyway. */
+/**
+ * Per mode: are the photos shuffled before the strategy runs? `heap` is random anyway; `masonry`
+ * handles its random order itself (`masonry.randomOrder` changes the split, not only the input
+ * order), so its photos always come in id order.
+ */
 const RANDOM_ORDER: Readonly<Record<ArrangementMode, (settings: CollageSettings) => boolean>> = {
   grid: (settings) => settings.grid.randomOrder,
   center: (settings) => settings.center.randomOrder,
   heap: () => false,
+  masonry: () => false,
 };
 
 /**
- * Arranges all photos with the mode in `settings.mode` (`grid`, `center` or `heap`) on
+ * Arranges all photos with the mode in `settings.mode` (`grid`, `center`, `heap` or `masonry`) on
  * `settings.page`. Photos are processed in id-ascending order, or in random order if the random
- * order setting of the active mode is on (`grid.randomOrder`, `center.randomOrder`); the input array
- * is not changed. Borders are `{widthMm: null, color: null}` (collage default).
- * @param random random source with values in [0, 1) for random modes (`heap`) and the random order;
- *   injectable for tests
+ * order setting of the active mode is on (`grid.randomOrder`, `center.randomOrder`; masonry handles
+ * `masonry.randomOrder` itself); the input array is not changed. Borders are
+ * `{widthMm: null, color: null}` (collage default).
+ * @param random random source with values in [0, 1) for random modes (`heap`, `masonry` with
+ *   random order) and the random order; injectable for tests
  * @throws Error if `settings.mode` is not a known mode
  */
 export function arrangePhotos(
@@ -61,12 +71,4 @@ export function arrangePhotos(
 /** A copy of the photos sorted by id ascending. */
 function sortedById(photos: readonly ArrangePhoto[]): ArrangePhoto[] {
   return [...photos].sort((a, b) => a.id - b.id);
-}
-
-/** Shuffles the array in place (Fisher–Yates) with `random` (values in [0, 1)). */
-function shuffle<T>(items: T[], random: () => number): void {
-  for (let i = items.length - 1; i > 0; i--) {
-    const j = Math.floor(random() * (i + 1));
-    [items[i], items[j]] = [items[j], items[i]];
-  }
 }
