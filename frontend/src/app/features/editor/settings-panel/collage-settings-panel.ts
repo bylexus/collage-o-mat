@@ -24,6 +24,8 @@ export class CollageSettingsPanel {
   readonly backgroundImageUrl = input<string | null>(null);
   /** True if at least one photo has an own border (enables "Apply to all photos"). */
   readonly hasBorderOverrides = input(false);
+  /** True if at least one photo has an own shadow (enables the shadow "Apply to all photos"). */
+  readonly hasShadowOverrides = input(false);
 
   readonly settingsChange = output<CollageSettings>();
   /** Settings while a colour is changed in a picker (not committed). */
@@ -34,6 +36,8 @@ export class CollageSettingsPanel {
   readonly rearrangeAgain = output<void>();
   /** "Apply to all photos" of the default border: remove the own borders of all photos. */
   readonly applyBorderToAll = output<void>();
+  /** "Apply to all photos" of the default shadow: remove the own shadows of all photos. */
+  readonly applyShadowToAll = output<void>();
 
   /** Emits the current settings with the changed parts replaced (a new object). */
   protected update(change: Partial<CollageSettings>): void {

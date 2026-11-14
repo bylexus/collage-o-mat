@@ -88,51 +88,7 @@
   </mat-button-toggle-group>
 </div>
 
-@let shadow = form.controls.shadow.controls;
-<mat-checkbox [formControl]="shadow.enabled" (change)="commit()" i18n="@@editor.text.shadow">
-  Shadow
-</mat-checkbox>
-@if (shadowEnabled()) {
-  <div class="field-row">
-    <app-color-field
-      class="color-cell"
-      [control]="shadow.color"
-      i18n-label="@@editor.text.shadowColor"
-      label="Colour"
-      (committed)="commit()"
-    />
-    <app-number-field
-      [control]="shadow.opacityPercent"
-      [limits]="limits.shadowOpacityPercent"
-      i18n-label="@@editor.text.shadowOpacityPercent"
-      label="Opacity (%)"
-      (committed)="commit()"
-    />
-  </div>
-  <app-number-field
-    [control]="shadow.blurMm"
-    [limits]="limits.shadowBlurMm"
-    i18n-label="@@editor.text.shadowBlurMm"
-    label="Blur (mm)"
-    (committed)="commit()"
-  />
-  <div class="field-row">
-    <app-number-field
-      [control]="shadow.offsetXMm"
-      [limits]="limits.shadowOffsetMm"
-      i18n-label="@@editor.text.shadowOffsetXMm"
-      label="Offset X (mm)"
-      (committed)="commit()"
-    />
-    <app-number-field
-      [control]="shadow.offsetYMm"
-      [limits]="limits.shadowOffsetMm"
-      i18n-label="@@editor.text.shadowOffsetYMm"
-      label="Offset Y (mm)"
-      (committed)="commit()"
-    />
-  </div>
-}
+<app-shadow-fields [group]="form.controls.shadow" (committed)="commit()" />
 
 @let outline = form.controls.outline.controls;
 <mat-checkbox [formControl]="outline.enabled" (change)="commit()" i18n="@@editor.text.outline">

@@ -2,6 +2,7 @@
 import type { BackgroundSettings, BorderSettings, PageSize } from '../../../core/models/collage';
 import { isPlaced, photoFileUrl } from '../../../core/models/photo';
 import type { NormalizedRect, Photo, PhotoProps } from '../../../core/models/photo';
+import type { Shadow } from '../../../core/models/shadow';
 import type { TextProps } from '../../../core/models/text';
 import type { EditorSelection } from '../selection';
 import { finiteOr } from '../geometry/numbers';
@@ -39,6 +40,8 @@ export interface Scene {
   page: PageSize;
   background: SceneBackground;
   defaultBorder: BorderSettings;
+  /** Shadow of the photos without an own shadow. */
+  defaultShadow: Shadow;
   /** Only placed photos; drawn in `props.z` order. */
   photos: readonly ScenePhoto[];
   /** Overlay texts; photos and texts are drawn together in `props.z` order. */
@@ -108,7 +111,7 @@ export function elementsByZ(scene: Pick<Scene, 'photos' | 'texts'>): SceneElemen
   return elements.sort((a, b) => a.z - b.z).map(({ element }) => element);
 }
 
-/** True if both props have the same frame (centre, size, rotation) and crop; z and border are ignored. */
+/** True if both props have the same frame (centre, size, rotation) and crop; z, border and shadow are ignored. */
 export function sameGeometry(a: PhotoProps, b: PhotoProps): boolean {
   return (
     a.cxMm === b.cxMm &&

@@ -89,10 +89,11 @@ library. UI language English, all texts marked for i18n (build-time Angular i18n
 |---|---|
 | `src/app/app.routes.ts` | Routes: `login`, `collages`, `collages/:id` (editor), `settings/connectors`, `about` |
 | `src/app/core/api/` | One API service per resource (`CollageApi`, `PhotoApi`, `ConnectorApi`, `ImmichApi`, `AuthApi`) |
-| `src/app/core/models/` | Typed DTOs and JSON props models (`collage.ts`, `photo.ts`, `text.ts`, `layout.ts`) |
+| `src/app/core/models/` | Typed DTOs and JSON props models (`collage.ts`, `photo.ts`, `text.ts`, `shadow.ts`, `layout.ts`) |
 | `src/app/features/editor/` | Editor page and store (`editor.store.ts`), undo history, auto save |
 | `features/editor/canvas/` | Konva rendering, transformers, crop mode, viewport, export renderer |
 | `features/editor/arrange/` | Pure arrangement functions (grid, center, random heap, masonry, lanes, justified lines) |
+| `features/editor/fields/` | Shared form fields (colour, number, `BorderFields`, `ShadowFields` + `SHADOW_LIMITS`) |
 | `features/editor/geometry/` | Pure math: crop, units (mm/pt/px), gradients, snap grid |
 | `features/editor/import/`, `upload/` | Immich import dialog, local file upload |
 | `features/editor/export/` | PNG/JPG export dialog |
@@ -117,6 +118,11 @@ All tables have `created_at`, `updated_at`. JSON columns are `TEXT`.
 Units: page and element geometry in mm (frame centre `cxMm/cyMm`, rotation around the centre), font size
 in pt, crop as normalized rectangle (0..1) of the source image. `z` is shared between photos and texts.
 The exact JSON shapes are the TypeScript models in `frontend/src/app/core/models/`.
+
+Photo look: the collage settings hold `defaultBorder` and `defaultShadow`; each photo's props can override
+them (`border`: per-field `null` = default; `shadow`: missing or `null` = default, else a full own
+`Shadow`, `enabled: false` = no shadow for this photo). Texts and photos use the same `Shadow` type.
+Re-arrange sets new frames but keeps each photo's own border and shadow.
 
 ## API
 
@@ -151,3 +157,5 @@ Unknown `/api/...` paths always return a JSON 404, never the SPA.
   `masonry` = justified rows or columns, free placement).
 - **Connector:** a configured external photo source of a user (only `immich`).
 - **Layout:** collage settings + all photo props + all texts, saved together.
+- **Drop shadow (photo):** drawn by an unclipped rect under the clipped photo content
+  (`canvas/photo-view.ts`); offset is not rotated with the photo (same light direction for all).

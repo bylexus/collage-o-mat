@@ -4,8 +4,10 @@ import { Image as KonvaImage } from 'konva/lib/shapes/Image';
 import { Rect as KonvaRect } from 'konva/lib/shapes/Rect';
 import type { BorderSettings } from '../../../core/models/collage';
 import type { NormalizedRect, PhotoProps } from '../../../core/models/photo';
+import type { Shadow } from '../../../core/models/shadow';
 import { fullCrop } from '../geometry/crop';
 import type { FrameBox } from '../geometry/transform';
+import { effectiveShadow } from '../photo-shadow';
 import { DRAG_THRESHOLD_PX } from './canvas-theme';
 import { isLoaded } from './image-cache';
 import type { Point } from './viewport';
@@ -13,6 +15,8 @@ import type { Point } from './viewport';
 /** Konva name of the photo groups. */
 const PHOTO_NAME = 'photo';
 const PLACEHOLDER_FILL = '#c8c8c8';
+/** Fill of the shadow-casting rect; any opaque colour (the photo covers it). */
+const SHADOW_CASTER_FILL = '#000000';
 
 /** The photo group that contains the node (or is the node), or `null`. */
 export function photoGroupOf(node: Konva.Node): Konva.Node | null {
@@ -40,18 +44,31 @@ export interface FrameTransform {
 }
 
 /**
- * The Konva nodes of one placed photo: a group at the frame centre (rotated, clipped to the frame,
- * draggable) with the image (source crop) and the border (stroke inside the frame).
+ * The Konva nodes of one placed photo: a group at the frame centre (rotated, draggable, not
+ * clipped) with
+ * 1. a rect of frame size that only casts the drop shadow (a clip would cut the shadow off; the
+ *    rect itself is hidden under the photo and does not listen to events), and
+ * 2. an inner group clipped to the frame with the image (source crop) and the border (stroke
+ *    inside the frame).
  *
- * Frame-local coordinates are mm with the origin at the top-left frame corner.
+ * Shadow blur and offset are world mm: Konva multiplies them by the absolute scale and the pixel
+ * ratio when it draws, so they keep their mm size at every zoom and in the export. The offset is
+ * not rotated with the frame (same light direction for all photos).
+ *
+ * Frame-local coordinates are mm with the origin at the top-left frame corner (both groups).
  */
 export class PhotoView {
+  /** Outer group: position, rotation, drag (the node all other code uses). */
   readonly group: Konva.Group;
+  /** Inner group clipped to the frame. */
+  private readonly content: Konva.Group;
+  private readonly shadowCaster: KonvaRect;
   private readonly image: KonvaImage;
   private readonly border: KonvaRect;
   private source: HTMLImageElement | null = null;
   private crop: NormalizedRect = fullCrop();
   private defaultBorder: BorderSettings | null = null;
+  private defaultShadow: Shadow | null = null;
   /** True while a drag or transform changes the group; `update` then keeps the gesture's geometry. */
   private inGesture = false;
 
@@ -71,7 +88,15 @@ export class PhotoView {
       perfectDrawEnabled: false,
     });
     this.border = new KonvaRect({ listening: false, perfectDrawEnabled: false });
-    this.group.add(this.image, this.border);
+    this.shadowCaster = new KonvaRect({
+      fill: SHADOW_CASTER_FILL,
+      listening: false,
+      perfectDrawEnabled: false,
+      visible: false,
+    });
+    this.content = new Konva.Group();
+    this.content.add(this.image, this.border);
+    this.group.add(this.shadowCaster, this.content);
     if (events) {
       this.group.on('dragstart', () => events.onDragStart(this));
       this.group.on('dragmove', (event) => events.onDragMove(this, event.evt));
@@ -89,14 +114,15 @@ export class PhotoView {
   }
 
   /** Shows the props of the scene; ignored while a gesture changes this photo. */
-  update(props: PhotoProps, defaultBorder: BorderSettings): void {
+  update(props: PhotoProps, defaultBorder: BorderSettings, defaultShadow: Shadow): void {
     this.defaultBorder = defaultBorder;
+    this.defaultShadow = defaultShadow;
     if (!this.inGesture) {
       this.showProps(props);
     }
   }
 
-  /** Draws frame, crop and border of the props (scale reset to 1). */
+  /** Draws frame, crop, border and shadow of the props (scale reset to 1). */
   showProps(props: PhotoProps): void {
     const { cxMm, cyMm, widthMm, heightMm, rotationDeg } = props;
     this.group.setAttrs({
@@ -107,11 +133,12 @@ export class PhotoView {
       offsetX: widthMm / 2,
       offsetY: heightMm / 2,
       rotation: rotationDeg,
-      clip: { x: 0, y: 0, width: widthMm, height: heightMm },
     });
+    this.content.clip({ x: 0, y: 0, width: widthMm, height: heightMm });
     this.image.size({ width: widthMm, height: heightMm });
     this.showCrop(props.crop);
     this.drawBorder(props);
+    this.drawShadow(props);
   }
 
   /** Shows another part of the source image in the frame (crop mode preview). */
@@ -201,6 +228,28 @@ export class PhotoView {
       stroke: props.border.color ?? defaults?.color,
       strokeWidth: width,
       visible: width > 0,
+    });
+  }
+
+  /** Drop shadow of the effective shadow (own or collage default), cast by a rect of frame size. */
+  private drawShadow(props: PhotoProps): void {
+    const shadow = this.defaultShadow
+      ? effectiveShadow(props, this.defaultShadow)
+      : (props.shadow ?? null);
+    if (!shadow?.enabled) {
+      this.shadowCaster.visible(false);
+      return;
+    }
+    this.shadowCaster.setAttrs({
+      width: props.widthMm,
+      height: props.heightMm,
+      visible: true,
+      shadowEnabled: true,
+      shadowColor: shadow.color,
+      shadowBlur: shadow.blurMm,
+      shadowOffsetX: shadow.offsetXMm,
+      shadowOffsetY: shadow.offsetYMm,
+      shadowOpacity: shadow.opacity,
     });
   }
 

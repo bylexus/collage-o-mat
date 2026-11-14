@@ -1,5 +1,7 @@
 /** Photo DTOs of a collage and the import from a connector. */
 
+import type { Shadow } from './shadow';
+
 /** Photo of a collage as returned by the API. */
 export interface Photo {
   id: number;
@@ -10,7 +12,7 @@ export interface Photo {
   widthPx: number;
   heightPx: number;
   mimeType: string;
-  /** Frame, crop and border on the page; `{}` until the photo is arranged (see `isPlaced`). */
+  /** Frame, crop, border and shadow on the page; `{}` until the photo is arranged (see `isPlaced`). */
   props: PhotoProps | UnplacedProps;
 }
 
@@ -41,6 +43,12 @@ export interface PhotoProps {
   /** Part of the source image shown in the frame. */
   crop: NormalizedRect;
   border: PhotoBorder;
+  /**
+   * Own drop shadow of the photo. Missing or `null` = the collage `defaultShadow`; an object = a
+   * full own shadow (`enabled: false` switches the shadow off for this photo). Optional because
+   * photo props are not normalized on load (photos saved before shadows existed have none).
+   */
+  shadow?: Shadow | null;
 }
 
 /** `props` of a photo that is not arranged yet. */

@@ -13,17 +13,24 @@ import {
   GradientSettings,
   ImageBackgroundSettings,
 } from '../../../core/models/collage';
+import type { Shadow } from '../../../core/models/shadow';
 import { limitValidators } from '../../../shared/number-limits';
 import { BORDER_WIDTH_LIMITS, BorderFields } from '../fields/border-fields';
 import { ColorField } from '../fields/color-field';
 import { NumberField } from '../fields/number-field';
+import {
+  shadowFormGroup,
+  ShadowFields,
+  shadowFromFormValue,
+  toShadowFormValue,
+} from '../fields/shadow-fields';
 import { syncFromInput } from '../fields/sync-from-input';
 import { SETTINGS_LIMITS } from './settings-limits';
 
 /**
- * Page background (type with its fields), default photo border and "Apply to all photos" (removes
- * the borders of single photos). Emits each valid change, and a preview while a colour is changed
- * in a picker.
+ * Page background (type with its fields), default photo border and default photo shadow, each
+ * with "Apply to all photos" (removes the borders or shadows of single photos). Emits each valid change, and a preview
+ * while a background, border or shadow colour is changed in a picker.
  */
 @Component({
   selector: 'app-appearance-settings-section',
@@ -37,6 +44,7 @@ import { SETTINGS_LIMITS } from './settings-limits';
     BorderFields,
     ColorField,
     NumberField,
+    ShadowFields,
   ],
   template: `
     @let bg = form.controls.background.controls;
@@ -153,7 +161,7 @@ import { SETTINGS_LIMITS } from './settings-limits';
     <button
       matButton="outlined"
       type="button"
-      class="apply-border-button"
+      class="apply-to-all-button"
       [disabled]="!hasBorderOverrides()"
       (click)="applyBorderToAll.emit()"
     >
@@ -163,10 +171,31 @@ import { SETTINGS_LIMITS } from './settings-limits';
     <p class="settings-note" i18n="@@editor.settings.applyBorderToAllHint">
       Removes the individual borders of all photos.
     </p>
+    <app-shadow-fields
+      [group]="form.controls.shadow"
+      (colorPreview)="previewShadowColor($event)"
+      (committed)="commitShadow()"
+    />
+    <p class="settings-note" i18n="@@editor.settings.shadowHint">
+      Default shadow of all photos without an own shadow.
+    </p>
+    <button
+      matButton="outlined"
+      type="button"
+      class="apply-to-all-button"
+      [disabled]="!hasShadowOverrides()"
+      (click)="applyShadowToAll.emit()"
+    >
+      <mat-icon>shadow</mat-icon>
+      <span i18n="@@editor.settings.applyShadowToAll">Apply to all photos</span>
+    </button>
+    <p class="settings-note" i18n="@@editor.settings.applyShadowToAllHint">
+      Removes the individual shadows of all photos.
+    </p>
   `,
   styleUrl: '../fields/panel-section.scss',
   styles: `
-    .apply-border-button {
+    .apply-to-all-button {
       align-self: flex-start;
     }
 
@@ -201,13 +230,17 @@ import { SETTINGS_LIMITS } from './settings-limits';
 export class AppearanceSettingsSection {
   readonly background = input.required<BackgroundSettings>();
   readonly defaultBorder = input.required<BorderSettings>();
+  readonly defaultShadow = input.required<Shadow>();
   /** File URL of the bg photo (thumbnail); `null` without a bg photo (the hint is shown). */
   readonly backgroundImageUrl = input<string | null>(null);
   /** True if at least one photo has an own border ("Apply to all photos" is enabled only then). */
   readonly hasBorderOverrides = input(false);
+  /** True if at least one photo has an own shadow (its "Apply to all photos" is enabled only then). */
+  readonly hasShadowOverrides = input(false);
   /** The whole background with the changed values (values of other types stay). */
   readonly backgroundChange = output<BackgroundSettings>();
   readonly defaultBorderChange = output<BorderSettings>();
+  readonly defaultShadowChange = output<Shadow>();
   /**
    * The whole background while a colour is changed in a picker or the overlay opacity slider
    * moves (not committed).
@@ -215,7 +248,10 @@ export class AppearanceSettingsSection {
   readonly backgroundPreview = output<BackgroundSettings>();
   /** Default border while its colour is changed in the picker (not committed). */
   readonly defaultBorderPreview = output<BorderSettings>();
+  /** Default shadow while its colour is changed in the picker (not committed). */
+  readonly defaultShadowPreview = output<Shadow>();
   readonly applyBorderToAll = output<void>();
+  readonly applyShadowToAll = output<void>();
 
   protected readonly limits = SETTINGS_LIMITS;
 
@@ -238,6 +274,7 @@ export class AppearanceSettingsSection {
     }),
     borderWidthMm: [this.defaults.defaultBorder.widthMm, limitValidators(BORDER_WIDTH_LIMITS)],
     borderColor: [this.defaults.defaultBorder.color],
+    shadow: shadowFormGroup(this.fb, this.defaults.defaultShadow),
   });
 
   /** Background type shown in the select (equals `background().type` after each commit). */
@@ -269,6 +306,10 @@ export class AppearanceSettingsSection {
     syncFromInput(this.defaultBorder, ({ widthMm, color }) => {
       this.form.controls.borderWidthMm.reset(widthMm);
       this.form.controls.borderColor.setValue(color);
+    });
+    // Resets with events: the shadow fields follow the `enabled` control.
+    syncFromInput(this.defaultShadow, (shadow) => {
+      this.form.controls.shadow.reset(toShadowFormValue(shadow));
     });
   }
 
@@ -326,6 +367,24 @@ export class AppearanceSettingsSection {
       return;
     }
     this.defaultBorderChange.emit({ widthMm: borderWidthMm.value, color: borderColor.value });
+  }
+
+  /** Emits the default shadow of the form with the picker colour as a preview (only if valid). */
+  protected previewShadowColor(color: string): void {
+    const { shadow } = this.form.controls;
+    if (shadow.valid) {
+      this.defaultShadowPreview.emit({ ...shadowFromFormValue(shadow.getRawValue()), color });
+    }
+  }
+
+  /** Emits the default shadow of the form; invalid fields are marked and nothing is emitted. */
+  protected commitShadow(): void {
+    const { shadow } = this.form.controls;
+    if (shadow.invalid) {
+      shadow.markAllAsTouched();
+      return;
+    }
+    this.defaultShadowChange.emit(shadowFromFormValue(shadow.getRawValue()));
   }
 
   /**

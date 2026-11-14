@@ -48,7 +48,8 @@ const RANDOM_ORDER: Readonly<Record<ArrangementMode, (settings: CollageSettings)
  * `settings.page`. Photos are processed in id-ascending order, or in random order if the random
  * order setting of the active mode is on (`grid.randomOrder`, `center.randomOrder`; masonry handles
  * `masonry.randomOrder` itself); the input array is not changed. Borders are
- * `{widthMm: null, color: null}` (collage default).
+ * `{widthMm: null, color: null}` and there is no `shadow` (collage defaults); the editor store puts
+ * back the own border and shadow of photos that are placed already.
  * @param random random source with values in [0, 1) for random modes (`heap`, `masonry` with
  *   random order) and the random order; injectable for tests
  * @throws Error if `settings.mode` is not a known mode

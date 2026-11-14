@@ -9,12 +9,17 @@
     [background]="settings().background"
     [backgroundImageUrl]="backgroundImageUrl()"
     [defaultBorder]="settings().defaultBorder"
+    [defaultShadow]="settings().defaultShadow"
     [hasBorderOverrides]="hasBorderOverrides()"
+    [hasShadowOverrides]="hasShadowOverrides()"
     (backgroundChange)="update({ background: $event })"
     (backgroundPreview)="preview({ background: $event })"
     (defaultBorderChange)="update({ defaultBorder: $event })"
     (defaultBorderPreview)="preview({ defaultBorder: $event })"
+    (defaultShadowChange)="update({ defaultShadow: $event })"
+    (defaultShadowPreview)="preview({ defaultShadow: $event })"
     (applyBorderToAll)="applyBorderToAll.emit()"
+    (applyShadowToAll)="applyShadowToAll.emit()"
   />
 </section>
 

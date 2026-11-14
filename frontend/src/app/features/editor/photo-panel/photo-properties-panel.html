@@ -20,6 +20,25 @@
   />
 }
 
+<mat-checkbox
+  [formControl]="shadowForm.controls.useDefault"
+  (change)="commitUseDefaultShadow()"
+  i18n="@@editor.photo.useDefaultShadow"
+>
+  Use collage default shadow
+</mat-checkbox>
+@if (useDefaultShadow()) {
+  <p class="settings-note" i18n="@@editor.photo.useDefaultShadowHint">
+    The photo has the default shadow of the collage (see Appearance).
+  </p>
+} @else {
+  <app-shadow-fields
+    [group]="shadowForm.controls.shadow"
+    (colorPreview)="previewShadowColor($event)"
+    (committed)="commitShadow()"
+  />
+}
+
 <div class="button-row">
   <button matButton="outlined" type="button" (click)="bringToFront.emit()">
     <mat-icon>flip_to_front</mat-icon>

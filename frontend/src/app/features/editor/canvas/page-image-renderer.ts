@@ -81,6 +81,7 @@ function exportScene(content: ExportContent): Scene {
     page: settings.page,
     background: sceneBackground(settings.background, content.photos, content.collageId),
     defaultBorder: settings.defaultBorder,
+    defaultShadow: settings.defaultShadow,
     photos: scenePhotos(content.photos, content.collageId).filter((photo) =>
       rectsOverlap(frameBounds(photo.props), page),
     ),
@@ -189,10 +190,13 @@ function pxPerMm(page: PageSize, size: PixelSize): { x: number; y: number } {
   return { x: size.widthPx / page.widthMm, y: size.heightPx / page.heightMm };
 }
 
-/** A static photo view (frame, crop, border incl. the collage default border) with its loaded image. */
+/**
+ * A static photo view (frame, crop, border and shadow incl. the collage defaults) with its loaded
+ * image.
+ */
 function photoGroup(photo: ScenePhoto, scene: Scene, images: LoadedImages): Konva.Group {
   const view = new PhotoView(photo.id);
-  view.update(photo.props, scene.defaultBorder);
+  view.update(photo.props, scene.defaultBorder, scene.defaultShadow);
   const image = images.get(photo.id);
   if (image) {
     view.setImage(image);

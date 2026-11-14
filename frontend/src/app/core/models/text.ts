@@ -1,4 +1,5 @@
 /** Overlay text DTOs of a collage (table `collage_texts`, JSON `props`). */
+import type { Shadow } from './shadow';
 
 /** Fonts bundled with the app (self-hosted `@fontsource` packages). Value = CSS font family. */
 export const TEXT_FONT_FAMILIES = [
@@ -23,15 +24,8 @@ export type TextFontFamily = (typeof TEXT_FONT_FAMILIES)[number];
 
 export type TextAlign = 'left' | 'center' | 'right';
 
-export interface TextShadow {
-  enabled: boolean;
-  color: string;
-  blurMm: number;
-  offsetXMm: number;
-  offsetYMm: number;
-  /** 0..1 */
-  opacity: number;
-}
+/** Shadow of an overlay text (same type as every shadow). */
+export type TextShadow = Shadow;
 
 export interface TextOutline {
   enabled: boolean;

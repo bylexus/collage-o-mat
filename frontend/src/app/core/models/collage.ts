@@ -4,6 +4,7 @@
  */
 
 import type { Photo } from './photo';
+import type { Shadow } from './shadow';
 import type { CollageText } from './text';
 
 /** Ids of the page presets with a fixed size. */
@@ -165,6 +166,8 @@ export interface CollageSettings {
   page: PageSettings;
   background: BackgroundSettings;
   defaultBorder: BorderSettings;
+  /** Drop shadow of all photos without an own shadow (`PhotoProps.shadow`). */
+  defaultShadow: Shadow;
   mode: ArrangementMode;
   grid: GridSettings;
   center: CenterSettings;
@@ -294,7 +297,8 @@ export function customPageSettings(size: PageSize, dpi = DEFAULT_DPI): PageSetti
 
 /**
  * Settings of a new collage: A4 landscape, 300 DPI, white colour background (gradient white to
- * black at 180°, image without photo and with a transparent black overlay), no border, grid mode,
+ * black at 180°, image without photo and with a transparent black overlay), no border, shadow off
+ * (black, 40 %, blur 3 mm, offset 1.5/1.5 mm), grid mode,
  * grid and center mode in import order (random order off), heap mode with the whole image,
  * 120 % coverage, ±20 % size, ±15° rotation, masonry mode in rows with an automatic line count
  * (random order off), snap grid off (5 mm).
@@ -309,6 +313,14 @@ export function defaultCollageSettings(): CollageSettings {
       image: { photoId: null, overlayColor: '#000000', overlayOpacityPercent: 0 },
     },
     defaultBorder: { widthMm: 0, color: '#ffffff' },
+    defaultShadow: {
+      enabled: false,
+      color: '#000000',
+      blurMm: 3,
+      offsetXMm: 1.5,
+      offsetYMm: 1.5,
+      opacity: 0.4,
+    },
     mode: 'grid',
     grid: { rows: null, cols: null, gapMm: 5, marginMm: 10, randomOrder: false },
     center: {
@@ -336,7 +348,7 @@ export function defaultCollageSettings(): CollageSettings {
 /**
  * Settings from the API as a complete `CollageSettings` document: every known field with the right type
  * is kept, a missing or wrongly typed field gets its value from `defaultCollageSettings()` (e.g. the lane
- * counts, the heap or the masonry settings in collages saved before they existed), unknown fields are dropped. Only types are checked (a
+ * counts, the heap, the masonry settings or the default shadow in collages saved before they existed), unknown fields are dropped. Only types are checked (a
  * finite number, a boolean, a string, one of the allowed ids, `null` where allowed); ranges are the job
  * of the users of the settings. Fields are merged one by one, so an invalid page size keeps the stored
  * preset. The legacy string `backgroundColor` (before `background` existed) becomes `background.color`
@@ -353,6 +365,7 @@ export function normalizeSettings(raw: unknown): CollageSettings {
       defaults.background,
     ),
     defaultBorder: normalizeBorder(source['defaultBorder'], defaults.defaultBorder),
+    defaultShadow: normalizeShadow(source['defaultShadow'], defaults.defaultShadow),
     mode: oneOf(source['mode'], ARRANGEMENT_MODES, defaults.mode),
     grid: normalizeGrid(source['grid'], defaults.grid),
     center: normalizeCenter(source['center'], defaults.center),
@@ -421,6 +434,18 @@ function normalizeBorder(raw: unknown, defaults: BorderSettings): BorderSettings
   return {
     widthMm: numberOr(source['widthMm'], defaults.widthMm),
     color: stringOr(source['color'], defaults.color),
+  };
+}
+
+function normalizeShadow(raw: unknown, defaults: Shadow): Shadow {
+  const source = asRecord(raw);
+  return {
+    enabled: booleanOr(source['enabled'], defaults.enabled),
+    color: stringOr(source['color'], defaults.color),
+    blurMm: numberOr(source['blurMm'], defaults.blurMm),
+    offsetXMm: numberOr(source['offsetXMm'], defaults.offsetXMm),
+    offsetYMm: numberOr(source['offsetYMm'], defaults.offsetYMm),
+    opacity: numberOr(source['opacity'], defaults.opacity),
   };
 }
 

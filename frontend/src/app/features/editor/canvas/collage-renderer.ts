@@ -282,7 +282,7 @@ export class CollageRenderer {
     }
     for (const photo of scene.photos) {
       const view = this.views.get(photo.id) ?? this.createPhoto(photo);
-      view.update(photo.props, scene.defaultBorder);
+      view.update(photo.props, scene.defaultBorder, scene.defaultShadow);
     }
   }
 

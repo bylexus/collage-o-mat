@@ -1,6 +1,7 @@
 // Overlay text props: defaults of a new text and comparisons. Pure functions: no Angular, no DOM.
 import type { PageSize } from '../../core/models/collage';
-import type { TextOutline, TextProps, TextShadow } from '../../core/models/text';
+import type { TextOutline, TextProps } from '../../core/models/text';
+import { sameShadow } from './shadow';
 
 /** Width of the text box of a new text as part of the page width. */
 const NEW_TEXT_WIDTH_RATIO = 0.5;
@@ -59,18 +60,6 @@ export function sameTextProps(a: TextProps, b: TextProps): boolean {
       a.z === b.z &&
       sameShadow(a.shadow, b.shadow) &&
       sameOutline(a.outline, b.outline))
-  );
-}
-
-/** True if both shadows have the same values. */
-export function sameShadow(a: TextShadow, b: TextShadow): boolean {
-  return (
-    a.enabled === b.enabled &&
-    a.color === b.color &&
-    a.blurMm === b.blurMm &&
-    a.offsetXMm === b.offsetXMm &&
-    a.offsetYMm === b.offsetYMm &&
-    a.opacity === b.opacity
   );
 }
 

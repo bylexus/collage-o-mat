@@ -194,6 +194,7 @@ export class EditorCanvas {
       page: settings.page,
       background: sceneBackground(settings.background, this.photos(), collageId),
       defaultBorder: settings.defaultBorder,
+      defaultShadow: settings.defaultShadow,
       photos: scenePhotos(this.photos(), collageId),
       texts: this.texts(),
       selection: this.selection(),

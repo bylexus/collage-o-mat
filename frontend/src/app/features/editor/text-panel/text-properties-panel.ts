@@ -29,6 +29,13 @@ import {
 import { limitValidators } from '../../../shared/number-limits';
 import { ColorField } from '../fields/color-field';
 import { NumberField } from '../fields/number-field';
+import {
+  shadowFormGroup,
+  ShadowFields,
+  ShadowFormValue,
+  shadowFromFormValue,
+  toShadowFormValue,
+} from '../fields/shadow-fields';
 import { syncFromInput } from '../fields/sync-from-input';
 import { TEXT_LIMITS } from './text-limits';
 
@@ -43,15 +50,7 @@ interface TextFormValue {
   color: string;
   styles: FontStyle[];
   align: TextAlign;
-  shadow: {
-    enabled: boolean;
-    color: string;
-    blurMm: number;
-    offsetXMm: number;
-    offsetYMm: number;
-    /** 0..100 (stored as 0..1). */
-    opacityPercent: number;
-  };
+  shadow: ShadowFormValue;
   outline: { enabled: boolean; color: string; widthMm: number };
 }
 
@@ -83,6 +82,7 @@ interface ShownText {
     MatSelectModule,
     ColorField,
     NumberField,
+    ShadowFields,
   ],
   templateUrl: './text-properties-panel.html',
   styleUrl: './text-properties-panel.scss',
@@ -110,13 +110,13 @@ export class TextPropertiesPanel {
     color: [''],
     styles: this.fb.control<FontStyle[]>([]),
     align: this.fb.control<TextAlign>('center'),
-    shadow: this.fb.group({
-      enabled: [false],
-      color: [''],
-      blurMm: [0, limitValidators(TEXT_LIMITS.shadowBlurMm)],
-      offsetXMm: [0, limitValidators(TEXT_LIMITS.shadowOffsetMm)],
-      offsetYMm: [0, limitValidators(TEXT_LIMITS.shadowOffsetMm)],
-      opacityPercent: [0, limitValidators(TEXT_LIMITS.shadowOpacityPercent)],
+    shadow: shadowFormGroup(this.fb, {
+      enabled: false,
+      color: '',
+      blurMm: 0,
+      offsetXMm: 0,
+      offsetYMm: 0,
+      opacity: 0,
     }),
     outline: this.fb.group({
       enabled: [false],
@@ -127,7 +127,6 @@ export class TextPropertiesPanel {
 
   /** Current form values as a signal (also after a reset from the input). */
   private readonly formValue = signal<TextFormValue>(this.form.getRawValue());
-  protected readonly shadowEnabled = computed(() => this.formValue().shadow.enabled);
   protected readonly outlineEnabled = computed(() => this.formValue().outline.enabled);
   protected readonly fontFamily = computed(() => this.formValue().fontFamily);
 
@@ -141,6 +140,8 @@ export class TextPropertiesPanel {
     syncFromInput(this.shownText, ({ value }) => {
       // No valueChanges event: a reset is no user edit and must not emit a preview.
       this.form.reset(value, { emitEvent: false });
+      // Only for the shadow fields (they follow this control); the form emits no event.
+      this.form.controls.shadow.controls.enabled.updateValueAndValidity({ onlySelf: true });
       this.formValue.set(this.form.getRawValue());
     });
     this.form.valueChanges.pipe(takeUntilDestroyed(inject(DestroyRef))).subscribe(() => {
@@ -192,15 +193,7 @@ function toFormValue(props: TextProps): TextFormValue {
     color: props.color,
     styles,
     align: props.align,
-    shadow: {
-      enabled: shadow.enabled,
-      color: shadow.color,
-      blurMm: shadow.blurMm,
-      offsetXMm: shadow.offsetXMm,
-      offsetYMm: shadow.offsetYMm,
-      // Rounded to 0.1 % against float noise (e.g. 0.07 × 100).
-      opacityPercent: Math.round(shadow.opacity * 1000) / 10,
-    },
+    shadow: toShadowFormValue(shadow),
     outline: { enabled: outline.enabled, color: outline.color, widthMm: outline.widthMm },
   };
 }
@@ -217,14 +210,7 @@ function applyFormValue(base: TextProps, value: TextFormValue): TextProps {
     bold: value.styles.includes('bold'),
     italic: value.styles.includes('italic'),
     align: value.align,
-    shadow: {
-      enabled: shadow.enabled,
-      color: shadow.color,
-      blurMm: shadow.blurMm,
-      offsetXMm: shadow.offsetXMm,
-      offsetYMm: shadow.offsetYMm,
-      opacity: shadow.opacityPercent / 100,
-    },
+    shadow: shadowFromFormValue(shadow),
     outline: { enabled: outline.enabled, color: outline.color, widthMm: outline.widthMm },
   };
 }

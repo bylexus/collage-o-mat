@@ -6,6 +6,7 @@ import { PhotoApi } from '../../core/api/photo.api';
 import { CollageSettings, normalizeSettings } from '../../core/models/collage';
 import { SaveLayoutRequest } from '../../core/models/layout';
 import { ImportResult, isPlaced, Photo, PhotoBorder, PhotoProps } from '../../core/models/photo';
+import type { Shadow } from '../../core/models/shadow';
 import { CollageText, TextProps } from '../../core/models/text';
 import { ConfirmService } from '../../shared/confirm-dialog/confirm.service';
 import { errorMessage } from '../../shared/error-message';
@@ -15,8 +16,10 @@ import { AutoSaver } from './auto-saver';
 import { ExportContent } from './export/page-export';
 import { LayoutSnapshot, restoreSnapshot, takeSnapshot } from './layout-snapshot';
 import { hasBorderOverride, inheritedBorder, sameBorder } from './photo-border';
+import { hasShadowOverride } from './photo-shadow';
 import { EditorSelection, sameSelection, selectedPhotoIdOf, selectedTextIdOf } from './selection';
 import { swapFrames } from './swap-frames';
+import { sameShadow } from './shadow';
 import { isBlankText, newTextProps, sameTextProps } from './text-props';
 import { UndoHistory } from './undo-history';
 import { backZ, frontZ, nextFrontZ } from './z-order';
@@ -34,6 +37,12 @@ export type EditorLoadResult = 'loaded' | 'notFound' | 'failed';
 interface BorderPreview {
   photoId: number;
   border: PhotoBorder;
+}
+
+/** An own shadow (or `null` = the collage default) shown on the canvas before it is committed. */
+interface ShadowPreview {
+  photoId: number;
+  shadow: Shadow | null;
 }
 
 /** Default text of a new overlay text. */
@@ -64,6 +73,7 @@ export class EditorStore {
   private readonly selectionSignal = signal<EditorSelection>(null);
   private readonly loadErrorSignal = signal<string | null>(null);
   private readonly borderPreviewSignal = signal<BorderPreview | null>(null);
+  private readonly shadowPreviewSignal = signal<ShadowPreview | null>(null);
   /** Text shown on the canvas before it is committed (panel edit in progress). */
   private readonly textPreviewSignal = signal<CollageText | null>(null);
   /** Settings shown on the canvas before they are committed (colour picker open). */
@@ -89,11 +99,14 @@ export class EditorStore {
   /** Id of the selected photo; `null` if no photo is selected. */
   readonly selectedPhotoId = computed(() => selectedPhotoIdOf(this.selectionSignal()));
   /**
-   * Photos as the canvas draws them: `photos` with the border preview applied. Not saved and not
-   * part of the undo history.
+   * Photos as the canvas draws them: `photos` with the border and shadow previews applied. Not
+   * saved and not part of the undo history.
    */
   readonly displayedPhotos = computed(() =>
-    withBorderPreview(this.photosSignal(), this.borderPreviewSignal()),
+    withShadowPreview(
+      withBorderPreview(this.photosSignal(), this.borderPreviewSignal()),
+      this.shadowPreviewSignal(),
+    ),
   );
   /**
    * Texts as the canvas draws them: `texts` with the text preview applied. Not saved and not
@@ -116,6 +129,10 @@ export class EditorStore {
     this.photosSignal().some(
       (photo) => isPlaced(photo.props) && hasBorderOverride(photo.props.border),
     ),
+  );
+  /** True if at least one placed photo has an own shadow (not the collage default). */
+  readonly hasShadowOverrides = computed(() =>
+    this.photosSignal().some((photo) => isPlaced(photo.props) && hasShadowOverride(photo.props)),
   );
   /** Error text if loading failed for another reason than "not found". */
   readonly loadError = this.loadErrorSignal.asReadonly();
@@ -248,6 +265,37 @@ export class EditorStore {
       photos.map((photo) =>
         isPlaced(photo.props) && hasBorderOverride(photo.props.border)
           ? { ...photo, props: { ...photo.props, border: inheritedBorder() } }
+          : photo,
+      ),
+    );
+    this.commit();
+  }
+
+  /**
+   * Shows a shadow on the canvas without committing it (colour picker open); `null` = the collage
+   * default shadow. The next commit, undo/redo or selection change removes the preview.
+   */
+  previewPhotoShadow(id: number, shadow: Shadow | null): void {
+    this.shadowPreviewSignal.set({ photoId: id, shadow });
+  }
+
+  /** Sets the own shadow of a placed photo; `null` uses the collage default shadow. */
+  setPhotoShadow(id: number, shadow: Shadow | null): void {
+    this.shadowPreviewSignal.set(null);
+    this.editPlacedPhoto(id, (props) =>
+      sameOptionalShadow(props.shadow ?? null, shadow) ? null : { ...props, shadow },
+    );
+  }
+
+  /** "Apply to all photos" of the shadow: all placed photos use the collage default shadow again. */
+  applyDefaultShadowToAll(): void {
+    if (!this.hasShadowOverrides()) {
+      return;
+    }
+    this.photosSignal.update((photos) =>
+      photos.map((photo) =>
+        isPlaced(photo.props) && hasShadowOverride(photo.props)
+          ? { ...photo, props: { ...photo.props, shadow: null } }
           : photo,
       ),
     );
@@ -525,8 +573,13 @@ export class EditorStore {
     return [...photoZs, ...textZs];
   }
 
+  /**
+   * Arranges all photos with the current settings (not committed). Placed photos keep their own
+   * border and shadow (look, not layout); not placed photos get the collage defaults.
+   */
   private arrangeAll(): void {
-    this.applyFrames(arrangePhotos(this.photosSignal(), this.requireSettings()));
+    const photos = this.photosSignal();
+    this.applyFrames(keepLook(arrangePhotos(photos, this.requireSettings()), photos));
     this.layoutIsArrangement = true;
   }
 
@@ -624,10 +677,14 @@ export class EditorStore {
     return takeSnapshot(this.requireSettings(), this.photosSignal(), this.textsSignal());
   }
 
-  /** Removes the settings, border and text previews (the canvas shows the committed state again). */
+  /**
+   * Removes the settings, border, shadow and text previews (the canvas shows the committed state
+   * again).
+   */
   private clearPreviews(): void {
     this.settingsPreviewSignal.set(null);
     this.borderPreviewSignal.set(null);
+    this.shadowPreviewSignal.set(null);
     this.textPreviewSignal.set(null);
   }
 
@@ -670,6 +727,45 @@ function withBorderPreview(
       ? { ...photo, props: { ...photo.props, border: preview.border } }
       : photo,
   );
+}
+
+/** The photos with the shadow of the preview photo replaced (same array without a preview). */
+function withShadowPreview(
+  photos: readonly Photo[],
+  preview: ShadowPreview | null,
+): readonly Photo[] {
+  if (!preview) {
+    return photos;
+  }
+  return photos.map((photo) =>
+    photo.id === preview.photoId && isPlaced(photo.props)
+      ? { ...photo, props: { ...photo.props, shadow: preview.shadow } }
+      : photo,
+  );
+}
+
+/** True if both are `null` or both are shadows with the same values. */
+function sameOptionalShadow(a: Shadow | null, b: Shadow | null): boolean {
+  return a === null || b === null ? a === b : sameShadow(a, b);
+}
+
+/**
+ * The arrangement frames with the `border` and `shadow` of the photos that are placed already. A
+ * missing `shadow` stays missing (collage default). Frames of not placed photos are unchanged.
+ */
+function keepLook(frames: FrameMap, photos: readonly Photo[]): FrameMap {
+  const propsById = new Map(photos.map((photo) => [photo.id, photo.props]));
+  const kept: FrameMap = new Map();
+  for (const [id, frame] of frames) {
+    const props = propsById.get(id);
+    if (!props || !isPlaced(props)) {
+      kept.set(id, frame);
+      continue;
+    }
+    const { border, shadow } = props;
+    kept.set(id, shadow === undefined ? { ...frame, border } : { ...frame, border, shadow });
+  }
+  return kept;
 }
 
 /** The texts with the props of the preview text replaced (same array without a preview). */
