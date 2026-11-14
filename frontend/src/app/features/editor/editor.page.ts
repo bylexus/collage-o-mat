@@ -19,13 +19,19 @@ import { MatTooltipModule } from '@angular/material/tooltip';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { firstValueFrom, Subscription } from 'rxjs';
 import { PhotoApi } from '../../core/api/photo.api';
-import { ArrangementMode, pageLabel, SnapGridSettings } from '../../core/models/collage';
+import {
+  ArrangementMode,
+  DEFAULT_DPI,
+  pageLabel,
+  SnapGridSettings,
+} from '../../core/models/collage';
 import { ImportResult, isPlaced, photoFileUrl } from '../../core/models/photo';
 import { NotificationService } from '../../shared/notification.service';
 import { resolveCentrePhotoId } from './arrange/arrange';
 import { EditorCanvas } from './canvas/editor-canvas';
 import { renderPageImage } from './canvas/page-image-renderer';
 import { EditorStore } from './editor.store';
+import { LengthUnit } from './geometry/length-unit';
 import { downloadBlob, exportFileName } from './export/download';
 import { ExportDialog, ExportDialogData } from './export/export-dialog';
 import { ImportDialog, ImportDialogData } from './import/import-dialog';
@@ -86,8 +92,17 @@ export class EditorPage {
 
   protected readonly pageLabel = computed(() => {
     const settings = this.store.settings();
-    return settings ? pageLabel(settings.page) : '';
+    return settings ? pageLabel(settings.page, settings.displayUnit) : '';
   });
+
+  /** Display unit of the editor lengths with the collage DPI (input of the panels and dialogs). */
+  protected readonly lengthUnit = computed<LengthUnit>(
+    () => {
+      const settings = this.store.settings();
+      return { unit: settings?.displayUnit ?? 'mm', dpi: settings?.page.dpi ?? DEFAULT_DPI };
+    },
+    { equal: (a, b) => a.unit === b.unit && a.dpi === b.dpi },
+  );
 
   /**
    * File URL of the bg photo for the Appearance thumbnail; `null` if no photo is set or the photo
@@ -337,6 +352,7 @@ export class EditorPage {
       center: settings.center,
       heap: settings.heap,
       masonry: settings.masonry,
+      lengthUnit: this.lengthUnit(),
     });
     const current = this.store.settings();
     if (result && current) {

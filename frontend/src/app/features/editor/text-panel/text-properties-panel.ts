@@ -28,6 +28,7 @@ import {
 } from '../../../core/models/text';
 import { limitValidators } from '../../../shared/number-limits';
 import { ColorField } from '../fields/color-field';
+import { LengthField } from '../fields/length-field';
 import { NumberField } from '../fields/number-field';
 import {
   shadowFormGroup,
@@ -37,6 +38,7 @@ import {
   toShadowFormValue,
 } from '../fields/shadow-fields';
 import { syncFromInput } from '../fields/sync-from-input';
+import { LengthUnit } from '../geometry/length-unit';
 import { TEXT_LIMITS } from './text-limits';
 
 /** Font styles of the bold/italic toggle group. */
@@ -81,6 +83,7 @@ interface ShownText {
     MatInputModule,
     MatSelectModule,
     ColorField,
+    LengthField,
     NumberField,
     ShadowFields,
   ],
@@ -89,6 +92,8 @@ interface ShownText {
 })
 export class TextPropertiesPanel {
   readonly text = input.required<CollageText>();
+  /** Display unit of the lengths (outline width, shadow) with the collage DPI. */
+  readonly lengthUnit = input.required<LengthUnit>();
 
   /** Props while the text is edited (not committed). */
   readonly preview = output<TextProps>();

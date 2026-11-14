@@ -10,7 +10,9 @@ import { MatCheckboxModule } from '@angular/material/checkbox';
 import { startWith, switchMap } from 'rxjs';
 import type { Shadow } from '../../../core/models/shadow';
 import { limitValidators, NumberLimits } from '../../../shared/number-limits';
+import { LengthUnit } from '../geometry/length-unit';
 import { ColorField } from './color-field';
+import { LengthField } from './length-field';
 import { NumberField } from './number-field';
 
 /** Limits of the numeric shadow fields (text shadow, collage default shadow, per-photo shadow). */
@@ -77,9 +79,10 @@ export function shadowFromFormValue(value: ShadowFormValue): Shadow {
 }
 
 /**
- * "Shadow" checkbox and, only if it is checked, colour, opacity, blur and offset X/Y. The owner
- * creates the form group (e.g. with `shadowFormGroup`); `committed` is emitted when the checkbox
- * changes or a field is committed, `colorPreview` while the colour is changed in the picker.
+ * "Shadow" checkbox and, only if it is checked, colour, opacity, blur and offset X/Y (blur and
+ * offset in the display unit, the form in mm). The owner creates the form group (e.g. with
+ * `shadowFormGroup`); `committed` is emitted when the checkbox changes or a field is committed,
+ * `colorPreview` while the colour is changed in the picker.
  *
  * The fields follow the `valueChanges` of the `enabled` control. An owner that resets the group with
  * `emitEvent: false` must then emit them for that control (e.g.
@@ -87,7 +90,7 @@ export function shadowFromFormValue(value: ShadowFormValue): Shadow {
  */
 @Component({
   selector: 'app-shadow-fields',
-  imports: [ReactiveFormsModule, MatCheckboxModule, ColorField, NumberField],
+  imports: [ReactiveFormsModule, MatCheckboxModule, ColorField, LengthField, NumberField],
   template: `
     @let shadow = group().controls;
     <mat-checkbox
@@ -115,26 +118,29 @@ export function shadowFromFormValue(value: ShadowFormValue): Shadow {
           (committed)="committed.emit()"
         />
       </div>
-      <app-number-field
+      <app-length-field
         [control]="shadow.blurMm"
         [limits]="limits.blurMm"
-        i18n-label="@@editor.shadow.blurMm"
-        label="Blur (mm)"
+        [lengthUnit]="lengthUnit()"
+        i18n-label="@@editor.shadow.blur"
+        label="Blur"
         (committed)="committed.emit()"
       />
       <div class="field-row">
-        <app-number-field
+        <app-length-field
           [control]="shadow.offsetXMm"
           [limits]="limits.offsetMm"
-          i18n-label="@@editor.shadow.offsetXMm"
-          label="Offset X (mm)"
+          [lengthUnit]="lengthUnit()"
+          i18n-label="@@editor.shadow.offsetX"
+          label="Offset X"
           (committed)="committed.emit()"
         />
-        <app-number-field
+        <app-length-field
           [control]="shadow.offsetYMm"
           [limits]="limits.offsetMm"
-          i18n-label="@@editor.shadow.offsetYMm"
-          label="Offset Y (mm)"
+          [lengthUnit]="lengthUnit()"
+          i18n-label="@@editor.shadow.offsetY"
+          label="Offset Y"
           (committed)="committed.emit()"
         />
       </div>
@@ -165,6 +171,8 @@ export function shadowFromFormValue(value: ShadowFormValue): Shadow {
 })
 export class ShadowFields {
   readonly group = input.required<ShadowFormGroup>();
+  /** Display unit of the blur and offset fields with the collage DPI. */
+  readonly lengthUnit = input.required<LengthUnit>();
   readonly committed = output<void>();
   /** The colour while it is changed in the picker (not committed yet). */
   readonly colorPreview = output<string>();

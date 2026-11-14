@@ -88,7 +88,11 @@
   </mat-button-toggle-group>
 </div>
 
-<app-shadow-fields [group]="form.controls.shadow" (committed)="commit()" />
+<app-shadow-fields
+  [group]="form.controls.shadow"
+  [lengthUnit]="lengthUnit()"
+  (committed)="commit()"
+/>
 
 @let outline = form.controls.outline.controls;
 <mat-checkbox [formControl]="outline.enabled" (change)="commit()" i18n="@@editor.text.outline">
@@ -96,11 +100,12 @@
 </mat-checkbox>
 @if (outlineEnabled()) {
   <div class="field-row">
-    <app-number-field
+    <app-length-field
       [control]="outline.widthMm"
       [limits]="limits.outlineWidthMm"
-      i18n-label="@@editor.text.outlineWidthMm"
-      label="Width (mm)"
+      [lengthUnit]="lengthUnit()"
+      i18n-label="@@editor.text.outlineWidth"
+      label="Width"
       (committed)="commit()"
     />
     <app-color-field

@@ -1,5 +1,6 @@
 import { Component, input, output } from '@angular/core';
-import { ArrangementMode, CollageSettings } from '../../../core/models/collage';
+import { ArrangementMode, CollageSettings, DisplayUnit } from '../../../core/models/collage';
+import { LengthUnit } from '../geometry/length-unit';
 import { AppearanceSettingsSection } from './appearance-settings-section';
 import { ArrangementSettingsSection } from './arrangement-settings-section';
 import { PageSettingsSection } from './page-settings-section';
@@ -19,6 +20,8 @@ import { PageSettingsSection } from './page-settings-section';
 })
 export class CollageSettingsPanel {
   readonly settings = input.required<CollageSettings>();
+  /** Display unit of the lengths with the collage DPI. */
+  readonly lengthUnit = input.required<LengthUnit>();
   readonly photoCount = input<number>(0);
   /** File URL of the bg photo (Appearance thumbnail); `null` without a bg photo. */
   readonly backgroundImageUrl = input<string | null>(null);
@@ -38,6 +41,8 @@ export class CollageSettingsPanel {
   readonly applyBorderToAll = output<void>();
   /** "Apply to all photos" of the default shadow: remove the own shadows of all photos. */
   readonly applyShadowToAll = output<void>();
+  /** The user selected another display unit (not an undo step, so not in `settingsChange`). */
+  readonly displayUnitChange = output<DisplayUnit>();
 
   /** Emits the current settings with the changed parts replaced (a new object). */
   protected update(change: Partial<CollageSettings>): void {

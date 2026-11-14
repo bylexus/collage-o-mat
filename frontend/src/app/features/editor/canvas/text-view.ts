@@ -1,7 +1,8 @@
 // Konva nodes of one overlay text. Plain class without Angular; owned by `CollageRenderer`.
 import Konva from 'konva/lib/Core';
 import { Text as KonvaText } from 'konva/lib/shapes/Text';
-import { ptToMm, TextProps } from '../../../core/models/text';
+import { TextProps } from '../../../core/models/text';
+import { ptToMm } from '../../../core/models/units';
 import type { FrameBox } from '../geometry/transform';
 import { DRAG_THRESHOLD_PX } from './canvas-theme';
 import type { TextBox } from './scene';

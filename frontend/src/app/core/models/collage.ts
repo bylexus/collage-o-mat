@@ -6,6 +6,7 @@
 import type { Photo } from './photo';
 import type { Shadow } from './shadow';
 import type { CollageText } from './text';
+import { mmToPx } from './units';
 
 /** Ids of the page presets with a fixed size. */
 export type FixedPagePresetId = 'A5' | 'A4' | 'A3' | 'Letter' | '30x30';
@@ -21,6 +22,12 @@ export type ArrangementMode = 'grid' | 'center' | 'heap' | 'masonry';
 export const ARRANGEMENT_MODES: readonly ArrangementMode[] = ['grid', 'center', 'heap', 'masonry'];
 
 const PAGE_ORIENTATIONS: readonly PageOrientation[] = ['portrait', 'landscape'];
+
+/** Unit of the lengths shown and entered in the editor; the stored values are always in mm. */
+export type DisplayUnit = 'mm' | 'px';
+
+/** All display units. */
+export const DISPLAY_UNITS: readonly DisplayUnit[] = ['mm', 'px'];
 
 /** Page size in millimetres. */
 export interface PageSize {
@@ -176,6 +183,11 @@ export interface CollageSettings {
   heap: HeapSettings;
   masonry: MasonrySettings;
   snapGrid: SnapGridSettings;
+  /**
+   * Unit of the lengths in the editor fields and labels (`px` = whole pixels at `page.dpi`). Only
+   * the display changes; all lengths stay stored in mm. Not part of the undo history.
+   */
+  displayUnit: DisplayUnit;
 }
 
 /** List entry of `GET /api/collages`; also returned by create and rename. */
@@ -316,7 +328,7 @@ export function customPageSettings(size: PageSize, dpi = DEFAULT_DPI): PageSetti
  * (black, 40 %, blur 3 mm, offset 1.5/1.5 mm), grid mode,
  * grid and center mode in import order (random order off), heap mode with the whole image,
  * 120 % coverage, ±20 % size, ±15° rotation, masonry mode in rows with an automatic line count
- * (random order off), snap grid off (5 mm).
+ * (random order off), snap grid off (5 mm), lengths shown in mm.
  */
 export function defaultCollageSettings(): CollageSettings {
   return {
@@ -357,6 +369,7 @@ export function defaultCollageSettings(): CollageSettings {
     },
     masonry: { direction: 'rows', count: null, gapMm: 5, marginMm: 10, randomOrder: false },
     snapGrid: { enabled: false, sizeMm: 5 },
+    displayUnit: 'mm',
   };
 }
 
@@ -387,6 +400,7 @@ export function normalizeSettings(raw: unknown): CollageSettings {
     heap: normalizeHeap(source['heap'], defaults.heap),
     masonry: normalizeMasonry(source['masonry'], defaults.masonry),
     snapGrid: normalizeSnapGrid(source['snapGrid'], defaults.snapGrid),
+    displayUnit: oneOf(source['displayUnit'], DISPLAY_UNITS, defaults.displayUnit),
   };
 }
 
@@ -559,11 +573,17 @@ function oneOf<T extends string>(value: unknown, allowed: readonly T[], fallback
 
 /**
  * Short display text of a page: "A4 landscape" for a fixed preset, "30 × 30 cm" for a square
- * preset, "300 × 200 mm" for a custom size.
+ * preset, "300 × 200 mm" for a custom size (with `unit` `px`: "3543 × 2362 px", whole pixels at
+ * the page DPI).
  */
-export function pageLabel(page: PageSettings): string {
+export function pageLabel(page: PageSettings, unit: DisplayUnit = 'mm'): string {
   const preset = findFixedPreset(page.preset);
   if (!preset) {
+    if (unit === 'px') {
+      const width = formatPx(page.widthMm, page.dpi);
+      const height = formatPx(page.heightMm, page.dpi);
+      return $localize`:@@collages.pageLabel.customPx:${width}:width: × ${height}:height: px`;
+    }
     const width = formatMm(page.widthMm);
     const height = formatMm(page.heightMm);
     return $localize`:@@collages.pageLabel.custom:${width}:width: × ${height}:height: mm`;
@@ -574,6 +594,13 @@ export function pageLabel(page: PageSettings): string {
   const name = preset.label;
   const orientation = ORIENTATION_LABELS[page.orientation];
   return $localize`:@@collages.pageLabel.preset:${name}:preset: ${orientation}:orientation:`;
+}
+
+/** Formats a length in mm as whole pixels at the DPI in the current locale. */
+function formatPx(mm: number, dpi: number): string {
+  return new Intl.NumberFormat($localize.locale ?? 'en', { maximumFractionDigits: 0 }).format(
+    Math.round(mmToPx(mm, dpi)),
+  );
 }
 
 /** Formats a length in mm with at most one decimal in the current locale. */

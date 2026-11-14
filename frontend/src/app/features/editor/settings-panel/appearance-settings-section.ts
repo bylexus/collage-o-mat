@@ -1,4 +1,4 @@
-import { Component, inject, input, output, signal } from '@angular/core';
+import { Component, computed, inject, input, output, signal } from '@angular/core';
 import { toSignal } from '@angular/core/rxjs-interop';
 import { NonNullableFormBuilder, ReactiveFormsModule } from '@angular/forms';
 import { MatButtonModule } from '@angular/material/button';
@@ -25,6 +25,7 @@ import {
   toShadowFormValue,
 } from '../fields/shadow-fields';
 import { syncFromInput } from '../fields/sync-from-input';
+import { LengthUnit, toDisplayLength } from '../geometry/length-unit';
 import { SETTINGS_LIMITS } from './settings-limits';
 
 /**
@@ -149,7 +150,7 @@ import { SETTINGS_LIMITS } from './settings-limits';
         </div>
         <div class="background-blur">
           <span class="slider-label" i18n="@@editor.settings.backgroundBlur">
-            Blur: {{ blurMm() }} mm
+            Blur: {{ blurDisplay() }} {{ lengthUnit().unit }}
           </span>
           <mat-slider
             [min]="limits.backgroundBlurMm.min"
@@ -171,6 +172,7 @@ import { SETTINGS_LIMITS } from './settings-limits';
     <app-border-fields
       [widthControl]="form.controls.borderWidthMm"
       [colorControl]="form.controls.borderColor"
+      [lengthUnit]="lengthUnit()"
       (colorPreview)="previewBorderColor($event)"
       (committed)="commitBorder()"
     />
@@ -192,6 +194,7 @@ import { SETTINGS_LIMITS } from './settings-limits';
     </p>
     <app-shadow-fields
       [group]="form.controls.shadow"
+      [lengthUnit]="lengthUnit()"
       (colorPreview)="previewShadowColor($event)"
       (committed)="commitShadow()"
     />
@@ -251,6 +254,8 @@ export class AppearanceSettingsSection {
   readonly background = input.required<BackgroundSettings>();
   readonly defaultBorder = input.required<BorderSettings>();
   readonly defaultShadow = input.required<Shadow>();
+  /** Display unit of the lengths with the collage DPI. */
+  readonly lengthUnit = input.required<LengthUnit>();
   /** File URL of the bg photo (thumbnail); `null` without a bg photo (the hint is shown). */
   readonly backgroundImageUrl = input<string | null>(null);
   /** True if at least one photo has an own border ("Apply to all photos" is enabled only then). */
@@ -314,6 +319,10 @@ export class AppearanceSettingsSection {
   protected readonly overlayOpacity = signal(this.defaults.background.image.overlayOpacityPercent);
   /** Blur radius (mm) of the bg photo shown by the slider; follows the thumb while it moves. */
   protected readonly blurMm = signal(this.defaults.background.image.blurMm);
+  /** Blur radius in the display unit for the slider label (the slider itself stays in mm). */
+  protected readonly blurDisplay = computed(() =>
+    toDisplayLength(this.blurMm(), this.lengthUnit()),
+  );
 
   constructor() {
     syncFromInput(this.background, ({ type, color, gradient, image }) => {

@@ -79,6 +79,7 @@
           cdkTrapFocus
           cdkTrapFocusAutoCapture
           [snapGrid]="settings.snapGrid"
+          [lengthUnit]="lengthUnit()"
           (snapGridChange)="updateSnapGrid($event)"
         />
       }
@@ -206,6 +207,7 @@
             [photo]="photo"
             [defaultBorder]="settings.defaultBorder"
             [defaultShadow]="settings.defaultShadow"
+            [lengthUnit]="lengthUnit()"
             [isBackground]="
               settings.background.type === 'image' && settings.background.image.photoId === photo.id
             "
@@ -222,6 +224,7 @@
           <app-text-properties-panel
             class="text-panel"
             [text]="text"
+            [lengthUnit]="lengthUnit()"
             (preview)="store.previewText(text.id, $event)"
             (propsChange)="store.updateTextProps(text.id, $event)"
             (bringToFront)="store.bringTextToFront(text.id)"
@@ -231,6 +234,7 @@
         }
         <app-collage-settings-panel
           [settings]="settings"
+          [lengthUnit]="lengthUnit()"
           [photoCount]="store.photos().length"
           [backgroundImageUrl]="backgroundImageUrl()"
           [hasBorderOverrides]="store.hasBorderOverrides()"
@@ -241,6 +245,7 @@
           (rearrangeAgain)="store.rearrange()"
           (applyBorderToAll)="store.applyDefaultBorderToAll()"
           (applyShadowToAll)="store.applyDefaultShadowToAll()"
+          (displayUnitChange)="store.setDisplayUnit($event)"
         />
       </aside>
     </div>

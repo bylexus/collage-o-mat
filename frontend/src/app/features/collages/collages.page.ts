@@ -45,7 +45,10 @@ export class CollagesPage {
   protected readonly loading = signal(true);
   protected readonly loadError = signal<string | null>(null);
   protected readonly rows = computed<CollageRow[]>(() =>
-    this.collages().map((c) => ({ ...c, pageLabel: pageLabel(c.settings.page) })),
+    this.collages().map((c) => ({
+      ...c,
+      pageLabel: pageLabel(c.settings.page, c.settings.displayUnit),
+    })),
   );
   protected readonly columns = ['name', 'page', 'photoCount', 'updatedAt', 'actions'];
   /** Ids of the collages with a running duplicate request (their Duplicate button is disabled). */

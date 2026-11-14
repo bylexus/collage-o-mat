@@ -15,6 +15,7 @@
   <app-border-fields
     [widthControl]="form.controls.widthMm"
     [colorControl]="form.controls.color"
+    [lengthUnit]="lengthUnit()"
     (colorPreview)="previewColor($event)"
     (committed)="commitBorder()"
   />
@@ -34,6 +35,7 @@
 } @else {
   <app-shadow-fields
     [group]="shadowForm.controls.shadow"
+    [lengthUnit]="lengthUnit()"
     (colorPreview)="previewShadowColor($event)"
     (committed)="commitShadow()"
   />

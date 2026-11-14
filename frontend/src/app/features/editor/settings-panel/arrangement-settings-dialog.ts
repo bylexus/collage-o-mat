@@ -19,7 +19,9 @@ import {
   MasonryDirection,
 } from '../../../core/models/collage';
 import { limitValidators } from '../../../shared/number-limits';
+import { LengthField } from '../fields/length-field';
 import { NumberField } from '../fields/number-field';
+import { LengthUnit } from '../geometry/length-unit';
 import { SETTINGS_LIMITS } from './settings-limits';
 
 /** Rows and columns (grid) and the masonry line count: empty (`null`) = computed automatically. */
@@ -36,9 +38,12 @@ export type ArrangementSettings = Pick<
 
 /**
  * Input of the arrangement settings dialog: `mode` is the mode to edit (can differ from the saved
- * mode), `grid`, `center`, `heap` and `masonry` are the saved parameters.
+ * mode), `grid`, `center`, `heap` and `masonry` are the saved parameters, `lengthUnit` is the
+ * display unit of the gap and margin fields.
  */
-export type ArrangementSettingsDialogData = ArrangementSettings;
+export type ArrangementSettingsDialogData = ArrangementSettings & {
+  readonly lengthUnit: LengthUnit;
+};
 
 /**
  * Result of the arrangement settings dialog: `mode` and its edited parameters; the parameters of
@@ -59,6 +64,7 @@ export type ArrangementSettingsDialogResult = ArrangementSettings;
     MatDialogModule,
     MatFormFieldModule,
     MatSelectModule,
+    LengthField,
     NumberField,
   ],
   templateUrl: './arrangement-settings-dialog.html',
@@ -94,6 +100,7 @@ export class ArrangementSettingsDialog {
   private readonly fb = inject(NonNullableFormBuilder);
 
   protected readonly mode = this.data.mode;
+  protected readonly lengthUnit = this.data.lengthUnit;
   protected readonly limits = SETTINGS_LIMITS;
   protected readonly heapAspects = HEAP_ASPECTS;
   protected readonly masonryDirections = MASONRY_DIRECTIONS;

@@ -16,6 +16,7 @@ import {
   toShadowFormValue,
 } from '../fields/shadow-fields';
 import { syncFromInput } from '../fields/sync-from-input';
+import { LengthUnit } from '../geometry/length-unit';
 import { hasBorderOverride, inheritedBorder } from '../photo-border';
 import { effectiveShadow, hasShadowOverride } from '../photo-shadow';
 import { sameShadow } from '../shadow';
@@ -60,6 +61,8 @@ export class PhotoPropertiesPanel {
   readonly photo = input.required<Photo>();
   readonly defaultBorder = input.required<BorderSettings>();
   readonly defaultShadow = input.required<Shadow>();
+  /** Display unit of the lengths with the collage DPI. */
+  readonly lengthUnit = input.required<LengthUnit>();
   /** True if the photo is the bg photo and the background type is `image` (button disabled). */
   readonly isBackground = input(false);
 

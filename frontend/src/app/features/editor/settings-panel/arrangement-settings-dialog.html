@@ -39,17 +39,19 @@
           Leave rows or columns empty to compute them from the photo count.
         </p>
         <div class="field-row">
-          <app-number-field
+          <app-length-field
             [control]="grid.gapMm"
             [limits]="limits.gapMm"
-            i18n-label="@@editor.settings.gapMm"
-            label="Gap (mm)"
+            [lengthUnit]="lengthUnit"
+            i18n-label="@@editor.settings.gap"
+            label="Gap"
           />
-          <app-number-field
+          <app-length-field
             [control]="grid.marginMm"
             [limits]="limits.marginMm"
-            i18n-label="@@editor.settings.marginMm"
-            label="Margin (mm)"
+            [lengthUnit]="lengthUnit"
+            i18n-label="@@editor.settings.margin"
+            label="Margin"
           />
         </div>
         <mat-checkbox [formControl]="grid.randomOrder" i18n="@@editor.settings.randomOrder">
@@ -94,17 +96,19 @@
           Empty = automatic. Middle photos are split left/right of the centre photo.
         </p>
         <div class="field-row">
-          <app-number-field
+          <app-length-field
             [control]="center.gapMm"
             [limits]="limits.gapMm"
-            i18n-label="@@editor.settings.gapMm"
-            label="Gap (mm)"
+            [lengthUnit]="lengthUnit"
+            i18n-label="@@editor.settings.gap"
+            label="Gap"
           />
-          <app-number-field
+          <app-length-field
             [control]="center.marginMm"
             [limits]="limits.marginMm"
-            i18n-label="@@editor.settings.marginMm"
-            label="Margin (mm)"
+            [lengthUnit]="lengthUnit"
+            i18n-label="@@editor.settings.margin"
+            label="Margin"
           />
         </div>
         <mat-checkbox [formControl]="center.randomOrder" i18n="@@editor.settings.randomOrder">
@@ -148,11 +152,12 @@
             i18n-label="@@editor.settings.heap.maxRotationDeg"
             label="Max. rotation (°)"
           />
-          <app-number-field
+          <app-length-field
             [control]="heap.marginMm"
             [limits]="limits.marginMm"
-            i18n-label="@@editor.settings.marginMm"
-            label="Margin (mm)"
+            [lengthUnit]="lengthUnit"
+            i18n-label="@@editor.settings.margin"
+            label="Margin"
           />
         </div>
       }
@@ -194,17 +199,19 @@
           }
         </div>
         <div class="field-row">
-          <app-number-field
+          <app-length-field
             [control]="masonry.gapMm"
             [limits]="limits.gapMm"
-            i18n-label="@@editor.settings.gapMm"
-            label="Gap (mm)"
+            [lengthUnit]="lengthUnit"
+            i18n-label="@@editor.settings.gap"
+            label="Gap"
           />
-          <app-number-field
+          <app-length-field
             [control]="masonry.marginMm"
             [limits]="limits.marginMm"
-            i18n-label="@@editor.settings.marginMm"
-            label="Margin (mm)"
+            [lengthUnit]="lengthUnit"
+            i18n-label="@@editor.settings.margin"
+            label="Margin"
           />
         </div>
         <mat-checkbox [formControl]="masonry.randomOrder" i18n="@@editor.settings.randomOrder">

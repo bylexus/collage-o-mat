@@ -1,56 +1,85 @@
-<mat-form-field subscriptSizing="dynamic">
-  <mat-label i18n="@@editor.settings.pageSize">Page size</mat-label>
-  <mat-select [formControl]="form.controls.preset" (selectionChange)="commit()">
-    @for (preset of presets; track preset.id) {
-      <mat-option [value]="preset.id">{{ preset.label }}</mat-option>
-    }
-    <mat-option value="Custom">{{ customPresetLabel }}</mat-option>
-  </mat-select>
-</mat-form-field>
+<div class="page-row">
+  <mat-form-field subscriptSizing="dynamic">
+    <mat-label i18n="@@editor.settings.pageSize">Page size</mat-label>
+    <mat-select [formControl]="form.controls.preset" (selectionChange)="commit()">
+      @for (preset of presets; track preset.id) {
+        <mat-option [value]="preset.id">{{ preset.label }}</mat-option>
+      }
+      <mat-option value="Custom">{{ customPresetLabel }}</mat-option>
+    </mat-select>
+  </mat-form-field>
 
-@if (showOrientation()) {
-  <mat-button-toggle-group
-    [formControl]="form.controls.orientation"
-    (change)="commit()"
-    hideSingleSelectionIndicator
-    i18n-aria-label="@@editor.settings.orientation"
-    aria-label="Orientation"
-  >
-    <mat-button-toggle value="portrait" i18n="@@editor.settings.portrait"
-      >Portrait</mat-button-toggle
+  @if (showOrientation()) {
+    <mat-button-toggle-group
+      [formControl]="form.controls.orientation"
+      (change)="commit()"
+      hideSingleSelectionIndicator
+      i18n-aria-label="@@editor.settings.orientation"
+      aria-label="Orientation"
     >
-    <mat-button-toggle value="landscape" i18n="@@editor.settings.landscape">
-      Landscape
-    </mat-button-toggle>
-  </mat-button-toggle-group>
-}
+      <mat-button-toggle
+        value="portrait"
+        i18n-aria-label="@@editor.settings.portrait"
+        aria-label="Portrait"
+        i18n-matTooltip="@@editor.settings.portrait"
+        matTooltip="Portrait"
+      >
+        <mat-icon>crop_portrait</mat-icon>
+      </mat-button-toggle>
+      <mat-button-toggle
+        value="landscape"
+        i18n-aria-label="@@editor.settings.landscape"
+        aria-label="Landscape"
+        i18n-matTooltip="@@editor.settings.landscape"
+        matTooltip="Landscape"
+      >
+        <mat-icon>crop_landscape</mat-icon>
+      </mat-button-toggle>
+    </mat-button-toggle-group>
+  }
+</div>
 
 @if (pageForm.isCustom()) {
   <div class="field-row">
-    <app-number-field
+    <app-length-field
       [control]="form.controls.widthMm"
       [limits]="limits.pageSide"
-      i18n-label="@@editor.settings.widthMm"
-      label="Width (mm)"
+      [lengthUnit]="lengthUnit()"
+      i18n-label="@@editor.settings.width"
+      label="Width"
       (committed)="commit()"
     />
-    <app-number-field
+    <app-length-field
       [control]="form.controls.heightMm"
       [limits]="limits.pageSide"
-      i18n-label="@@editor.settings.heightMm"
-      label="Height (mm)"
+      [lengthUnit]="lengthUnit()"
+      i18n-label="@@editor.settings.height"
+      label="Height"
       (committed)="commit()"
     />
   </div>
 }
 
-<app-number-field
-  [control]="form.controls.dpi"
-  [limits]="limits.dpi"
-  i18n-label="@@editor.settings.dpi"
-  label="Resolution (DPI)"
-  (committed)="commit()"
-/>
+<div class="field-row">
+  <mat-form-field subscriptSizing="dynamic">
+    <mat-label i18n="@@editor.settings.displayUnit">Unit</mat-label>
+    <mat-select
+      [formControl]="unitControl"
+      (selectionChange)="displayUnitChange.emit(unitControl.value)"
+    >
+      @for (unit of displayUnits; track unit) {
+        <mat-option [value]="unit">{{ unit }}</mat-option>
+      }
+    </mat-select>
+  </mat-form-field>
+  <app-number-field
+    [control]="form.controls.dpi"
+    [limits]="limits.dpi"
+    i18n-label="@@editor.settings.dpi"
+    label="Resolution (DPI)"
+    (committed)="commit()"
+  />
+</div>
 
 <p class="settings-note" i18n="@@editor.settings.exportSize">
   Export size: {{ exportSize().width }} × {{ exportSize().height }} px

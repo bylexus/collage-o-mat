@@ -1,26 +1,28 @@
 import { Component, input, output } from '@angular/core';
 import { FormControl } from '@angular/forms';
 import { NumberLimits } from '../../../shared/number-limits';
+import { LengthUnit } from '../geometry/length-unit';
 import { ColorField } from './color-field';
-import { NumberField } from './number-field';
+import { LengthField } from './length-field';
 
 /** Allowed border width in mm (collage default border and per-photo border). */
 export const BORDER_WIDTH_LIMITS = { min: 0, max: 20, step: 0.5 } as const satisfies NumberLimits;
 
 /**
- * Border width and colour in one row. The owner creates the controls (width with
- * `limitValidators(BORDER_WIDTH_LIMITS)`); `committed` is emitted when one of them is committed,
- * `colorPreview` while the colour is changed in the picker.
+ * Border width (in the display unit) and colour in one row. The owner creates the controls (width
+ * in mm with `limitValidators(BORDER_WIDTH_LIMITS)`); `committed` is emitted when one of them is
+ * committed, `colorPreview` while the colour is changed in the picker.
  */
 @Component({
   selector: 'app-border-fields',
-  imports: [ColorField, NumberField],
+  imports: [ColorField, LengthField],
   template: `
-    <app-number-field
+    <app-length-field
       [control]="widthControl()"
       [limits]="limits"
-      i18n-label="@@editor.settings.borderWidthMm"
-      label="Border (mm)"
+      [lengthUnit]="lengthUnit()"
+      i18n-label="@@editor.settings.borderWidth"
+      label="Border"
       (committed)="committed.emit()"
     />
     <app-color-field
@@ -52,6 +54,8 @@ export const BORDER_WIDTH_LIMITS = { min: 0, max: 20, step: 0.5 } as const satis
 export class BorderFields {
   readonly widthControl = input.required<FormControl<number>>();
   readonly colorControl = input.required<FormControl<string>>();
+  /** Display unit of the width with the collage DPI. */
+  readonly lengthUnit = input.required<LengthUnit>();
   readonly committed = output<void>();
   /** The colour while it is changed in the picker (not committed yet). */
   readonly colorPreview = output<string>();

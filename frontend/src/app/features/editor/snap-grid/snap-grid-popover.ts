@@ -3,8 +3,9 @@ import { NonNullableFormBuilder, ReactiveFormsModule } from '@angular/forms';
 import { MatSlideToggleModule } from '@angular/material/slide-toggle';
 import { defaultCollageSettings, SnapGridSettings } from '../../../core/models/collage';
 import { limitValidators } from '../../../shared/number-limits';
-import { NumberField } from '../fields/number-field';
+import { LengthField } from '../fields/length-field';
 import { syncFromInput } from '../fields/sync-from-input';
+import { LengthUnit } from '../geometry/length-unit';
 import { SETTINGS_LIMITS } from '../settings-panel/settings-limits';
 
 /**
@@ -13,7 +14,7 @@ import { SETTINGS_LIMITS } from '../settings-panel/settings-limits';
  */
 @Component({
   selector: 'app-snap-grid-popover',
-  imports: [ReactiveFormsModule, MatSlideToggleModule, NumberField],
+  imports: [ReactiveFormsModule, MatSlideToggleModule, LengthField],
   template: `
     <h2 id="snap-grid-popover-heading" class="popover-heading" i18n="@@editor.snapGrid.heading">
       Snap grid
@@ -21,11 +22,12 @@ import { SETTINGS_LIMITS } from '../settings-panel/settings-limits';
     <mat-slide-toggle [formControl]="form.controls.enabled" (change)="commitEnabled()">
       <span i18n="@@editor.snapGrid.enabled">Snap to grid</span>
     </mat-slide-toggle>
-    <app-number-field
+    <app-length-field
       [control]="form.controls.sizeMm"
       [limits]="limits.snapGridSizeMm"
-      i18n-label="@@editor.snapGrid.sizeMm"
-      label="Grid size (mm)"
+      [lengthUnit]="lengthUnit()"
+      i18n-label="@@editor.snapGrid.size"
+      label="Grid size"
       (committed)="commitSize()"
     />
   `,
@@ -56,6 +58,8 @@ import { SETTINGS_LIMITS } from '../settings-panel/settings-limits';
 })
 export class SnapGridPopover {
   readonly snapGrid = input.required<SnapGridSettings>();
+  /** Display unit of the grid size with the collage DPI. */
+  readonly lengthUnit = input.required<LengthUnit>();
   readonly snapGridChange = output<SnapGridSettings>();
 
   protected readonly limits = SETTINGS_LIMITS;

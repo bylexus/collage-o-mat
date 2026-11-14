@@ -1,6 +1,11 @@
 <section class="panel-section">
   <h3 class="panel-heading" i18n="@@editor.settings.pageHeading">Page</h3>
-  <app-page-settings-section [page]="settings().page" (pageChange)="update({ page: $event })" />
+  <app-page-settings-section
+    [page]="settings().page"
+    [lengthUnit]="lengthUnit()"
+    (pageChange)="update({ page: $event })"
+    (displayUnitChange)="displayUnitChange.emit($event)"
+  />
 </section>
 
 <section class="panel-section">
@@ -10,6 +15,7 @@
     [backgroundImageUrl]="backgroundImageUrl()"
     [defaultBorder]="settings().defaultBorder"
     [defaultShadow]="settings().defaultShadow"
+    [lengthUnit]="lengthUnit()"
     [hasBorderOverrides]="hasBorderOverrides()"
     [hasShadowOverrides]="hasShadowOverrides()"
     (backgroundChange)="update({ background: $event })"

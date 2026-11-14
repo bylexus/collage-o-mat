@@ -60,11 +60,3 @@ export interface CollageText {
   id: string;
   props: TextProps;
 }
-
-/** mm per typographic point (1 pt = 1/72 inch). */
-export const MM_PER_PT = 25.4 / 72;
-
-/** Font size in mm for a size in pt. */
-export function ptToMm(pt: number): number {
-  return pt * MM_PER_PT;
-}

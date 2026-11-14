@@ -3,7 +3,7 @@ import { computed, DestroyRef, inject, Injectable, signal } from '@angular/core'
 import { firstValueFrom } from 'rxjs';
 import { CollageApi } from '../../core/api/collage.api';
 import { PhotoApi } from '../../core/api/photo.api';
-import { CollageSettings, normalizeSettings } from '../../core/models/collage';
+import { CollageSettings, DisplayUnit, normalizeSettings } from '../../core/models/collage';
 import { SaveLayoutRequest } from '../../core/models/layout';
 import { ImportResult, isPlaced, Photo, PhotoBorder, PhotoProps } from '../../core/models/photo';
 import type { Shadow } from '../../core/models/shadow';
@@ -216,6 +216,19 @@ export class EditorStore {
   updateSettings(settings: CollageSettings): void {
     this.settingsSignal.set(settings);
     this.commit();
+  }
+
+  /**
+   * Sets the display unit of the editor lengths. Saved, but not an undo step (undo/redo keep the
+   * current unit).
+   */
+  setDisplayUnit(displayUnit: DisplayUnit): void {
+    const settings = this.requireSettings();
+    if (settings.displayUnit === displayUnit) {
+      return;
+    }
+    this.settingsSignal.set({ ...settings, displayUnit });
+    this.autoSaver.schedule();
   }
 
   /** Selects an element (or nothing); a changed selection removes the previews. */
@@ -654,14 +667,18 @@ export class EditorStore {
     this.autoSaver.schedule();
   }
 
-  /** Shows a layout from the history and saves it (no new undo step). */
+  /**
+   * Shows a layout from the history and saves it (no new undo step). The current display unit
+   * stays (it is not part of the undo history).
+   */
   private restore(snapshot: LayoutSnapshot | null): void {
     if (!snapshot) {
       return;
     }
     this.clearPreviews();
     const { settings, photos, texts } = restoreSnapshot(snapshot, this.photosSignal());
-    this.settingsSignal.set(settings);
+    const { displayUnit } = this.requireSettings();
+    this.settingsSignal.set({ ...settings, displayUnit });
     this.photosSignal.set(photos);
     this.textsSignal.set(texts);
     const selectedTextId = selectedTextIdOf(this.selectionSignal());
