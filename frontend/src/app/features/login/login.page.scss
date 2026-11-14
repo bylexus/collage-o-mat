@@ -26,10 +26,11 @@
 
   &::before {
     inset: -24px; // hide blurred edges
-    background-image: url('/login-screen.webp');
+    // Image is chosen in login.page.ts (random per app start).
+    background-image: var(--login-bg-webp);
     background-image: image-set(
-      url('/login-screen.avif') type('image/avif'),
-      url('/login-screen.webp') type('image/webp')
+      var(--login-bg-avif) type('image/avif'),
+      var(--login-bg-webp) type('image/webp')
     );
     background-size: cover;
     background-position: center;

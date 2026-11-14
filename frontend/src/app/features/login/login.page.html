@@ -1,4 +1,9 @@
-<div class="login-backdrop" aria-hidden="true"></div>
+<div
+  class="login-backdrop"
+  aria-hidden="true"
+  [style.--login-bg-avif]="backdrop.avif"
+  [style.--login-bg-webp]="backdrop.webp"
+></div>
 
 <mat-card class="login-card" appearance="outlined">
   <div class="login-brand">

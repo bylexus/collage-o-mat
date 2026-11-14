@@ -11,6 +11,17 @@ import { AuthService } from '../../core/auth.service';
 import { CopyrightNotice } from '../../shared/copyright-notice';
 import { errorMessage } from '../../shared/error-message';
 
+/** Login backdrop images in `public/`, each as `<name>.avif` and `<name>.webp`. */
+const BACKDROP_IMAGES = [
+  'login-screen',
+  'login-screen-grid',
+  'login-screen-heap',
+  'login-screen-masonry',
+];
+
+/** Chosen once per app start (module load), so it stays the same during the session. */
+const BACKDROP_IMAGE = BACKDROP_IMAGES[Math.floor(Math.random() * BACKDROP_IMAGES.length)];
+
 @Component({
   selector: 'app-login-page',
   imports: [
@@ -34,6 +45,10 @@ export class LoginPage {
     username: ['', Validators.required],
     password: ['', Validators.required],
   });
+  protected readonly backdrop = {
+    avif: `url('/${BACKDROP_IMAGE}.avif')`,
+    webp: `url('/${BACKDROP_IMAGE}.webp')`,
+  };
   protected readonly submitting = signal(false);
   protected readonly error = signal<string | null>(null);
 
