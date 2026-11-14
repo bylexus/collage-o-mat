@@ -7,11 +7,18 @@ A Photo collage web app inspired by CollageIt! Pro, in Go / Angular.
 ## Features
 
 * Import Photos from [an Immich Server](https://immich.app/), local files
+* Page presets (A5, A4, A3, Letter, 30 × 30 cm) or custom size, DPI setting
 * Arrange photos automatically in several modes (grid, center mode, random heap, masonry, free placement)
+* Settings dialog per arrangement mode, quick re-roll with the same settings
+* Random photo order for grid and center mode
+* Swap two photos, set the centre photo
 * Background (color, gradient, image)
 * Individual photo border, border margins, paddings
 * Free placement and rotation
-* Text elements
+* Crop photos inside their frame (pan, zoom)
+* Snap grid to align photos and texts
+* Text elements with 16 bundled fonts
+* Undo/redo and auto-save
 * Export final image to png, jpg
 
 ## Development
