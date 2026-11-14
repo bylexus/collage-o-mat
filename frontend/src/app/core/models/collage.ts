@@ -14,10 +14,10 @@ export type PagePresetId = FixedPagePresetId | 'Custom';
 
 export type PageOrientation = 'portrait' | 'landscape';
 
-export type ArrangementMode = 'grid' | 'center';
+export type ArrangementMode = 'grid' | 'center' | 'heap';
 
 /** All arrangement modes. */
-export const ARRANGEMENT_MODES: readonly ArrangementMode[] = ['grid', 'center'];
+export const ARRANGEMENT_MODES: readonly ArrangementMode[] = ['grid', 'center', 'heap'];
 
 const PAGE_ORIENTATIONS: readonly PageOrientation[] = ['portrait', 'landscape'];
 
@@ -59,6 +59,27 @@ export interface CenterSettings {
   middleCount: number | null;
   /** Photos in the bottom lane; `null` = auto. */
   bottomCount: number | null;
+}
+
+/**
+ * Frame aspect of the heap mode: `full` = the image aspect (whole image), else a print aspect
+ * `w:h` (landscape for a landscape or square image, portrait for a portrait image; cover crop).
+ */
+export type HeapAspect = 'full' | '3:2' | '4:3' | '1:1' | '5:4';
+
+/** All heap frame aspects. */
+export const HEAP_ASPECTS: readonly HeapAspect[] = ['full', '3:2', '4:3', '1:1', '5:4'];
+
+/** Settings of the "random heap" mode: photos with random position, size and rotation. */
+export interface HeapSettings {
+  aspect: HeapAspect;
+  /** Total photo area in % of the content area (more than 100 = the photos overlap). */
+  coveragePercent: number;
+  /** Random size change per photo, ± % of the side length. */
+  sizeVariationPercent: number;
+  /** Random rotation per photo, ± degrees; 0 = no rotation. */
+  maxRotationDeg: number;
+  marginMm: number;
 }
 
 /**
@@ -123,6 +144,7 @@ export interface CollageSettings {
   mode: ArrangementMode;
   grid: GridSettings;
   center: CenterSettings;
+  heap: HeapSettings;
   snapGrid: SnapGridSettings;
 }
 
@@ -248,7 +270,7 @@ export function customPageSettings(size: PageSize, dpi = DEFAULT_DPI): PageSetti
 /**
  * Settings of a new collage: A4 landscape, 300 DPI, white colour background (gradient white to
  * black at 180°, image without photo and with a transparent black overlay), no border, grid mode,
- * snap grid off (5 mm).
+ * heap mode with the whole image, 120 % coverage, ±20 % size, ±15° rotation, snap grid off (5 mm).
  */
 export function defaultCollageSettings(): CollageSettings {
   return {
@@ -271,6 +293,13 @@ export function defaultCollageSettings(): CollageSettings {
       middleCount: null,
       bottomCount: null,
     },
+    heap: {
+      aspect: 'full',
+      coveragePercent: 120,
+      sizeVariationPercent: 20,
+      maxRotationDeg: 15,
+      marginMm: 10,
+    },
     snapGrid: { enabled: false, sizeMm: 5 },
   };
 }
@@ -278,7 +307,7 @@ export function defaultCollageSettings(): CollageSettings {
 /**
  * Settings from the API as a complete `CollageSettings` document: every known field with the right type
  * is kept, a missing or wrongly typed field gets its value from `defaultCollageSettings()` (e.g. the lane
- * counts in collages saved before they existed), unknown fields are dropped. Only types are checked (a
+ * counts or the heap settings in collages saved before they existed), unknown fields are dropped. Only types are checked (a
  * finite number, a boolean, a string, one of the allowed ids, `null` where allowed); ranges are the job
  * of the users of the settings. Fields are merged one by one, so an invalid page size keeps the stored
  * preset. The legacy string `backgroundColor` (before `background` existed) becomes `background.color`
@@ -298,6 +327,7 @@ export function normalizeSettings(raw: unknown): CollageSettings {
     mode: oneOf(source['mode'], ARRANGEMENT_MODES, defaults.mode),
     grid: normalizeGrid(source['grid'], defaults.grid),
     center: normalizeCenter(source['center'], defaults.center),
+    heap: normalizeHeap(source['heap'], defaults.heap),
     snapGrid: normalizeSnapGrid(source['snapGrid'], defaults.snapGrid),
   };
 }
@@ -384,6 +414,17 @@ function normalizeCenter(raw: unknown, defaults: CenterSettings): CenterSettings
     topCount: nullableNumberOr(source['topCount'], defaults.topCount),
     middleCount: nullableNumberOr(source['middleCount'], defaults.middleCount),
     bottomCount: nullableNumberOr(source['bottomCount'], defaults.bottomCount),
+  };
+}
+
+function normalizeHeap(raw: unknown, defaults: HeapSettings): HeapSettings {
+  const source = asRecord(raw);
+  return {
+    aspect: oneOf(source['aspect'], HEAP_ASPECTS, defaults.aspect),
+    coveragePercent: numberOr(source['coveragePercent'], defaults.coveragePercent),
+    sizeVariationPercent: numberOr(source['sizeVariationPercent'], defaults.sizeVariationPercent),
+    maxRotationDeg: numberOr(source['maxRotationDeg'], defaults.maxRotationDeg),
+    marginMm: numberOr(source['marginMm'], defaults.marginMm),
   };
 }
 

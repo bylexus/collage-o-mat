@@ -22,12 +22,8 @@
   <h3 class="panel-heading" i18n="@@editor.settings.arrangementHeading">Arrangement</h3>
   <app-arrangement-settings-section
     [mode]="settings().mode"
-    [grid]="settings().grid"
-    [center]="settings().center"
     [photoCount]="photoCount()"
-    (modeChange)="update({ mode: $event })"
-    (gridChange)="update({ grid: $event })"
-    (centerChange)="update({ center: $event })"
-    (rearrange)="rearrange.emit()"
+    (openArrangement)="openArrangement.emit($event)"
+    (rearrangeAgain)="rearrangeAgain.emit()"
   />
 </section>

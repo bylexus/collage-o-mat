@@ -1,0 +1,164 @@
+@switch (mode) {
+  @case ('grid') {
+    <h2 mat-dialog-title i18n="@@editor.arrangementDialog.titleGrid">Re-arrange: Grid</h2>
+  }
+  @case ('center') {
+    <h2 mat-dialog-title i18n="@@editor.arrangementDialog.titleCenter">Re-arrange: Center</h2>
+  }
+  @case ('heap') {
+    <h2 mat-dialog-title i18n="@@editor.arrangementDialog.titleHeap">Re-arrange: Random heap</h2>
+  }
+}
+<form [formGroup]="form" (ngSubmit)="submit()">
+  <mat-dialog-content class="arrangement-fields">
+    @switch (mode) {
+      @case ('grid') {
+        @let grid = form.controls.grid.controls;
+        <div class="field-row">
+          <app-number-field
+            [control]="grid.rows"
+            [limits]="limits.gridCount"
+            i18n-label="@@editor.settings.rows"
+            label="Rows"
+            i18n-placeholder="@@editor.settings.auto"
+            placeholder="Auto"
+          />
+          <app-number-field
+            [control]="grid.cols"
+            [limits]="limits.gridCount"
+            i18n-label="@@editor.settings.cols"
+            label="Columns"
+            i18n-placeholder="@@editor.settings.auto"
+            placeholder="Auto"
+          />
+        </div>
+        <p class="settings-note" i18n="@@editor.settings.autoHint">
+          Leave rows or columns empty to compute them from the photo count.
+        </p>
+        <div class="field-row">
+          <app-number-field
+            [control]="grid.gapMm"
+            [limits]="limits.gapMm"
+            i18n-label="@@editor.settings.gapMm"
+            label="Gap (mm)"
+          />
+          <app-number-field
+            [control]="grid.marginMm"
+            [limits]="limits.marginMm"
+            i18n-label="@@editor.settings.marginMm"
+            label="Margin (mm)"
+          />
+        </div>
+      }
+      @case ('center') {
+        @let center = form.controls.center.controls;
+        <app-number-field
+          [control]="center.sizePercent"
+          [limits]="limits.sizePercent"
+          i18n-label="@@editor.settings.sizePercent"
+          label="Centre photo size (%)"
+        />
+        <div class="field-row">
+          <app-number-field
+            [control]="center.topCount"
+            [limits]="limits.laneCount"
+            i18n-label="@@editor.settings.center.topCount"
+            label="Top"
+            i18n-placeholder="@@editor.settings.auto"
+            placeholder="Auto"
+          />
+          <app-number-field
+            [control]="center.middleCount"
+            [limits]="limits.laneCount"
+            i18n-label="@@editor.settings.center.middleCount"
+            label="Middle"
+            i18n-placeholder="@@editor.settings.auto"
+            placeholder="Auto"
+          />
+          <app-number-field
+            [control]="center.bottomCount"
+            [limits]="limits.laneCount"
+            i18n-label="@@editor.settings.center.bottomCount"
+            label="Bottom"
+            i18n-placeholder="@@editor.settings.auto"
+            placeholder="Auto"
+          />
+        </div>
+        <p class="settings-note" i18n="@@editor.settings.center.laneHint">
+          Empty = automatic. Middle photos are split left/right of the centre photo.
+        </p>
+        <div class="field-row">
+          <app-number-field
+            [control]="center.gapMm"
+            [limits]="limits.gapMm"
+            i18n-label="@@editor.settings.gapMm"
+            label="Gap (mm)"
+          />
+          <app-number-field
+            [control]="center.marginMm"
+            [limits]="limits.marginMm"
+            i18n-label="@@editor.settings.marginMm"
+            label="Margin (mm)"
+          />
+        </div>
+      }
+      @case ('heap') {
+        @let heap = form.controls.heap.controls;
+        <mat-form-field subscriptSizing="dynamic">
+          <mat-label i18n="@@editor.settings.heap.aspect">Aspect</mat-label>
+          <mat-select [formControl]="heap.aspect">
+            @for (aspect of heapAspects; track aspect) {
+              <mat-option [value]="aspect">
+                @if (aspect === 'full') {
+                  <ng-container i18n="@@editor.settings.heap.aspectFull">Full image</ng-container>
+                } @else {
+                  {{ aspect }}
+                }
+              </mat-option>
+            }
+          </mat-select>
+        </mat-form-field>
+        <div class="field-row">
+          <app-number-field
+            [control]="heap.coveragePercent"
+            [limits]="limits.coveragePercent"
+            i18n-label="@@editor.settings.heap.coveragePercent"
+            label="Coverage (%)"
+          />
+          <app-number-field
+            [control]="heap.sizeVariationPercent"
+            [limits]="limits.sizeVariationPercent"
+            i18n-label="@@editor.settings.heap.sizeVariationPercent"
+            label="Size variation (%)"
+          />
+        </div>
+        <div class="field-row">
+          <app-number-field
+            [control]="heap.maxRotationDeg"
+            [limits]="limits.maxRotationDeg"
+            i18n-label="@@editor.settings.heap.maxRotationDeg"
+            label="Max. rotation (°)"
+          />
+          <app-number-field
+            [control]="heap.marginMm"
+            [limits]="limits.marginMm"
+            i18n-label="@@editor.settings.marginMm"
+            label="Margin (mm)"
+          />
+        </div>
+      }
+    }
+    <p class="settings-note" i18n="@@editor.arrangementDialog.hint">
+      Re-arranging places all photos again and overwrites manual changes.
+    </p>
+  </mat-dialog-content>
+
+  <mat-dialog-actions align="end">
+    <button matButton type="button" mat-dialog-close>
+      <ng-container i18n="@@editor.arrangementDialog.cancel">Cancel</ng-container>
+    </button>
+    <button matButton="filled" type="submit" [disabled]="parametersInvalid()">
+      <ng-container i18n="@@editor.arrangementDialog.submit">Re-arrange</ng-container>
+    </button>
+  </mat-dialog-actions>
+</form>

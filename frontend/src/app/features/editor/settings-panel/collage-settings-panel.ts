@@ -1,5 +1,5 @@
 import { Component, input, output } from '@angular/core';
-import { CollageSettings } from '../../../core/models/collage';
+import { ArrangementMode, CollageSettings } from '../../../core/models/collage';
 import { AppearanceSettingsSection } from './appearance-settings-section';
 import { ArrangementSettingsSection } from './arrangement-settings-section';
 import { PageSettingsSection } from './page-settings-section';
@@ -7,8 +7,9 @@ import { PageSettingsSection } from './page-settings-section';
 /**
  * Side panel with the collage settings (presentational). Emits a new settings object on each
  * committed, valid change (`settingsChange`) and while a colour is changed in a picker
- * (`settingsPreview`, not committed); changes do not re-arrange the photos (the user clicks "Re-arrange").
- * Actions on the photos ("Re-arrange", "Apply to all photos") are separate outputs.
+ * (`settingsPreview`, not committed); changes do not re-arrange the photos. The arrangement
+ * parameters are edited in a dialog ("Re-arrange…", `openArrangement`). Actions on the photos
+ * ("Apply to all photos") are separate outputs.
  */
 @Component({
   selector: 'app-collage-settings-panel',
@@ -27,7 +28,10 @@ export class CollageSettingsPanel {
   readonly settingsChange = output<CollageSettings>();
   /** Settings while a colour is changed in a picker (not committed). */
   readonly settingsPreview = output<CollageSettings>();
-  readonly rearrange = output<void>();
+  /** "Re-arrange…": open the arrangement settings dialog for this mode. */
+  readonly openArrangement = output<ArrangementMode>();
+  /** Quick re-roll: re-arrange again with the saved settings. */
+  readonly rearrangeAgain = output<void>();
   /** "Apply to all photos" of the default border: remove the own borders of all photos. */
   readonly applyBorderToAll = output<void>();
 

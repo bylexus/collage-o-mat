@@ -19,7 +19,7 @@ import { MatTooltipModule } from '@angular/material/tooltip';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { firstValueFrom, Subscription } from 'rxjs';
 import { PhotoApi } from '../../core/api/photo.api';
-import { pageLabel, SnapGridSettings } from '../../core/models/collage';
+import { ArrangementMode, pageLabel, SnapGridSettings } from '../../core/models/collage';
 import { ImportResult, isPlaced, photoFileUrl } from '../../core/models/photo';
 import { NotificationService } from '../../shared/notification.service';
 import { resolveCentrePhotoId } from './arrange/arrange';
@@ -32,6 +32,7 @@ import { ImportDialog, ImportDialogData } from './import/import-dialog';
 import { importResultMessage } from './import/import-result-message';
 import { PhotoPropertiesPanel } from './photo-panel/photo-properties-panel';
 import { SaveStatusIndicator } from './save-status-indicator';
+import { ArrangementSettingsDialogService } from './settings-panel/arrangement-settings-dialog.service';
 import { CollageSettingsPanel } from './settings-panel/collage-settings-panel';
 import { SnapGridPopover } from './snap-grid/snap-grid-popover';
 import { TextPropertiesPanel } from './text-panel/text-properties-panel';
@@ -76,6 +77,7 @@ export class EditorPage {
   private readonly route = inject(ActivatedRoute);
   private readonly router = inject(Router);
   private readonly dialog = inject(MatDialog);
+  private readonly arrangementDialog = inject(ArrangementSettingsDialogService);
   private readonly notification = inject(NotificationService);
   private readonly injector = inject(Injector);
   private readonly destroyRef = inject(DestroyRef);
@@ -318,6 +320,27 @@ export class EditorPage {
       width: '400px',
       maxWidth: 'calc(100vw - 32px)',
     });
+  }
+
+  /**
+   * Opens the arrangement settings dialog for `mode`; on "Re-arrange" saves the settings and
+   * arranges all photos (one undo step).
+   */
+  protected async openArrangement(mode: ArrangementMode): Promise<void> {
+    const settings = this.store.settings();
+    if (!settings) {
+      return;
+    }
+    const result = await this.arrangementDialog.open({
+      mode,
+      grid: settings.grid,
+      center: settings.center,
+      heap: settings.heap,
+    });
+    const current = this.store.settings();
+    if (result && current) {
+      this.store.rearrangeWith({ ...current, ...result });
+    }
   }
 
   protected toggleSnapGrid(): void {

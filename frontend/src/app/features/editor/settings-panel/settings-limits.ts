@@ -12,6 +12,12 @@ export const SETTINGS_LIMITS = {
   gapMm: { min: 0, max: 50, step: 0.5 },
   marginMm: { min: 0, max: 100, step: 1 },
   sizePercent: { min: 10, max: 100, step: 5 },
+  /** Heap mode: total photo area in % of the content area. */
+  coveragePercent: { min: 30, max: 300, step: 10, integer: true },
+  /** Heap mode: random size change per photo (± %). */
+  sizeVariationPercent: { min: 0, max: 50, step: 5, integer: true },
+  /** Heap mode: random rotation per photo (± degrees). */
+  maxRotationDeg: { min: 0, max: 45, step: 1, integer: true },
   /** Cell size of the snap grid (toolbar popover). */
   snapGridSizeMm: { min: 1, max: 100, step: 0.5 },
   /** Direction of a linear background gradient in degrees (CSS convention). */

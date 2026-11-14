@@ -233,7 +233,8 @@
           [hasBorderOverrides]="store.hasBorderOverrides()"
           (settingsChange)="store.updateSettings($event)"
           (settingsPreview)="store.previewSettings($event)"
-          (rearrange)="store.rearrange()"
+          (openArrangement)="openArrangement($event)"
+          (rearrangeAgain)="store.rearrange()"
           (applyBorderToAll)="store.applyDefaultBorderToAll()"
         />
       </aside>

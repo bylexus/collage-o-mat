@@ -345,6 +345,16 @@ export class EditorStore {
   }
 
   /**
+   * Replaces the collage settings and arranges all photos with them, as one undo step. Does not
+   * ask (the user chose the settings in the arrangement dialog).
+   */
+  rearrangeWith(settings: CollageSettings): void {
+    this.settingsSignal.set(settings);
+    this.arrangeAll();
+    this.commit();
+  }
+
+  /**
    * Adds imported photos and arranges all photos. If the current layout may contain work of the
    * user and the user does not want to re-arrange, only the new photos are placed beside the page.
    */

@@ -1,124 +1,36 @@
 <mat-form-field subscriptSizing="dynamic">
   <mat-label i18n="@@editor.settings.mode">Mode</mat-label>
-  <mat-select [formControl]="form.controls.mode" (selectionChange)="commitMode()">
+  <mat-select [formControl]="form.controls.mode" (selectionChange)="requestMode()">
     <mat-option value="grid" i18n="@@editor.settings.modeGrid">Grid</mat-option>
     <mat-option value="center" i18n="@@editor.settings.modeCenter">Center</mat-option>
+    <mat-option value="heap" i18n="@@editor.settings.modeHeap">Random heap</mat-option>
   </mat-select>
 </mat-form-field>
 
-@switch (selectedMode()) {
-  @case ('grid') {
-    @let grid = form.controls.grid.controls;
-    <div class="field-row">
-      <app-number-field
-        [control]="grid.rows"
-        [limits]="limits.gridCount"
-        i18n-label="@@editor.settings.rows"
-        label="Rows"
-        i18n-placeholder="@@editor.settings.auto"
-        placeholder="Auto"
-        (committed)="commitGrid()"
-      />
-      <app-number-field
-        [control]="grid.cols"
-        [limits]="limits.gridCount"
-        i18n-label="@@editor.settings.cols"
-        label="Columns"
-        i18n-placeholder="@@editor.settings.auto"
-        placeholder="Auto"
-        (committed)="commitGrid()"
-      />
-    </div>
-    <p class="settings-note" i18n="@@editor.settings.autoHint">
-      Leave rows or columns empty to compute them from the photo count.
-    </p>
-    <div class="field-row">
-      <app-number-field
-        [control]="grid.gapMm"
-        [limits]="limits.gapMm"
-        i18n-label="@@editor.settings.gapMm"
-        label="Gap (mm)"
-        (committed)="commitGrid()"
-      />
-      <app-number-field
-        [control]="grid.marginMm"
-        [limits]="limits.marginMm"
-        i18n-label="@@editor.settings.marginMm"
-        label="Margin (mm)"
-        (committed)="commitGrid()"
-      />
-    </div>
-  }
-  @case ('center') {
-    @let center = form.controls.center.controls;
-    <app-number-field
-      [control]="center.sizePercent"
-      [limits]="limits.sizePercent"
-      i18n-label="@@editor.settings.sizePercent"
-      label="Centre photo size (%)"
-      (committed)="commitCenter()"
-    />
-    <div class="field-row">
-      <app-number-field
-        [control]="center.topCount"
-        [limits]="limits.laneCount"
-        i18n-label="@@editor.settings.center.topCount"
-        label="Top"
-        i18n-placeholder="@@editor.settings.auto"
-        placeholder="Auto"
-        (committed)="commitCenter()"
-      />
-      <app-number-field
-        [control]="center.middleCount"
-        [limits]="limits.laneCount"
-        i18n-label="@@editor.settings.center.middleCount"
-        label="Middle"
-        i18n-placeholder="@@editor.settings.auto"
-        placeholder="Auto"
-        (committed)="commitCenter()"
-      />
-      <app-number-field
-        [control]="center.bottomCount"
-        [limits]="limits.laneCount"
-        i18n-label="@@editor.settings.center.bottomCount"
-        label="Bottom"
-        i18n-placeholder="@@editor.settings.auto"
-        placeholder="Auto"
-        (committed)="commitCenter()"
-      />
-    </div>
-    <p class="settings-note" i18n="@@editor.settings.center.laneHint">
-      Empty = automatic. Middle photos are split left/right of the centre photo.
-    </p>
-    <div class="field-row">
-      <app-number-field
-        [control]="center.gapMm"
-        [limits]="limits.gapMm"
-        i18n-label="@@editor.settings.gapMm"
-        label="Gap (mm)"
-        (committed)="commitCenter()"
-      />
-      <app-number-field
-        [control]="center.marginMm"
-        [limits]="limits.marginMm"
-        i18n-label="@@editor.settings.marginMm"
-        label="Margin (mm)"
-        (committed)="commitCenter()"
-      />
-    </div>
-  }
-}
-
-<button
-  matButton="filled"
-  type="button"
-  class="rearrange-button"
-  [disabled]="!canRearrange() || parametersInvalid()"
-  (click)="rearrange.emit()"
->
-  <mat-icon>auto_awesome_mosaic</mat-icon>
-  <span i18n="@@editor.settings.rearrange">Re-arrange</span>
-</button>
+<div class="rearrange-row">
+  <button
+    matButton="filled"
+    type="button"
+    class="rearrange-button"
+    [disabled]="!canRearrange()"
+    (click)="openArrangement.emit(mode())"
+  >
+    <mat-icon>auto_awesome_mosaic</mat-icon>
+    <span i18n="@@editor.settings.rearrangeDialog">Re-arrange…</span>
+  </button>
+  <button
+    matIconButton
+    type="button"
+    [disabled]="!canRearrange()"
+    (click)="rearrangeAgain.emit()"
+    i18n-aria-label="@@editor.settings.rearrangeAgain"
+    aria-label="Re-arrange again with the same settings"
+    i18n-matTooltip="@@editor.settings.rearrangeAgain"
+    matTooltip="Re-arrange again with the same settings"
+  >
+    <mat-icon>refresh</mat-icon>
+  </button>
+</div>
 <p class="settings-note" i18n="@@editor.settings.rearrangeHint">
   Re-arranging places all photos again and overwrites manual changes.
 </p>

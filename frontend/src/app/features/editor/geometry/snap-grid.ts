@@ -1,5 +1,5 @@
 // Snap grid math for moving and resizing elements by hand. Pure, no Angular, no Konva.
-import type { CollageSettings } from '../../../core/models/collage';
+import type { ArrangementMode, CollageSettings } from '../../../core/models/collage';
 import { isPositiveFinite, nonNegative } from './numbers';
 import type { Rect } from './rect';
 
@@ -19,6 +19,13 @@ export interface SnapGrid {
   y: SnapAxis;
 }
 
+/** The margin setting of each arrangement mode. */
+const MODE_MARGIN_MM: Readonly<Record<ArrangementMode, (settings: CollageSettings) => number>> = {
+  grid: (settings) => settings.grid.marginMm,
+  center: (settings) => settings.center.marginMm,
+  heap: (settings) => settings.heap.marginMm,
+};
+
 /** Shift (mm) that puts an element on the grid. */
 export interface SnapDelta {
   dx: number;
@@ -35,9 +42,7 @@ export function snapGridOf(settings: CollageSettings): SnapGrid | null {
   if (!enabled || !isPositiveFinite(sizeMm)) {
     return null;
   }
-  const marginMm = nonNegative(
-    settings.mode === 'grid' ? settings.grid.marginMm : settings.center.marginMm,
-  );
+  const marginMm = nonNegative(MODE_MARGIN_MM[settings.mode](settings));
   return {
     x: { marginMm, sizeMm, farLineMm: settings.page.widthMm - marginMm },
     y: { marginMm, sizeMm, farLineMm: settings.page.heightMm - marginMm },
