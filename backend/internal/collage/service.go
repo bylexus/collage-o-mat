@@ -58,6 +58,13 @@ type Photos interface {
 	// returns an apperr validation error ("unknown photo id N") if a listed
 	// photo is not in the collage.
 	UpdateProps(ctx context.Context, collageID uint, updates []PhotoPropsUpdate) error
+	// CopyAllForCollage copies all photos of srcCollageID (rows with their
+	// props, and their files) into dstCollageID. It returns the map old photo
+	// id -> new photo id and the number of photos that were skipped because
+	// their source file does not exist. Every other error stops the copy;
+	// files that were already written stay on disk (remove them with
+	// DeleteAllForCollage of dstCollageID).
+	CopyAllForCollage(ctx context.Context, srcCollageID, dstCollageID uint) (idMap map[uint]uint, skipped int, err error)
 }
 
 // Transactor runs fn in one database transaction: all store and Photos

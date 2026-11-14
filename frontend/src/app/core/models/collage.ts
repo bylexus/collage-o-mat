@@ -51,7 +51,7 @@ export interface GridSettings {
 }
 
 export interface CenterSettings {
-  /** `null` = the first photo. */
+  /** `null` = the first photo. The backend remaps it on duplicate (backend/internal/collage). */
   centerPhotoId: number | null;
   sizePercent: number;
   gapMm: number;
@@ -142,7 +142,7 @@ export interface GradientSettings {
 
 /** Image background: a collage photo covers the page, dimmed by an overlay colour. */
 export interface ImageBackgroundSettings {
-  /** Id of the background photo (a photo of the collage); `null` = no image. */
+  /** Id of the background photo (a photo of the collage); `null` = no image. The backend remaps it on duplicate (backend/internal/collage). */
   photoId: number | null;
   overlayColor: string;
   /** Opacity of the overlay colour, 0..100. */
@@ -201,6 +201,19 @@ export interface CollageDetail {
 export interface CreateCollageRequest {
   name: string;
   settings: CollageSettings;
+}
+
+/** Body of `POST /api/collages/{id}/duplicate`. */
+export interface DuplicateCollageRequest {
+  name: string;
+}
+
+/**
+ * Response of `POST /api/collages/{id}/duplicate`: the new collage plus the number of photos that
+ * were not copied because their file is missing on the server.
+ */
+export interface DuplicateCollageResponse extends CollageSummary {
+  skippedPhotos: number;
 }
 
 /** Maximum length of a collage name (same limit as in the backend). */

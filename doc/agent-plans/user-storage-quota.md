@@ -53,7 +53,9 @@ Not decided yet (planning phase). Expected:
   limit and report the rest as not imported?
 - HTTP status and error code for "limit reached"; message text in the frontend.
 - Show the used storage to the user (where, how)?
-- Does a duplicated collage (if ever implemented) count again? (Files are per collage today.)
+- Duplicate collage (`POST /api/collages/{id}/duplicate`, `collage.Service.Duplicate`,
+  `photo.CollagePhotos.CopyAllForCollage`) copies all photo files of a collage. The duplicate must check
+  the quota and count the copied bytes (see `doc/agent-plans/duplicate-collage.md`).
 
 ## Context for a new agent
 

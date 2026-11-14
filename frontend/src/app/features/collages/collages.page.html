@@ -70,6 +70,18 @@
         <button
           matIconButton
           type="button"
+          [disabled]="duplicatingIds().has(row.id)"
+          (click)="$event.stopPropagation(); duplicate(row)"
+          i18n-aria-label="@@collages.action.duplicate"
+          aria-label="Duplicate"
+          i18n-matTooltip="@@collages.action.duplicate"
+          matTooltip="Duplicate"
+        >
+          <mat-icon>content_copy</mat-icon>
+        </button>
+        <button
+          matIconButton
+          type="button"
           (click)="$event.stopPropagation(); delete(row)"
           i18n-aria-label="@@collages.action.delete"
           aria-label="Delete"

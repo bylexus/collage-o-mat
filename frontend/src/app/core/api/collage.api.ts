@@ -1,7 +1,13 @@
 import { HttpClient } from '@angular/common/http';
 import { inject, Injectable } from '@angular/core';
 import { Observable } from 'rxjs';
-import { CollageDetail, CollageSummary, CreateCollageRequest } from '../models/collage';
+import {
+  CollageDetail,
+  CollageSummary,
+  CreateCollageRequest,
+  DuplicateCollageRequest,
+  DuplicateCollageResponse,
+} from '../models/collage';
 import { SaveLayoutRequest } from '../models/layout';
 
 /** HTTP calls of `/api/collages`. Holds no state. */
@@ -25,6 +31,15 @@ export class CollageApi {
 
   rename(id: number, name: string): Observable<CollageSummary> {
     return this.http.patch<CollageSummary>(`/api/collages/${id}`, { name });
+  }
+
+  /**
+   * Copies the collage with all its photos (files too), photo props and texts under a new name.
+   * Photos with a missing file are skipped and counted in `skippedPhotos`.
+   */
+  duplicate(id: number, name: string): Observable<DuplicateCollageResponse> {
+    const request: DuplicateCollageRequest = { name };
+    return this.http.post<DuplicateCollageResponse>(`/api/collages/${id}/duplicate`, request);
   }
 
   /**

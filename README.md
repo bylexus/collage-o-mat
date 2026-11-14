@@ -19,6 +19,7 @@ A Photo collage web app inspired by CollageIt! Pro, in Go / Angular.
 * Snap grid to align photos and texts
 * Text elements with 16 bundled fonts
 * Undo/redo and auto-save
+* Duplicate a collage (full, independent copy with all photos and texts)
 * Export final image to png, jpg
 
 ## Development

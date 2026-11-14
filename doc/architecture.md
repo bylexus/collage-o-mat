@@ -134,6 +134,7 @@ Re-arrange sets new frames but keeps each photo's own border and shadow.
 | GET | `/api/auth/me` | Session user |
 | GET, POST | `/api/collages` | List, create |
 | GET, PATCH, DELETE | `/api/collages/{id}` | Load full collage, rename, delete (rows + photo dir) |
+| POST | `/api/collages/{id}/duplicate` | Copy the collage (settings with remapped photo ids, photo rows + files, texts with new ids) in one transaction; skips photos with a missing file (`skippedPhotos`) |
 | PUT | `/api/collages/{id}/layout` | Save settings + photo props + texts in one transaction |
 | POST | `/api/collages/{id}/import` | Import Immich assets |
 | POST | `/api/collages/{id}/uploads` | Upload one local image (raw body) |

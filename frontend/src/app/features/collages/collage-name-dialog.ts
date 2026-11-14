@@ -7,14 +7,22 @@ import { MatInputModule } from '@angular/material/input';
 import { COLLAGE_NAME_MAX_LENGTH } from '../../core/models/collage';
 import { collageNameValidators } from './collage-name';
 
-/** Input of the rename dialog. */
-export interface CollageRenameDialogData {
+/** Input of the name dialog. */
+export interface CollageNameDialogData {
+  /** Initial value of the name field. */
   name: string;
+  /** Dialog title (localized by the caller). */
+  title: string;
+  /** Text of the submit button (localized by the caller). */
+  submitLabel: string;
 }
 
-/** Asks for a new collage name. Closes with the trimmed name, or `undefined` on cancel. */
+/**
+ * Asks for a collage name (rename, duplicate). Closes with the trimmed name, or `undefined` on
+ * cancel.
+ */
 @Component({
-  selector: 'app-collage-rename-dialog',
+  selector: 'app-collage-name-dialog',
   imports: [
     ReactiveFormsModule,
     MatDialogModule,
@@ -23,7 +31,7 @@ export interface CollageRenameDialogData {
     MatInputModule,
   ],
   template: `
-    <h2 mat-dialog-title i18n="@@collages.rename.title">Rename collage</h2>
+    <h2 mat-dialog-title>{{ data.title }}</h2>
     <form [formGroup]="form" (ngSubmit)="submit()">
       <mat-dialog-content>
         <mat-form-field class="name-field">
@@ -44,7 +52,7 @@ export interface CollageRenameDialogData {
         <button matButton type="button" mat-dialog-close>
           <span i18n="@@collages.dialog.cancel">Cancel</span>
         </button>
-        <button matButton="filled" type="submit" i18n="@@collages.rename.submit">Rename</button>
+        <button matButton="filled" type="submit">{{ data.submitLabel }}</button>
       </mat-dialog-actions>
     </form>
   `,
@@ -54,9 +62,9 @@ export interface CollageRenameDialogData {
     }
   `,
 })
-export class CollageRenameDialog {
-  private readonly dialogRef = inject<MatDialogRef<CollageRenameDialog, string>>(MatDialogRef);
-  private readonly data = inject<CollageRenameDialogData>(MAT_DIALOG_DATA);
+export class CollageNameDialog {
+  private readonly dialogRef = inject<MatDialogRef<CollageNameDialog, string>>(MatDialogRef);
+  protected readonly data = inject<CollageNameDialogData>(MAT_DIALOG_DATA);
 
   protected readonly maxLength = COLLAGE_NAME_MAX_LENGTH;
   protected readonly form = inject(NonNullableFormBuilder).group({

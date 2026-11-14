@@ -27,6 +27,7 @@ func (h *Handler) RegisterRoutes(mux *http.ServeMux, requireAuth httpapi.Middlew
 	mux.Handle("GET /api/collages/{id}", requireAuth(http.HandlerFunc(h.get)))
 	mux.Handle("PATCH /api/collages/{id}", requireAuth(http.HandlerFunc(h.rename)))
 	mux.Handle("DELETE /api/collages/{id}", requireAuth(http.HandlerFunc(h.delete)))
+	mux.Handle("POST /api/collages/{id}/duplicate", requireAuth(http.HandlerFunc(h.duplicate)))
 	mux.Handle("PUT /api/collages/{id}/layout", requireAuth(http.HandlerFunc(h.saveLayout)))
 }
 
@@ -47,6 +48,11 @@ type renameRequest struct {
 	Name string `json:"name"`
 }
 
+// duplicateRequest is the name of the new collage.
+type duplicateRequest struct {
+	Name string `json:"name"`
+}
+
 // summaryResponse is a list entry; POST and PATCH return it too.
 type summaryResponse struct {
 	ID         uint         `json:"id"`
@@ -54,6 +60,13 @@ type summaryResponse struct {
 	Settings   jsoncol.JSON `json:"settings"`
 	PhotoCount int          `json:"photoCount"`
 	UpdatedAt  time.Time    `json:"updatedAt"`
+}
+
+// duplicateResponse is the new collage of a duplicate plus the number of
+// photos that were not copied (file missing).
+type duplicateResponse struct {
+	summaryResponse
+	SkippedPhotos int `json:"skippedPhotos"`
 }
 
 // detailResponse is the full collage for the editor.
@@ -154,6 +167,27 @@ func (h *Handler) delete(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
+}
+
+func (h *Handler) duplicate(w http.ResponseWriter, r *http.Request) {
+	id, err := httpapi.PathID(r, "id")
+	if err != nil {
+		httpapi.WriteServiceError(w, err)
+		return
+	}
+	var req duplicateRequest
+	if !httpapi.DecodeJSON(w, r, &req) {
+		return
+	}
+	res, err := h.service.Duplicate(r.Context(), auth.UserID(r), id, req.Name)
+	if err != nil {
+		httpapi.WriteServiceError(w, err)
+		return
+	}
+	httpapi.WriteJSON(w, http.StatusCreated, duplicateResponse{
+		summaryResponse: toSummaryResponse(res.Summary),
+		SkippedPhotos:   res.SkippedPhotos,
+	})
 }
 
 func (h *Handler) saveLayout(w http.ResponseWriter, r *http.Request) {
