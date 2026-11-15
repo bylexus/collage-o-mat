@@ -94,6 +94,9 @@ library. UI language English, all texts marked for i18n (build-time Angular i18n
 | `src/app/features/editor/` | Editor page and store (`editor.store.ts`), undo history, auto save |
 | `features/editor/canvas/` | Konva rendering, transformers, crop mode, viewport, export renderer, adjusted/blurred image copies |
 | `features/editor/arrange/` | Pure arrangement functions (grid, center, random heap, masonry, lanes, justified lines) |
+| `features/editor/toolbar/` | `SelectionToolbar`: floating toolbar below the selected photo or text (anchor from `CollageRenderer`, hidden during gestures and crop mode, only the Swap button in swap mode); actions and movable CDK overlay popovers |
+| `features/editor/photo-panel/`, `text-panel/` | Popover sections of the selection toolbar (photo: border, shadow, adjustments; text: edit, outline, shadow) |
+| `features/editor/settings-panel/` | Collage settings in the right panel (the only content of the right panel) |
 | `features/editor/fields/` | Shared form fields (colour, number, `BorderFields`, `ShadowFields` + `SHADOW_LIMITS`) |
 | `features/editor/geometry/` | Pure math: crop, units (mm/pt/px), gradients, snap grid |
 | `features/editor/import/`, `upload/` | Immich import dialog, local file upload |

@@ -1,0 +1,21 @@
+<h3 class="panel-heading" i18n="@@editor.toolbar.shadow">Shadow</h3>
+
+<mat-checkbox
+  [formControl]="form.controls.useDefault"
+  (change)="commitUseDefault()"
+  i18n="@@editor.photo.useDefaultShadow"
+>
+  Use collage default shadow
+</mat-checkbox>
+@if (useDefault()) {
+  <p class="settings-note" i18n="@@editor.photo.useDefaultShadowHint">
+    The photo has the default shadow of the collage (see Appearance).
+  </p>
+} @else {
+  <app-shadow-fields
+    [group]="form.controls.shadow"
+    [lengthUnit]="lengthUnit()"
+    (colorPreview)="previewColor($event)"
+    (committed)="commitShadow()"
+  />
+}

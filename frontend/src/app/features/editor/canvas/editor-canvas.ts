@@ -23,6 +23,7 @@ import { CollageRenderer, CropModeState, Scene } from './collage-renderer';
 import { sceneBackground, scenePhotos } from './scene';
 import { snapGridOf } from '../geometry/snap-grid';
 import { CropModeControls } from './crop-mode-controls';
+import type { Point } from './viewport';
 
 /** A committed change of one photo made on the canvas. */
 export interface PhotoChange {
@@ -42,8 +43,9 @@ export interface TextChange {
  * Konva canvas of the editor (presentational): draws the page, the placed photos and the overlay
  * texts, reports the selection, committed photo edits (move, rotate, resize, crop), committed text
  * edits (move, rotate, box width), text edit requests (double-click) and the target photo of the
- * swap mode, and shows the zoom controls and the crop mode controls. Fills its container. The view is zoomed to fit on the first render and
- * when the page size or orientation changes. All canvas input is handled by the renderer (see
+ * swap mode, reports the anchor of the selection toolbar, and shows the zoom controls and the crop
+ * mode controls. Fills its container. The view is zoomed to fit on the first render and when the
+ * page size or orientation changes. All canvas input is handled by the renderer (see
  * `CollageRenderer`).
  */
 @Component({
@@ -176,6 +178,12 @@ export class EditorCanvas {
   readonly swapMode = input(false);
   /** Swap mode: click on a photo other than the selected one (its id). */
   readonly swapTarget = output<number>();
+  /**
+   * Position of the selection toolbar in px of this component (bottom centre of the selected
+   * element), or `null` when it must be hidden (no selection, gesture, crop mode). In swap mode
+   * it is the anchor of the source photo.
+   */
+  readonly toolbarAnchorChange = output<Point | null>();
 
   private readonly destroyRef = inject(DestroyRef);
   private readonly host = viewChild.required<ElementRef<HTMLDivElement>>('host');
@@ -211,6 +219,11 @@ export class EditorCanvas {
   /** Shows the page and all elements as large as possible. */
   zoomToFit(): void {
     this.renderer()?.zoomToFit();
+  }
+
+  /** Starts crop mode for a placed photo and selects it (same as a double-click on it). */
+  startCropMode(photoId: number): void {
+    this.renderer()?.startCropMode(photoId);
   }
 
   protected zoomIn(): void {
@@ -262,6 +275,7 @@ export class EditorCanvas {
       onTextEditRequest: (id) => this.textEditRequest.emit(id),
       onCropModeChange: (state) => this.cropMode.set(state),
       onSwapTarget: (id) => this.swapTarget.emit(id),
+      onToolbarAnchorChange: (anchor) => this.toolbarAnchorChange.emit(anchor),
     });
     const resizeObserver = new ResizeObserver(() =>
       renderer.setSize(container.clientWidth, container.clientHeight),

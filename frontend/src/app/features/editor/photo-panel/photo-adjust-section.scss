@@ -1,0 +1,39 @@
+@use '../fields/panel-section';
+@use '../fields/panel-heading';
+
+/* Label column as wide as the longest label (the sliders align); value column fixed. */
+.slider-grid {
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr) 5ch;
+  align-items: center;
+  column-gap: 4px;
+}
+
+.slider-label {
+  font: var(--mat-sys-body-medium);
+}
+
+mat-slider {
+  min-width: 0;
+}
+
+.slider-value {
+  font: var(--mat-sys-body-medium);
+  font-variant-numeric: tabular-nums;
+  text-align: end;
+  white-space: nowrap;
+}
+
+/* Tint colour and presets in one row; narrower buttons, so that the row fits the popover. */
+.tint-row {
+  --mat-button-outlined-horizontal-padding: 12px;
+
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.reset-adjust-button {
+  align-self: flex-start;
+}

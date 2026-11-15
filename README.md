@@ -16,6 +16,9 @@ A Photo collage web app inspired by CollageIt! Pro, in Go / Angular.
 * Individual photo border, border margins, paddings
 * Free placement and rotation
 * Crop photos inside their frame (pan, zoom)
+* Photo adjustments (non-destructive): brightness, contrast, colour tint (e.g. sepia, greyscale)
+* Floating toolbar below the selected photo or text, with movable popovers for its settings
+* Display lengths in mm or px
 * Snap grid to align photos and texts
 * Text elements with 16 bundled fonts
 * Undo/redo and auto-save

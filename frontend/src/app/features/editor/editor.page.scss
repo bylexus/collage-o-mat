@@ -88,11 +88,21 @@
   position: relative;
   flex: 1;
   min-width: 0;
+  /* Clips the selection toolbar at the canvas edges like the canvas itself. */
+  overflow: hidden;
 }
 
 .editor-canvas {
   position: absolute;
   inset: 0;
+}
+
+/* Below the selected element, centred on it; not clamped (the user pans to see it). */
+.selection-toolbar {
+  position: absolute;
+  top: calc(var(--anchor-y) + 8px);
+  left: var(--anchor-x);
+  transform: translateX(-50%);
 }
 
 .editor-hint {
@@ -118,12 +128,6 @@
   overflow-y: auto;
   border-left: 1px solid var(--mat-sys-outline-variant);
   background-color: var(--mat-sys-surface);
-}
-
-.photo-panel,
-.text-panel {
-  padding-bottom: 24px;
-  border-bottom: 1px solid var(--mat-sys-outline-variant);
 }
 
 .editor-message {

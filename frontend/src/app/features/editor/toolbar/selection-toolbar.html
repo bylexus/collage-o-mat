@@ -1,0 +1,288 @@
+<!-- Swap mode: only the active Swap button; a click ends the mode. -->
+@if (kind() === 'photo' && swapping()) {
+  <button
+    matIconButton
+    type="button"
+    class="toolbar-active"
+    [attr.aria-pressed]="true"
+    (click)="swap.emit()"
+    [attr.aria-label]="swapLabel"
+    [matTooltip]="swapHint()"
+  >
+    <mat-icon>swap_horiz</mat-icon>
+  </button>
+} @else {
+  @if (kind() === 'photo') {
+    <button
+      matIconButton
+      type="button"
+      (click)="crop.emit()"
+      [attr.aria-label]="cropLabel"
+      [matTooltip]="cropLabel"
+    >
+      <mat-icon>crop</mat-icon>
+    </button>
+    <button
+      matIconButton
+      type="button"
+      cdkOverlayOrigin
+      #borderOrigin="cdkOverlayOrigin"
+      [class.toolbar-active]="isOpen('photoBorder')"
+      aria-haspopup="dialog"
+      [attr.aria-expanded]="isOpen('photoBorder')"
+      (click)="togglePopover('photoBorder', borderOrigin)"
+      [attr.aria-label]="borderLabel"
+      [matTooltip]="borderLabel"
+    >
+      <mat-icon>border_style</mat-icon>
+    </button>
+    <button
+      matIconButton
+      type="button"
+      cdkOverlayOrigin
+      #shadowOrigin="cdkOverlayOrigin"
+      [class.toolbar-active]="isOpen('photoShadow')"
+      aria-haspopup="dialog"
+      [attr.aria-expanded]="isOpen('photoShadow')"
+      (click)="togglePopover('photoShadow', shadowOrigin)"
+      [attr.aria-label]="shadowLabel"
+      [matTooltip]="shadowLabel"
+    >
+      <mat-icon>shadow</mat-icon>
+    </button>
+    <button
+      matIconButton
+      type="button"
+      cdkOverlayOrigin
+      #adjustOrigin="cdkOverlayOrigin"
+      [class.toolbar-active]="isOpen('photoAdjust')"
+      aria-haspopup="dialog"
+      [attr.aria-expanded]="isOpen('photoAdjust')"
+      (click)="togglePopover('photoAdjust', adjustOrigin)"
+      [attr.aria-label]="adjustLabel"
+      [matTooltip]="adjustLabel"
+    >
+      <mat-icon>tune</mat-icon>
+    </button>
+  } @else {
+    <button
+      matIconButton
+      type="button"
+      cdkOverlayOrigin
+      #editTextOrigin="cdkOverlayOrigin"
+      [class.toolbar-active]="isOpen('textEdit')"
+      aria-haspopup="dialog"
+      [attr.aria-expanded]="isOpen('textEdit')"
+      (click)="togglePopover('textEdit', editTextOrigin)"
+      [attr.aria-label]="editTextLabel"
+      [matTooltip]="editTextLabel"
+    >
+      <mat-icon>edit</mat-icon>
+    </button>
+    <button
+      matIconButton
+      type="button"
+      cdkOverlayOrigin
+      #outlineOrigin="cdkOverlayOrigin"
+      [class.toolbar-active]="isOpen('textOutline')"
+      aria-haspopup="dialog"
+      [attr.aria-expanded]="isOpen('textOutline')"
+      (click)="togglePopover('textOutline', outlineOrigin)"
+      [attr.aria-label]="outlineLabel"
+      [matTooltip]="outlineLabel"
+    >
+      <mat-icon>format_color_text</mat-icon>
+    </button>
+    <button
+      matIconButton
+      type="button"
+      cdkOverlayOrigin
+      #textShadowOrigin="cdkOverlayOrigin"
+      [class.toolbar-active]="isOpen('textShadow')"
+      aria-haspopup="dialog"
+      [attr.aria-expanded]="isOpen('textShadow')"
+      (click)="togglePopover('textShadow', textShadowOrigin)"
+      [attr.aria-label]="shadowLabel"
+      [matTooltip]="shadowLabel"
+    >
+      <mat-icon>shadow</mat-icon>
+    </button>
+  }
+  <span class="divider" aria-hidden="true"></span>
+  <button
+    matIconButton
+    type="button"
+    (click)="bringToFront.emit()"
+    [attr.aria-label]="bringToFrontLabel"
+    [matTooltip]="bringToFrontLabel"
+  >
+    <mat-icon>flip_to_front</mat-icon>
+  </button>
+  <button
+    matIconButton
+    type="button"
+    (click)="sendToBack.emit()"
+    [attr.aria-label]="sendToBackLabel"
+    [matTooltip]="sendToBackLabel"
+  >
+    <mat-icon>flip_to_back</mat-icon>
+  </button>
+  @if (kind() === 'photo') {
+    <!-- disabledInteractive: the tooltip explains why the button is disabled. -->
+    <button
+      matIconButton
+      type="button"
+      disabledInteractive
+      [disabled]="!canSwap()"
+      [attr.aria-pressed]="false"
+      (click)="swap.emit()"
+      [attr.aria-label]="swapLabel"
+      [matTooltip]="swapHint()"
+    >
+      <mat-icon>swap_horiz</mat-icon>
+    </button>
+    @if (showSetCentre()) {
+      <!-- disabledInteractive: the tooltip explains why the button is disabled. -->
+      <button
+        matIconButton
+        type="button"
+        disabledInteractive
+        [disabled]="isCentrePhoto()"
+        (click)="setCentre.emit()"
+        [attr.aria-label]="setCentreLabel"
+        [matTooltip]="setCentreHint()"
+      >
+        <mat-icon>center_focus_strong</mat-icon>
+      </button>
+    }
+  }
+  <span class="divider" aria-hidden="true"></span>
+  @if (kind() === 'photo') {
+    <!-- disabledInteractive: the tooltip tells that the photo already is the background image. -->
+    <button
+      matIconButton
+      type="button"
+      disabledInteractive
+      [disabled]="isBackground()"
+      (click)="useAsBackground.emit()"
+      [attr.aria-label]="useAsBackgroundLabel"
+      [matTooltip]="isBackground() ? isBackgroundLabel : useAsBackgroundLabel"
+    >
+      <mat-icon>wallpaper</mat-icon>
+    </button>
+  }
+  <button
+    matIconButton
+    type="button"
+    (click)="delete.emit()"
+    [attr.aria-label]="kind() === 'photo' ? deletePhotoLabel : deleteTextLabel"
+    [matTooltip]="kind() === 'photo' ? deletePhotoLabel : deleteTextLabel"
+  >
+    <mat-icon>delete</mat-icon>
+  </button>
+}
+
+<!-- One popover at a time, connected to the button of the open popover. No backdrop: a click
+     outside closes the popover and still works as usual. Esc closes through the directive (detach). -->
+<ng-template
+  cdkConnectedOverlay
+  [cdkConnectedOverlayOrigin]="openPopover()?.origin!"
+  [cdkConnectedOverlayOpen]="openPopover() !== null"
+  [cdkConnectedOverlayPositions]="popoverPositions"
+  [cdkConnectedOverlayViewportMargin]="popoverViewportMargin"
+  (overlayOutsideClick)="closeOnOutsideClick($event)"
+  (detach)="closePopover()"
+>
+  <!-- Movable: cdkDrag moves the surface with a CSS transform (the overlay places the pane), only
+       from the grip bar, inside the window (see `constrainPopoverDrag`; the overlay host is fixed
+       and full-viewport, so a surface below the window bottom gives no page scrollbars). A new open
+       renders a new surface at the default place. -->
+  <div
+    class="toolbar-popover"
+    role="dialog"
+    [attr.aria-label]="popoverLabel()"
+    cdkDrag
+    [cdkDragConstrainPosition]="constrainPopoverDrag"
+  >
+    <div
+      class="popover-handle"
+      cdkDragHandle
+      [attr.aria-label]="movePopoverLabel"
+      [matTooltip]="movePopoverLabel"
+    >
+      <mat-icon aria-hidden="true">drag_indicator</mat-icon>
+    </div>
+    @switch (openPopover()?.id) {
+      @case ('photoBorder') {
+        @if (photo(); as photo) {
+          @if (defaultBorder(); as defaultBorder) {
+            <app-photo-border-section
+              class="popover-body"
+              [photo]="photo"
+              [defaultBorder]="defaultBorder"
+              [lengthUnit]="lengthUnit()"
+              (borderChange)="borderChange.emit($event)"
+              (borderPreview)="borderPreview.emit($event)"
+            />
+          }
+        }
+      }
+      @case ('photoShadow') {
+        @if (photo(); as photo) {
+          @if (defaultShadow(); as defaultShadow) {
+            <app-photo-shadow-section
+              class="popover-body"
+              [photo]="photo"
+              [defaultShadow]="defaultShadow"
+              [lengthUnit]="lengthUnit()"
+              (shadowChange)="shadowChange.emit($event)"
+              (shadowPreview)="shadowPreview.emit($event)"
+            />
+          }
+        }
+      }
+      @case ('photoAdjust') {
+        @if (photo(); as photo) {
+          <app-photo-adjust-section
+            class="popover-body"
+            [photo]="photo"
+            (adjustChange)="adjustChange.emit($event)"
+            (adjustPreview)="adjustPreview.emit($event)"
+          />
+        }
+      }
+      @case ('textEdit') {
+        @if (text(); as text) {
+          <app-text-edit-section
+            class="popover-body"
+            [text]="text"
+            (preview)="textPreview.emit($event)"
+            (propsChange)="textChange.emit($event)"
+          />
+        }
+      }
+      @case ('textOutline') {
+        @if (text(); as text) {
+          <app-text-outline-section
+            class="popover-body"
+            [text]="text"
+            [lengthUnit]="lengthUnit()"
+            (preview)="textPreview.emit($event)"
+            (propsChange)="textChange.emit($event)"
+          />
+        }
+      }
+      @case ('textShadow') {
+        @if (text(); as text) {
+          <app-text-shadow-section
+            class="popover-body"
+            [text]="text"
+            [lengthUnit]="lengthUnit()"
+            (preview)="textPreview.emit($event)"
+            (propsChange)="textChange.emit($event)"
+          />
+        }
+      }
+    }
+  </div>
+</ng-template>

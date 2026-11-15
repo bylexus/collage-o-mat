@@ -1,7 +1,7 @@
 import type { PhotoAdjust } from '../../../core/models/photo';
 import { NumberLimits } from '../../../shared/number-limits';
 
-/** Limits of the adjustment sliders in the photo properties panel. */
+/** Limits of the adjustment sliders in the photo adjustments section. */
 export const ADJUST_LIMITS = {
   brightness: { min: -100, max: 100, step: 1, integer: true },
   contrast: { min: -100, max: 100, step: 1, integer: true },

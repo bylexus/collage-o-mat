@@ -1,13 +1,11 @@
 import { CdkTrapFocus } from '@angular/cdk/a11y';
 import { CdkConnectedOverlay, CdkOverlayOrigin, ConnectedPosition } from '@angular/cdk/overlay';
 import {
-  afterNextRender,
   Component,
   computed,
   DestroyRef,
   effect,
   inject,
-  Injector,
   signal,
   viewChild,
 } from '@angular/core';
@@ -29,6 +27,7 @@ import { ImportResult, isPlaced, photoFileUrl } from '../../core/models/photo';
 import { NotificationService } from '../../shared/notification.service';
 import { resolveCentrePhotoId } from './arrange/arrange';
 import { EditorCanvas } from './canvas/editor-canvas';
+import type { Point } from './canvas/viewport';
 import { renderPageImage } from './canvas/page-image-renderer';
 import { EditorStore } from './editor.store';
 import { LengthUnit } from './geometry/length-unit';
@@ -36,19 +35,19 @@ import { downloadBlob, exportFileName } from './export/download';
 import { ExportDialog, ExportDialogData } from './export/export-dialog';
 import { ImportDialog, ImportDialogData } from './import/import-dialog';
 import { importResultMessage } from './import/import-result-message';
-import { PhotoPropertiesPanel } from './photo-panel/photo-properties-panel';
 import { SaveStatusIndicator } from './save-status-indicator';
 import { ArrangementSettingsDialogService } from './settings-panel/arrangement-settings-dialog.service';
 import { CollageSettingsPanel } from './settings-panel/collage-settings-panel';
 import { SnapGridPopover } from './snap-grid/snap-grid-popover';
-import { TextPropertiesPanel } from './text-panel/text-properties-panel';
+import { SelectionToolbar } from './toolbar/selection-toolbar';
 import { undoRedoCommand, undoRedoShortcutLabels } from './undo-shortcut';
 import { UPLOAD_MIME_TYPES, uploadBatch, UploadBatchState } from './upload/upload-batch';
 import { uploadFailureMessage } from './upload/upload-failure-message';
 
 /**
- * Editor of one collage (container): toolbar, Konva canvas and side panel (selected photo or
- * text, collage settings). The state lives in the page-scoped `EditorStore`.
+ * Editor of one collage (container): toolbar, Konva canvas with the selection toolbar below the
+ * selected element (photo and text properties in its popovers), and side panel (collage
+ * settings). The state lives in the page-scoped `EditorStore`.
  */
 @Component({
   selector: 'app-editor-page',
@@ -63,10 +62,9 @@ import { uploadFailureMessage } from './upload/upload-failure-message';
     CdkTrapFocus,
     EditorCanvas,
     CollageSettingsPanel,
-    PhotoPropertiesPanel,
-    TextPropertiesPanel,
     SaveStatusIndicator,
     SnapGridPopover,
+    SelectionToolbar,
   ],
   providers: [EditorStore],
   templateUrl: './editor.page.html',
@@ -85,10 +83,19 @@ export class EditorPage {
   private readonly dialog = inject(MatDialog);
   private readonly arrangementDialog = inject(ArrangementSettingsDialogService);
   private readonly notification = inject(NotificationService);
-  private readonly injector = inject(Injector);
   private readonly destroyRef = inject(DestroyRef);
 
-  private readonly textPanel = viewChild(TextPropertiesPanel);
+  private readonly canvas = viewChild(EditorCanvas);
+
+  /** Position of the selection toolbar in canvas area px; `null`: hidden (see `EditorCanvas`). */
+  protected readonly toolbarAnchor = signal<Point | null>(null);
+
+  /**
+   * Id of the text whose "Edit text" popover the selection toolbar opens as soon as it shows the
+   * text ("Add text", double-click); `null` if none. Cleared when the popover is open or another
+   * element is selected.
+   */
+  protected readonly pendingTextEdit = signal<string | null>(null);
 
   protected readonly pageLabel = computed(() => {
     const settings = this.store.settings();
@@ -118,8 +125,6 @@ export class EditorPage {
   private readonly shortcuts = undoRedoShortcutLabels();
   protected readonly undoLabel = $localize`:@@editor.undo:Undo (${this.shortcuts.undo}:shortcut:)`;
   protected readonly redoLabel = $localize`:@@editor.redo:Redo (${this.shortcuts.redo}:shortcut:)`;
-  protected readonly setCentreLabel = $localize`:@@editor.setCentre:Set as centre`;
-  protected readonly swapLabel = $localize`:@@editor.swap:Swap photos`;
   protected readonly exportLabel = $localize`:@@editor.export.button:Export`;
   protected readonly addTextLabel = $localize`:@@editor.text.addButton:Add text`;
   protected readonly importLabel = $localize`:@@editor.importButton:Import from Immich`;
@@ -151,13 +156,6 @@ export class EditorPage {
     { originX: 'start', originY: 'bottom', overlayX: 'start', overlayY: 'top' },
     { originX: 'end', originY: 'top', overlayX: 'end', overlayY: 'bottom' },
   ];
-
-  /** Label of the toolbar Delete button for the selected element. */
-  protected readonly deleteLabel = computed(() =>
-    this.store.selection()?.kind === 'text'
-      ? $localize`:@@editor.text.delete:Delete text`
-      : $localize`:@@editor.photo.delete:Delete photo`,
-  );
 
   protected readonly isCenterMode = computed(() => this.store.settings()?.mode === 'center');
 
@@ -227,6 +225,13 @@ export class EditorPage {
   });
 
   constructor() {
+    // A pending "Edit text" request ends when its text is no longer selected.
+    effect(() => {
+      const pending = this.pendingTextEdit();
+      if (pending !== null && this.store.selectedText()?.id !== pending) {
+        this.pendingTextEdit.set(null);
+      }
+    });
     // Auto-end of the swap mode: the selection is no longer the placed source photo (e.g. "Add
     // text", delete, undo/redo).
     effect(() => {
@@ -413,31 +418,20 @@ export class EditorPage {
     this.swapSourceId.set(null);
   }
 
-  /** Deletes the selected photo (after a confirm) or the selected text (no confirm). */
-  protected deleteSelection(): void {
-    const selection = this.store.selection();
-    if (selection?.kind === 'photo') {
-      void this.store.deletePhoto(selection.id);
-    } else if (selection?.kind === 'text') {
-      this.store.deleteText(selection.id);
-    }
+  /** Crop button of the selection toolbar: same as a double-click on the photo. */
+  protected startCropMode(photoId: number): void {
+    this.canvas()?.startCropMode(photoId);
   }
 
-  /** Adds a text and focuses its text in the panel. */
+  /** Adds a text and opens its "Edit text" popover with the focus in the text area. */
   protected addText(): void {
-    this.store.addText();
-    this.focusTextPanel();
+    this.pendingTextEdit.set(this.store.addText());
   }
 
-  /** Double-click on a text: selects it and focuses its text in the panel. */
+  /** Double-click on a text: selects it and opens its "Edit text" popover (focus in the text). */
   protected editText(id: string): void {
     this.store.select({ kind: 'text', id });
-    this.focusTextPanel();
-  }
-
-  /** Focuses the text area of the text panel once it shows the selected text. */
-  private focusTextPanel(): void {
-    afterNextRender(() => this.textPanel()?.focusText(), { injector: this.injector });
+    this.pendingTextEdit.set(id);
   }
 
   /** Undo/redo shortcuts; not while a dialog is open or a form field has the focus. */

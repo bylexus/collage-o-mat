@@ -84,44 +84,6 @@
         />
       }
     </ng-template>
-    <!-- disabledInteractive: the tooltip explains why the button is disabled. -->
-    <button
-      matIconButton
-      type="button"
-      disabledInteractive
-      [disabled]="!canSwap() && !swapping()"
-      [class.toolbar-active]="swapping()"
-      [attr.aria-pressed]="swapping()"
-      (click)="toggleSwap()"
-      [attr.aria-label]="swapLabel"
-      [matTooltip]="swapHint()"
-    >
-      <mat-icon>swap_horiz</mat-icon>
-    </button>
-    @if (isCenterMode()) {
-      <!-- disabledInteractive: the tooltip explains why the button is disabled. -->
-      <button
-        matIconButton
-        type="button"
-        disabledInteractive
-        [disabled]="store.selectedPhotoId() === null || selectedIsCentrePhoto()"
-        (click)="setSelectedAsCentre()"
-        [attr.aria-label]="setCentreLabel"
-        [matTooltip]="setCentreHint()"
-      >
-        <mat-icon>center_focus_strong</mat-icon>
-      </button>
-    }
-    <button
-      matIconButton
-      type="button"
-      [disabled]="store.selection() === null"
-      (click)="deleteSelection()"
-      [attr.aria-label]="deleteLabel()"
-      [matTooltip]="deleteLabel()"
-    >
-      <mat-icon>delete</mat-icon>
-    </button>
     <button
       matIconButton
       type="button"
@@ -193,7 +155,60 @@
           (textEditRequest)="editText($event)"
           [swapMode]="swapping()"
           (swapTarget)="swapWith($event)"
+          (toolbarAnchorChange)="toolbarAnchor.set($event)"
         />
+        @if (toolbarAnchor(); as anchor) {
+          @if (store.selectedPhoto(); as photo) {
+            <app-selection-toolbar
+              class="selection-toolbar"
+              kind="photo"
+              [style.--anchor-x.px]="anchor.x"
+              [style.--anchor-y.px]="anchor.y"
+              [photo]="photo"
+              [defaultBorder]="settings.defaultBorder"
+              [defaultShadow]="settings.defaultShadow"
+              [lengthUnit]="lengthUnit()"
+              [isBackground]="
+                settings.background.type === 'image' && settings.background.image.photoId === photo.id
+              "
+              (crop)="startCropMode(photo.id)"
+              (bringToFront)="store.bringToFront(photo.id)"
+              (sendToBack)="store.sendToBack(photo.id)"
+              [swapping]="swapping()"
+              [canSwap]="canSwap()"
+              [swapHint]="swapHint()"
+              [showSetCentre]="isCenterMode()"
+              [isCentrePhoto]="selectedIsCentrePhoto()"
+              [setCentreHint]="setCentreHint()"
+              (useAsBackground)="store.useAsBackground(photo.id)"
+              (swap)="toggleSwap()"
+              (setCentre)="setSelectedAsCentre()"
+              (delete)="store.deletePhoto(photo.id)"
+              (borderChange)="store.setPhotoBorder(photo.id, $event)"
+              (borderPreview)="store.previewPhotoBorder(photo.id, $event)"
+              (shadowChange)="store.setPhotoShadow(photo.id, $event)"
+              (shadowPreview)="store.previewPhotoShadow(photo.id, $event)"
+              (adjustChange)="store.setPhotoAdjust(photo.id, $event)"
+              (adjustPreview)="store.previewPhotoAdjust(photo.id, $event)"
+            />
+          } @else if (store.selectedText(); as text) {
+            <app-selection-toolbar
+              class="selection-toolbar"
+              kind="text"
+              [style.--anchor-x.px]="anchor.x"
+              [style.--anchor-y.px]="anchor.y"
+              [text]="text"
+              [openTextEditFor]="pendingTextEdit()"
+              [lengthUnit]="lengthUnit()"
+              (textEditOpened)="pendingTextEdit.set(null)"
+              (textPreview)="store.previewText(text.id, $event)"
+              (textChange)="store.updateTextProps(text.id, $event)"
+              (bringToFront)="store.bringTextToFront(text.id)"
+              (sendToBack)="store.sendTextToBack(text.id)"
+              (delete)="store.deleteText(text.id)"
+            />
+          }
+        }
         @if (store.photos().length === 0) {
           <p class="editor-hint" i18n="@@editor.noPhotos">
             This collage has no photos yet. Import photos from Immich.
@@ -201,39 +216,6 @@
         }
       </div>
       <aside class="editor-panel">
-        @if (store.selectedPhoto(); as photo) {
-          <app-photo-properties-panel
-            class="photo-panel"
-            [photo]="photo"
-            [defaultBorder]="settings.defaultBorder"
-            [defaultShadow]="settings.defaultShadow"
-            [lengthUnit]="lengthUnit()"
-            [isBackground]="
-              settings.background.type === 'image' && settings.background.image.photoId === photo.id
-            "
-            (borderChange)="store.setPhotoBorder(photo.id, $event)"
-            (borderPreview)="store.previewPhotoBorder(photo.id, $event)"
-            (shadowChange)="store.setPhotoShadow(photo.id, $event)"
-            (shadowPreview)="store.previewPhotoShadow(photo.id, $event)"
-            (adjustChange)="store.setPhotoAdjust(photo.id, $event)"
-            (adjustPreview)="store.previewPhotoAdjust(photo.id, $event)"
-            (bringToFront)="store.bringToFront(photo.id)"
-            (sendToBack)="store.sendToBack(photo.id)"
-            (useAsBackground)="store.useAsBackground(photo.id)"
-            (delete)="store.deletePhoto(photo.id)"
-          />
-        } @else if (store.selectedText(); as text) {
-          <app-text-properties-panel
-            class="text-panel"
-            [text]="text"
-            [lengthUnit]="lengthUnit()"
-            (preview)="store.previewText(text.id, $event)"
-            (propsChange)="store.updateTextProps(text.id, $event)"
-            (bringToFront)="store.bringTextToFront(text.id)"
-            (sendToBack)="store.sendTextToBack(text.id)"
-            (delete)="store.deleteText(text.id)"
-          />
-        }
         <app-collage-settings-panel
           [settings]="settings"
           [lengthUnit]="lengthUnit()"

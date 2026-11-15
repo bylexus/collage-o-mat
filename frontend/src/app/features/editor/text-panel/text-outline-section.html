@@ -1,0 +1,23 @@
+@let outline = form.controls;
+<mat-checkbox [formControl]="outline.enabled" (change)="commit()" i18n="@@editor.text.outline">
+  Outline
+</mat-checkbox>
+@if (outlineEnabled()) {
+  <div class="field-row">
+    <app-length-field
+      [control]="outline.widthMm"
+      [limits]="limits.outlineWidthMm"
+      [lengthUnit]="lengthUnit()"
+      i18n-label="@@editor.text.outlineWidth"
+      label="Width"
+      (committed)="commit()"
+    />
+    <app-color-field
+      class="color-cell"
+      [control]="outline.color"
+      i18n-label="@@editor.text.outlineColor"
+      label="Colour"
+      (committed)="commit()"
+    />
+  </div>
+}

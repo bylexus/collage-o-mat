@@ -12,9 +12,7 @@ import {
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { TextFieldModule } from '@angular/cdk/text-field';
 import { NonNullableFormBuilder, ReactiveFormsModule } from '@angular/forms';
-import { MatButtonModule } from '@angular/material/button';
 import { MatButtonToggleModule } from '@angular/material/button-toggle';
-import { MatCheckboxModule } from '@angular/material/checkbox';
 import { MatFormFieldModule } from '@angular/material/form-field';
 import { MatIconModule } from '@angular/material/icon';
 import { MatInputModule } from '@angular/material/input';
@@ -28,79 +26,64 @@ import {
 } from '../../../core/models/text';
 import { limitValidators } from '../../../shared/number-limits';
 import { ColorField } from '../fields/color-field';
-import { LengthField } from '../fields/length-field';
 import { NumberField } from '../fields/number-field';
-import {
-  shadowFormGroup,
-  ShadowFields,
-  ShadowFormValue,
-  shadowFromFormValue,
-  toShadowFormValue,
-} from '../fields/shadow-fields';
 import { syncFromInput } from '../fields/sync-from-input';
-import { LengthUnit } from '../geometry/length-unit';
 import { TEXT_LIMITS } from './text-limits';
 
 /** Font styles of the bold/italic toggle group. */
 type FontStyle = 'bold' | 'italic';
 
-/** Values of the text form: all text props except the box geometry and `z`. */
-interface TextFormValue {
+/** Values of the edit form: text, font, size, colour, style and alignment. */
+interface TextEditFormValue {
   text: string;
   fontFamily: TextFontFamily;
   fontSizePt: number;
   color: string;
   styles: FontStyle[];
   align: TextAlign;
-  shadow: ShadowFormValue;
-  outline: { enabled: boolean; color: string; widthMm: number };
 }
 
 /** Form values shown for one text. */
 interface ShownText {
   id: string;
-  value: TextFormValue;
+  value: TextEditFormValue;
 }
 
 /**
- * Properties of the selected text (presentational): text, font, size, colour, bold/italic,
- * alignment, shadow, outline, z-order and delete. Every edit emits `preview` with the full new
- * props (only if all values are valid); a committed edit (field loses focus, picker closes,
- * checkbox/select/toggle changes) emits `propsChange`. The form is reset from the input only
- * when another text is shown or its committed values change, so its own previews do not reset
- * the typing.
+ * Text, font, size, colour, bold/italic and alignment of the selected text (presentational).
+ * Every edit emits `preview` with the full new props (only if all values are valid); a committed
+ * edit (field loses focus, picker closes, select/toggle changes, Escape) emits `propsChange`. The
+ * props are built from the committed `text` input, so the other text sections keep their values.
+ * The form is reset from the input only when another text is shown or its shown values change,
+ * so its own previews do not reset the typing.
  */
 @Component({
-  selector: 'app-text-properties-panel',
+  selector: 'app-text-edit-section',
   imports: [
     ReactiveFormsModule,
     TextFieldModule,
-    MatButtonModule,
     MatButtonToggleModule,
-    MatCheckboxModule,
     MatFormFieldModule,
     MatIconModule,
     MatInputModule,
     MatSelectModule,
     ColorField,
-    LengthField,
     NumberField,
-    ShadowFields,
   ],
-  templateUrl: './text-properties-panel.html',
-  styleUrl: './text-properties-panel.scss',
+  templateUrl: './text-edit-section.html',
+  styleUrl: './text-section.scss',
+  host: {
+    // Escape closes the popover and removes the field before it can emit `change`: commit first.
+    '(keydown.escape)': 'commit()',
+  },
 })
-export class TextPropertiesPanel {
+export class TextEditSection {
+  /** The selected text with its committed props. */
   readonly text = input.required<CollageText>();
-  /** Display unit of the lengths (outline width, shadow) with the collage DPI. */
-  readonly lengthUnit = input.required<LengthUnit>();
 
   /** Props while the text is edited (not committed). */
   readonly preview = output<TextProps>();
   readonly propsChange = output<TextProps>();
-  readonly bringToFront = output<void>();
-  readonly sendToBack = output<void>();
-  readonly delete = output<void>();
 
   protected readonly limits = TEXT_LIMITS;
   protected readonly fontFamilies = TEXT_FONT_FAMILIES;
@@ -115,24 +98,10 @@ export class TextPropertiesPanel {
     color: [''],
     styles: this.fb.control<FontStyle[]>([]),
     align: this.fb.control<TextAlign>('center'),
-    shadow: shadowFormGroup(this.fb, {
-      enabled: false,
-      color: '',
-      blurMm: 0,
-      offsetXMm: 0,
-      offsetYMm: 0,
-      opacity: 0,
-    }),
-    outline: this.fb.group({
-      enabled: [false],
-      color: [''],
-      widthMm: [0, limitValidators(TEXT_LIMITS.outlineWidthMm)],
-    }),
   });
 
   /** Current form values as a signal (also after a reset from the input). */
-  private readonly formValue = signal<TextFormValue>(this.form.getRawValue());
-  protected readonly outlineEnabled = computed(() => this.formValue().outline.enabled);
+  private readonly formValue = signal<TextEditFormValue>(this.form.getRawValue());
   protected readonly fontFamily = computed(() => this.formValue().fontFamily);
 
   /** Changes only when another text is shown or the shown values change (not on a move). */
@@ -145,8 +114,6 @@ export class TextPropertiesPanel {
     syncFromInput(this.shownText, ({ value }) => {
       // No valueChanges event: a reset is no user edit and must not emit a preview.
       this.form.reset(value, { emitEvent: false });
-      // Only for the shadow fields (they follow this control); the form emits no event.
-      this.form.controls.shadow.controls.enabled.updateValueAndValidity({ onlySelf: true });
       this.formValue.set(this.form.getRawValue());
     });
     this.form.valueChanges.pipe(takeUntilDestroyed(inject(DestroyRef))).subscribe(() => {
@@ -175,15 +142,14 @@ export class TextPropertiesPanel {
     }
   }
 
-  /** The props of the shown text with the form values; `null` if a value is invalid. */
+  /** The committed props of the shown text with the form values; `null` if a value is invalid. */
   private validProps(): TextProps | null {
     return this.form.valid ? applyFormValue(this.text().props, this.form.getRawValue()) : null;
   }
 }
 
-/** Form values of text props. */
-function toFormValue(props: TextProps): TextFormValue {
-  const { shadow, outline } = props;
+/** Edit form values of text props. */
+function toFormValue(props: TextProps): TextEditFormValue {
   const styles: FontStyle[] = [];
   if (props.bold) {
     styles.push('bold');
@@ -198,14 +164,11 @@ function toFormValue(props: TextProps): TextFormValue {
     color: props.color,
     styles,
     align: props.align,
-    shadow: toShadowFormValue(shadow),
-    outline: { enabled: outline.enabled, color: outline.color, widthMm: outline.widthMm },
   };
 }
 
-/** `base` (box geometry and z) with the form values. */
-function applyFormValue(base: TextProps, value: TextFormValue): TextProps {
-  const { shadow, outline } = value;
+/** `base` with the edit form values (all other props unchanged). */
+function applyFormValue(base: TextProps, value: TextEditFormValue): TextProps {
   return {
     ...base,
     text: value.text,
@@ -215,8 +178,6 @@ function applyFormValue(base: TextProps, value: TextFormValue): TextProps {
     bold: value.styles.includes('bold'),
     italic: value.styles.includes('italic'),
     align: value.align,
-    shadow: shadowFromFormValue(shadow),
-    outline: { enabled: outline.enabled, color: outline.color, widthMm: outline.widthMm },
   };
 }
 

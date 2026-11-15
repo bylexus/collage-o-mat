@@ -1,0 +1,77 @@
+/* Pill like the zoom controls of the canvas; the owner sets the position. */
+:host {
+  display: flex;
+  align-items: center;
+  /* Keeps one row also near the right edge of the canvas (no clamping). */
+  width: max-content;
+  padding: 0 4px;
+  border-radius: var(--mat-sys-corner-full);
+  background-color: var(--mat-sys-surface-container);
+  box-shadow: var(--mat-sys-level2);
+  color: var(--mat-sys-on-surface);
+}
+
+.divider {
+  align-self: stretch;
+  width: 1px;
+  margin: 8px 4px;
+  background-color: var(--mat-sys-outline-variant);
+}
+
+/*
+ * Button of the open popover and the active Swap button: same look as `.toolbar-active` of the
+ * editor page toolbar.
+ */
+.toolbar-active {
+  --mat-icon-button-icon-color: var(--mat-sys-primary);
+  --mat-icon-button-state-layer-color: var(--mat-sys-primary);
+
+  background-color: var(--mat-sys-secondary-container);
+}
+
+/*
+ * Popover surface (rendered in the CDK overlay container). Natural height, limited to the window
+ * height minus the margins (max-height of the overlay pane, set by `placePopover`); then the section
+ * below the grip bar scrolls. It may go below the window bottom. `cdkDrag` moves the surface with a
+ * CSS transform.
+ */
+.toolbar-popover {
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  width: 340px;
+  max-width: calc(100vw - 16px);
+  max-height: inherit;
+  border-radius: var(--mat-sys-corner-medium);
+  background-color: var(--mat-sys-surface-container);
+  box-shadow: var(--mat-sys-level2);
+  color: var(--mat-sys-on-surface);
+}
+
+/* Grip bar: the only place where a drag of the popover starts. */
+.popover-handle {
+  display: flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  height: 20px;
+  cursor: move;
+  color: var(--mat-sys-on-surface-variant);
+
+  mat-icon {
+    width: 18px;
+    height: 18px;
+    font-size: 18px;
+  }
+}
+
+.toolbar-popover.cdk-drag-dragging .popover-handle {
+  cursor: grabbing;
+}
+
+.popover-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  padding: 4px 16px 16px;
+  overflow-y: auto;
+}

@@ -9,6 +9,7 @@ import { clamp } from '../geometry/numbers';
 import { panCrop, zoomCrop } from '../geometry/transform';
 import type { ImageSize } from '../geometry/transform';
 import { SELECTION_COLOR, SELECTION_STROKE_PX } from './canvas-theme';
+import { bottomCentreOf } from './element-anchor';
 import type { PhotoView } from './photo-view';
 import { pointInElement } from './pointer';
 import type { PressGestureTracker } from './press-gesture';
@@ -298,15 +299,9 @@ export class CropMode {
         zoom: this.zoomOf(session),
         minZoom: CROP_MIN_ZOOM,
         maxZoom: CROP_MAX_ZOOM,
-        anchor: this.anchorOf(session),
+        anchor: bottomCentreOf(session.view.group),
       });
     }
-  }
-
-  /** Bottom centre of the frame's bounding box in container px. */
-  private anchorOf(session: CropSession): Point {
-    const box = session.view.group.getClientRect({ skipShadow: true, skipStroke: true });
-    return { x: box.x + box.width / 2, y: box.y + box.height };
   }
 
   private scheduleCommit(): void {

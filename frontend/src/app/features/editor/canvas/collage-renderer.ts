@@ -7,6 +7,7 @@ import { snapRectDelta } from '../geometry/snap-grid';
 import { applyFrameBox, FrameBox } from '../geometry/transform';
 import { EditorSelection, sameSelection, selectedPhotoIdOf } from '../selection';
 import { CropMode, CropModeState } from './crop-mode';
+import { bottomCentreOf, sameAnchor } from './element-anchor';
 import { FontLoader } from './font-loader';
 import { ImageCache } from './image-cache';
 import { PageBackgroundView } from './page-background-view';
@@ -26,7 +27,7 @@ import {
 import { StageNavigator } from './stage-navigator';
 import { TextTransformer } from './text-transformer';
 import { textGroupOf, TextView } from './text-view';
-import { frameBounds, Rect, unionRects } from './viewport';
+import { frameBounds, Point, Rect, unionRects } from './viewport';
 
 export type { Scene, ScenePhoto, SceneText } from './scene';
 export type { CropModeState } from './crop-mode';
@@ -47,6 +48,13 @@ export interface RendererCallbacks {
   onCropModeChange: (state: CropModeState | null) => void;
   /** Swap mode: click on a photo other than the selected one (its id). */
   onSwapTarget: (photoId: number) => void;
+  /**
+   * New position of the selection toolbar (container px, bottom centre of the selected element's
+   * bounding box), or `null` when it must be hidden: no selection, a drag/rotate/resize gesture
+   * runs or crop mode is on. In swap mode it is the anchor of the selected (source) photo. Only
+   * reported when the value changes.
+   */
+  onToolbarAnchorChange: (anchor: Point | null) => void;
 }
 
 /**
@@ -66,6 +74,8 @@ export interface RendererCallbacks {
  * - Double-click a text: `onTextEditRequest`.
  * - Swap mode (`setSwapMode`): no edits; the selected photo shows its frame without handles and a
  *   click on another photo reports `onSwapTarget`. Pan and zoom stay.
+ * - Selection toolbar anchor: reported with `onToolbarAnchorChange` on render, pan/zoom, gesture
+ *   start/end and mode changes.
  *
  * Each interaction reports one `onPhotoChange` / `onTextChange` when it is committed, never during
  * the gesture.
@@ -93,6 +103,10 @@ export class CollageRenderer {
   private backgroundPhotoId: number | null = null;
   /** Swap mode is on (see `setSwapMode`). */
   private swapMode = false;
+  /** A drag, rotate or resize of the selected element runs (the toolbar is hidden). */
+  private elementGesture = false;
+  /** Last reported toolbar anchor. */
+  private toolbarAnchor: Point | null = null;
 
   constructor(
     container: HTMLDivElement,
@@ -112,18 +126,31 @@ export class CollageRenderer {
       contentBounds: () => this.contentBounds(),
       onZoomChange: (zoom) => {
         callbacks.onZoomChange(zoom);
-        // Called on every pan/zoom; the crop mode controls follow the frame on screen.
+        // Called on every pan/zoom; the crop mode controls and the toolbar follow on screen.
         this.cropMode?.viewChanged();
+        this.updateToolbarAnchor();
       },
       interceptWheel: (pointer, deltaYPx) => this.cropMode.handleWheel(pointer, deltaYPx),
     });
     this.transformer = new PhotoTransformer(this.layer, this.gestures, {
-      onTransform: (view, box, keepAspect) => this.previewFrame(view, box, keepAspect),
-      onTransformEnd: (view, box, keepAspect) => this.commitFrame(view, box, keepAspect),
+      onTransform: (view, box, keepAspect) => {
+        this.startElementGesture();
+        this.previewFrame(view, box, keepAspect);
+      },
+      onTransformEnd: (view, box, keepAspect) => {
+        this.commitFrame(view, box, keepAspect);
+        this.endElementGesture();
+      },
     });
     this.textTransformer = new TextTransformer(this.layer, this.gestures, {
-      onTransform: (view, box) => this.previewTextBox(view, box),
-      onTransformEnd: (view, box) => this.commitTextBox(view, box),
+      onTransform: (view, box) => {
+        this.startElementGesture();
+        this.previewTextBox(view, box);
+      },
+      onTransformEnd: (view, box) => {
+        this.commitTextBox(view, box);
+        this.endElementGesture();
+      },
     });
     this.cropMode = new CropMode(this.layer, this.gestures, {
       onCommit: callbacks.onPhotoChange,
@@ -145,11 +172,13 @@ export class CollageRenderer {
     this.syncCropMode(scene, previousPhotoId);
     this.applyInteractionState();
     this.navigator.fitOnce();
+    this.updateToolbarAnchor();
   }
 
   /** Sets the stage size in px (call when the container size changes). */
   setSize(width: number, height: number): void {
     this.navigator.resize({ width, height });
+    this.updateToolbarAnchor();
   }
 
   /** Shows the page and all elements as large as possible. Returns false if there is nothing to fit. */
@@ -181,6 +210,22 @@ export class CollageRenderer {
     if (on) {
       this.cropMode.end(true);
     }
+    this.applyInteractionState();
+    this.updateToolbarAnchor();
+  }
+
+  /**
+   * Starts crop mode for a placed photo and selects it (same as a double-click on it). Nothing in
+   * swap mode or when the photo is already in crop mode.
+   */
+  startCropMode(photoId: number): void {
+    const view = this.views.get(photoId);
+    const photo = this.scenePhoto(photoId);
+    if (this.swapMode || !view || !photo || this.cropMode.photoId === photoId) {
+      return;
+    }
+    this.cropMode.start(view, photo);
+    this.select({ kind: 'photo', id: photoId });
     this.applyInteractionState();
   }
 
@@ -422,6 +467,8 @@ export class CollageRenderer {
     if (changed) {
       this.textTransformer.refresh();
       this.layer.batchDraw();
+      // A new font can change the text box height.
+      this.updateToolbarAnchor();
     }
   }
 
@@ -470,13 +517,9 @@ export class CollageRenderer {
       return;
     }
     const view = this.viewOf(target);
-    const photo = view && this.scenePhoto(view.id);
-    if (!view || !photo || this.cropMode.photoId === view.id) {
-      return;
+    if (view) {
+      this.startCropMode(view.id);
     }
-    this.cropMode.start(view, photo);
-    this.select({ kind: 'photo', id: view.id });
-    this.applyInteractionState();
   }
 
   private onCropModeChange(state: CropModeState | null): void {
@@ -485,11 +528,55 @@ export class CollageRenderer {
       this.applyInteractionState();
     }
     this.callbacks.onCropModeChange(state);
+    this.updateToolbarAnchor();
+  }
+
+  /** A drag, rotate or resize of an element starts or goes on: hides the toolbar. */
+  private startElementGesture(): void {
+    if (!this.elementGesture) {
+      this.elementGesture = true;
+      this.updateToolbarAnchor();
+    }
+  }
+
+  /** The drag, rotate or resize has ended (new geometry drawn): shows the toolbar again. */
+  private endElementGesture(): void {
+    this.elementGesture = false;
+    this.updateToolbarAnchor();
+  }
+
+  /**
+   * Reports the toolbar anchor if it changed: bottom centre of the selected photo or text, or
+   * `null` (see `RendererCallbacks.onToolbarAnchorChange`). Also called during construction (zoom
+   * change of the navigator), before the crop mode exists.
+   */
+  private updateToolbarAnchor(): void {
+    const anchor = this.computeToolbarAnchor();
+    if (!sameAnchor(anchor, this.toolbarAnchor)) {
+      this.toolbarAnchor = anchor;
+      this.callbacks.onToolbarAnchorChange(anchor);
+    }
+  }
+
+  private computeToolbarAnchor(): Point | null {
+    const selection = this.scene?.selection ?? null;
+    if (
+      !selection ||
+      !this.cropMode ||
+      this.cropMode.photoId !== null ||
+      this.elementGesture
+    ) {
+      return null;
+    }
+    const view =
+      selection.kind === 'photo' ? this.views.get(selection.id) : this.textViews.get(selection.id);
+    return view ? bottomCentreOf(view.group) : null;
   }
 
   /** A photo move starts: an unselected photo is selected first; scene updates keep the drag position. */
   private onPhotoDragStart(view: PhotoView): void {
     view.beginGesture();
+    this.startElementGesture();
     this.select({ kind: 'photo', id: view.id });
   }
 
@@ -513,17 +600,20 @@ export class CollageRenderer {
   private onPhotoDragEnd(view: PhotoView): void {
     view.endGesture();
     this.commitFrame(view, view.frameBox(), true);
+    this.endElementGesture();
   }
 
   /** A text move starts: an unselected text is selected first; scene updates keep the drag position. */
   private onTextDragStart(view: TextView): void {
     view.beginGesture();
+    this.startElementGesture();
     this.select({ kind: 'text', id: view.id });
   }
 
   private onTextDragEnd(view: TextView): void {
     view.endGesture();
     this.commitTextBox(view, view.textBox());
+    this.endElementGesture();
   }
 
   /** Live preview of a transform: the photo is redrawn with the props it would get (no scale). */
