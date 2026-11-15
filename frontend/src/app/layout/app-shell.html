@@ -15,12 +15,7 @@
       </a>
     </nav>
     <span class="toolbar-spacer"></span>
-    <span class="toolbar-user">{{ user.username }}</span>
-    @if (user.isAdmin) {
-      <span class="admin-badge" i18n="@@toolbar.adminBadge">Admin</span>
-    }
     <a
-      class="toolbar-about"
       matIconButton
       routerLink="/about"
       routerLinkActive="active-link"
@@ -34,14 +29,30 @@
     <button
       matIconButton
       type="button"
-      (click)="logout()"
-      i18n-aria-label="@@toolbar.logout"
-      aria-label="Log out"
-      i18n-matTooltip="@@toolbar.logout"
-      matTooltip="Log out"
+      [matMenuTriggerFor]="profileMenu"
+      i18n-aria-label="@@toolbar.profileMenu"
+      aria-label="Profile menu"
+      [matTooltip]="user.username"
     >
-      <mat-icon>logout</mat-icon>
+      <app-user-avatar [user]="user" [size]="32" />
     </button>
+    <mat-menu #profileMenu="matMenu" xPosition="before">
+      <div class="profile-menu-header" role="presentation">
+        <span class="profile-menu-name">{{ user.username }}</span>
+        @if (user.isAdmin) {
+          <span class="admin-badge" i18n="@@toolbar.adminBadge">Admin</span>
+        }
+      </div>
+      <mat-divider />
+      <a mat-menu-item routerLink="/profile">
+        <mat-icon>person</mat-icon>
+        <span i18n="@@toolbar.profile">Profile</span>
+      </a>
+      <button mat-menu-item type="button" (click)="logout()">
+        <mat-icon>logout</mat-icon>
+        <span i18n="@@toolbar.logout">Log out</span>
+      </button>
+    </mat-menu>
   }
 </mat-toolbar>
 

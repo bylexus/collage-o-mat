@@ -22,10 +22,16 @@ import (
 	"collageomat/internal/connector/immich"
 	"collageomat/internal/db"
 	"collageomat/internal/httpapi"
+	"collageomat/internal/imaging"
 	"collageomat/internal/photo"
+	"collageomat/internal/profile"
 	"collageomat/internal/secretbox"
 	"collageomat/internal/web"
 )
+
+// maxConcurrentDecodes is the server-wide number of images (uploads) that
+// are decoded and processed at the same time.
+const maxConcurrentDecodes = 2
 
 const usage = `Usage: collageomat <command> [flags]
 
@@ -82,7 +88,19 @@ func runServe(args []string) error {
 	}
 	defer db.Close(gdb)
 
-	authHandler, err := auth.NewHandler(gdb, auth.CookieOptions{Name: cfg.CookieName, Secure: cfg.CookieSecure})
+	// One limiter for failed logins and wrong current passwords (password
+	// change): both share the counter per (username, client IP).
+	loginLimiter := auth.NewLoginLimiter(time.Now)
+	// One limiter for all image decodes of the server (photos and avatars).
+	decoder := imaging.NewDecodeLimiter(maxConcurrentDecodes)
+	// The profile service is created before the auth handler: it gives the
+	// avatar version of the user DTO (auth.AvatarVersions).
+	profileSvc := profile.NewService(
+		profile.NewGormStore(gdb), auth.NewPasswordChanger(gdb, loginLimiter), decoder,
+	)
+	authHandler, err := auth.NewHandler(
+		gdb, auth.CookieOptions{Name: cfg.CookieName, Secure: cfg.CookieSecure}, loginLimiter, profileSvc,
+	)
 	if err != nil {
 		return err
 	}
@@ -93,7 +111,7 @@ func runServe(args []string) error {
 	}
 	defer photoFiles.Close()
 
-	domainModules, err := newDomainModules(cfg.Secret, gdb, photoFiles)
+	domainModules, err := newDomainModules(cfg.Secret, gdb, photoFiles, decoder, profileSvc)
 	if err != nil {
 		return err
 	}
@@ -147,13 +165,19 @@ func models() []any {
 		&collage.CollageText{},
 		&connector.Connector{},
 		&photo.Photo{},
+		&profile.Avatar{},
 	}
 }
 
 // newDomainModules wires the services and handlers of the domain packages
-// (collages, connectors, Immich, photos). Connector configs are encrypted
-// with a key derived from secret; photo files are stored in photoFiles.
-func newDomainModules(secret string, gdb *gorm.DB, photoFiles *photo.DiskStorage) ([]httpapi.Module, error) {
+// (collages, connectors, Immich, photos, profile). Connector configs are
+// encrypted with a key derived from secret; photo files are stored in
+// photoFiles; decoder is the server-wide image decode limiter; profileSvc is
+// created earlier because the auth handler needs it too.
+func newDomainModules(
+	secret string, gdb *gorm.DB, photoFiles *photo.DiskStorage, decoder *imaging.DecodeLimiter,
+	profileSvc *profile.Service,
+) ([]httpapi.Module, error) {
 	immichKind := immich.NewKind(nil)
 	connectorSvc, err := newConnectorService(secret, gdb, immichKind)
 	if err != nil {
@@ -167,13 +191,14 @@ func newDomainModules(secret string, gdb *gorm.DB, photoFiles *photo.DiskStorage
 		photo.NewCollagePhotos(photoStore, photoFiles),
 		db.NewTransactor(gdb),
 	)
-	photoSvc := photo.NewService(photoStore, photoFiles, collageSvc, immichSvc)
+	photoSvc := photo.NewService(photoStore, photoFiles, collageSvc, immichSvc, decoder)
 
 	return []httpapi.Module{
 		collage.NewHandler(collageSvc),
 		photo.NewHandler(photoSvc),
 		connector.NewHandler(connectorSvc),
 		immich.NewHandler(immichSvc),
+		profile.NewHandler(profileSvc),
 	}, nil
 }
 

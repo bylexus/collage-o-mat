@@ -14,6 +14,7 @@ import (
 //   - apperr.ErrNotFound → 404 "not found"
 //   - apperr.Conflict / ErrConflict → 409 with the conflict message
 //   - apperr.ValidationError → 400 with the validation message
+//   - apperr.TooManyRequests / ErrTooManyRequests → 429 with its message
 //   - apperr.ErrTooLarge or an *http.MaxBytesError (a body limited with
 //     http.MaxBytesReader was too large) → 413 "request body too large"
 //   - apperr.UpstreamError → 502 with its message (an external service such
@@ -31,6 +32,10 @@ func WriteServiceError(w http.ResponseWriter, err error) {
 	}
 	if v, ok := apperr.AsValidation(err); ok {
 		WriteError(w, http.StatusBadRequest, v.Message)
+		return
+	}
+	if msg, ok := apperr.AsTooManyRequests(err); ok {
+		WriteError(w, http.StatusTooManyRequests, msg)
 		return
 	}
 	var maxErr *http.MaxBytesError

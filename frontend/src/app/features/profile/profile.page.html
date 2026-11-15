@@ -1,0 +1,138 @@
+@if (auth.currentUser(); as user) {
+  <header class="page-header">
+    <app-user-avatar [user]="user" [size]="56" />
+    <div class="page-header-text">
+      <h1 class="page-title">
+        {{ user.username }}
+        @if (user.isAdmin) {
+          <span class="admin-badge" i18n="@@profile.adminBadge">Admin</span>
+        }
+      </h1>
+      <p class="page-subtitle" i18n="@@profile.memberSince">
+        Member since {{ user.createdAt | date: 'longDate' }}
+      </p>
+    </div>
+  </header>
+
+  <mat-card appearance="outlined">
+    <mat-card-header>
+      <mat-card-title i18n="@@profile.avatar.title">Avatar</mat-card-title>
+    </mat-card-header>
+    <mat-card-content class="avatar-content">
+      <app-user-avatar [user]="user" [size]="128" />
+      <p class="hint" i18n="@@profile.avatar.hint">
+        JPEG, PNG or WebP, max. 10 MB. The image is cropped to a square.
+      </p>
+    </mat-card-content>
+    <mat-card-actions align="end">
+      <input
+        #fileInput
+        type="file"
+        accept="image/jpeg,image/png,image/webp"
+        hidden
+        (change)="onFileSelected($event)"
+      />
+      @if (avatarBusy()) {
+        <mat-spinner class="avatar-spinner" diameter="20" />
+      }
+      @if (user.avatarVersion !== null) {
+        <button
+          matButton
+          type="button"
+          [disabled]="avatarBusy()"
+          (click)="removeAvatar()"
+          i18n="@@profile.avatar.remove"
+        >
+          Remove
+        </button>
+      }
+      <button matButton="filled" type="button" [disabled]="avatarBusy()" (click)="chooseFile()">
+        <mat-icon>upload</mat-icon>
+        <span i18n="@@profile.avatar.upload">Upload image</span>
+      </button>
+    </mat-card-actions>
+  </mat-card>
+
+  <mat-card appearance="outlined">
+    <mat-card-header>
+      <mat-card-title i18n="@@profile.password.title">Change password</mat-card-title>
+    </mat-card-header>
+    <form [formGroup]="form" (ngSubmit)="changePassword()">
+      <mat-card-content class="password-fields">
+        <!-- Hidden username field: helps password managers to assign the new password. -->
+        <input
+          type="text"
+          name="username"
+          autocomplete="username"
+          [value]="user.username"
+          hidden
+          readonly
+        />
+
+        <mat-form-field>
+          <mat-label i18n="@@profile.password.current">Current password</mat-label>
+          <input
+            matInput
+            type="password"
+            formControlName="currentPassword"
+            autocomplete="current-password"
+            required
+          />
+          @if (form.controls.currentPassword.hasError('required')) {
+            <mat-error i18n="@@profile.password.currentRequired"
+              >Current password is required</mat-error
+            >
+          }
+        </mat-form-field>
+
+        <mat-form-field>
+          <mat-label i18n="@@profile.password.new">New password</mat-label>
+          <input
+            matInput
+            type="password"
+            formControlName="newPassword"
+            autocomplete="new-password"
+            required
+          />
+          @if (form.controls.newPassword.hasError('required')) {
+            <mat-error i18n="@@profile.password.newRequired">New password is required</mat-error>
+          } @else if (form.controls.newPassword.hasError('tooShort')) {
+            <mat-error i18n="@@profile.password.tooShort"
+              >The password must have at least {{ minChars }} characters</mat-error
+            >
+          } @else if (form.controls.newPassword.hasError('tooLong')) {
+            <mat-error i18n="@@profile.password.tooLong"
+              >The password is too long (max. {{ maxBytes }} bytes)</mat-error
+            >
+          }
+        </mat-form-field>
+
+        <mat-form-field>
+          <mat-label i18n="@@profile.password.repeat">Repeat new password</mat-label>
+          <input
+            matInput
+            type="password"
+            formControlName="repeatPassword"
+            autocomplete="new-password"
+            required
+          />
+          @if (form.controls.repeatPassword.hasError('required')) {
+            <mat-error i18n="@@profile.password.repeatRequired"
+              >Please repeat the new password</mat-error
+            >
+          } @else if (form.controls.repeatPassword.hasError('mismatch')) {
+            <mat-error i18n="@@profile.password.mismatch">The passwords do not match</mat-error>
+          }
+        </mat-form-field>
+      </mat-card-content>
+      <mat-card-actions align="end">
+        <button matButton="filled" type="submit" [disabled]="passwordBusy()">
+          @if (passwordBusy()) {
+            <mat-spinner class="button-spinner" diameter="18" />
+          }
+          <span i18n="@@profile.password.submit">Change password</span>
+        </button>
+      </mat-card-actions>
+    </form>
+  </mat-card>
+}

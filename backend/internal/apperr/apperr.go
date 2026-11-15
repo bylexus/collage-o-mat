@@ -15,6 +15,10 @@ var (
 	ErrConflict = errors.New("conflict")
 	// ErrTooLarge means the request body is larger than allowed.
 	ErrTooLarge = errors.New("request body too large")
+	// ErrTooManyRequests means the client made too many (failed) attempts
+	// and is blocked for some time. Use TooManyRequests to create one with
+	// a client message.
+	ErrTooManyRequests = errors.New("too many requests")
 )
 
 // ValidationError means the client sent invalid input. Its message is shown
@@ -62,6 +66,36 @@ func AsConflict(err error) (string, bool) {
 	}
 	if errors.Is(err, ErrConflict) {
 		return ErrConflict.Error(), true
+	}
+	return "", false
+}
+
+// tooManyRequestsError carries a client message and matches
+// ErrTooManyRequests.
+type tooManyRequestsError struct {
+	message string
+}
+
+func (e *tooManyRequestsError) Error() string        { return e.message }
+func (e *tooManyRequestsError) Is(target error) bool { return target == ErrTooManyRequests }
+
+// TooManyRequests returns an error with a formatted message for the client
+// that matches ErrTooManyRequests (errors.Is(err, ErrTooManyRequests) is
+// true).
+func TooManyRequests(format string, args ...any) error {
+	return &tooManyRequestsError{message: fmt.Sprintf(format, args...)}
+}
+
+// AsTooManyRequests returns the client message of an error created with
+// TooManyRequests. For a plain (possibly wrapped) ErrTooManyRequests it
+// returns the message of ErrTooManyRequests.
+func AsTooManyRequests(err error) (string, bool) {
+	var t *tooManyRequestsError
+	if errors.As(err, &t) {
+		return t.message, true
+	}
+	if errors.Is(err, ErrTooManyRequests) {
+		return ErrTooManyRequests.Error(), true
 	}
 	return "", false
 }

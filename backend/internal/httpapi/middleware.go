@@ -66,9 +66,9 @@ func Recover(next http.Handler) http.Handler {
 //     frontend can send DELETE without a body and without the header.
 //   - Other methods (GET, HEAD, OPTIONS): not checked.
 //
-// The only exception is the photo upload, POST /api/collages/<id>/uploads
-// (<id> digits only): it may also send image/jpeg, image/png or image/webp.
-// These are not CORS-safelisted Content-Types (only
+// Exceptions: the photo upload, POST /api/collages/<id>/uploads (<id>
+// digits only), and the avatar upload, PUT /api/profile/avatar, may also
+// send image/jpeg, image/png or image/webp. These are not CORS-safelisted Content-Types (only
 // application/x-www-form-urlencoded, multipart/form-data and text/plain
 // are), so a cross-site page also needs a preflight to send them, which
 // gives the same protection as application/json.
@@ -96,8 +96,8 @@ func needsJSONContentType(r *http.Request) bool {
 	}
 }
 
-// uploadContentTypes are the Content-Types allowed for the photo upload
-// besides application/json (see RequireJSON).
+// uploadContentTypes are the Content-Types allowed for the photo and avatar
+// uploads besides application/json (see RequireJSON).
 var uploadContentTypes = map[string]bool{
 	"image/jpeg": true,
 	"image/png":  true,
@@ -105,7 +105,7 @@ var uploadContentTypes = map[string]bool{
 }
 
 // allowedContentType reports whether the Content-Type of r is accepted by
-// RequireJSON: application/json, or an image type on the upload route.
+// RequireJSON: application/json, or an image type on an upload route.
 func allowedContentType(r *http.Request) bool {
 	mediaType, _, err := mime.ParseMediaType(r.Header.Get("Content-Type"))
 	if err != nil {
@@ -114,7 +114,17 @@ func allowedContentType(r *http.Request) bool {
 	if mediaType == "application/json" {
 		return true
 	}
-	return r.Method == http.MethodPost && uploadContentTypes[mediaType] && isUploadPath(r.URL.Path)
+	if !uploadContentTypes[mediaType] {
+		return false
+	}
+	switch r.Method {
+	case http.MethodPost:
+		return isUploadPath(r.URL.Path)
+	case http.MethodPut:
+		return r.URL.Path == "/api/profile/avatar"
+	default:
+		return false
+	}
 }
 
 // isUploadPath reports whether path is /api/collages/<digits>/uploads.

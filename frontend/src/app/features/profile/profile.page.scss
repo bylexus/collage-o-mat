@@ -1,0 +1,70 @@
+:host {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  box-sizing: border-box;
+  max-width: 800px;
+  margin: 0 auto;
+  padding: 24px 16px;
+}
+
+.page-header {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
+.page-header-text {
+  min-width: 0;
+}
+
+.page-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  font: var(--mat-sys-headline-small);
+  overflow-wrap: anywhere;
+}
+
+.page-subtitle {
+  margin: 4px 0 0;
+  color: var(--mat-sys-on-surface-variant);
+}
+
+.admin-badge {
+  padding: 2px 8px;
+  border-radius: 8px;
+  background-color: var(--mat-sys-secondary-container);
+  color: var(--mat-sys-on-secondary-container);
+  font: var(--mat-sys-label-medium);
+}
+
+.avatar-content {
+  display: flex;
+  align-items: center;
+  gap: 24px;
+  padding-top: 16px;
+}
+
+.hint {
+  margin: 0;
+  color: var(--mat-sys-on-surface-variant);
+}
+
+.avatar-spinner {
+  margin-right: 8px;
+}
+
+.password-fields {
+  display: flex;
+  flex-direction: column;
+  max-width: 400px;
+  padding-top: 16px;
+}
+
+.button-spinner {
+  display: inline-block;
+  margin-right: 8px;
+  vertical-align: middle;
+}

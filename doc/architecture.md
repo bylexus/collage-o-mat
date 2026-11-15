@@ -7,7 +7,7 @@ Browser (Angular SPA, Konva canvas)
    │  JSON over /api/...  (session cookie)
    ▼
 collageomat (one Go binary)
-   ├─ /api/...   httpapi router → domain modules (auth, collage, photo, connector, immich)
+   ├─ /api/...   httpapi router → domain modules (auth, collage, photo, connector, immich, profile)
    ├─ /*         embedded SPA (internal/web, go:embed, fallback to index.html)
    ├─ SQLite     <DATA_DIR>/collageomat.db   (WAL, foreign keys on)
    ├─ files      <DATA_DIR>/photos/<collageId>/<photoId>.<ext>
@@ -45,11 +45,12 @@ package-level mutable state.
 
 | Package | Responsibility |
 |---|---|
-| `auth` | Users, sessions (cookie token, SHA-256 hash in DB), login rate limit, `RequireAuth`, `auth.UserID(r)`. Older code, no store/service split |
+| `auth` | Users, sessions (cookie token, SHA-256 hash in DB), login rate limit (`LoginLimiter`), `RequireAuth`, `auth.UserID(r)`, `auth.SessionID(r)`. `PasswordChanger` (implements `profile.Passwords`, uses the same `LoginLimiter` instance as the login). Declares `AvatarVersions` (implemented by `profile.Service`) for the user DTO. Older code, no store/service split |
 | `collage` | Collages, texts, layout save (one transaction) |
-| `photo` | Photo rows and files, Immich import, local upload (`process.go`: decode, EXIF orientation, downscale, JPEG), file serving |
+| `photo` | Photo rows and files, Immich import, local upload (`process.go`: calls `imaging`, long edge ≤ 2560 px), file serving |
 | `connector` | Connectors per user, `Kind` registry (strategy per connector type), config encrypted with `secretbox` |
 | `connector/immich` | Immich HTTP client, album/asset listing, thumbnail proxy |
+| `profile` | Profile of the session user: password change (through the `Passwords` interface), avatar (upload → `imaging` square ≤ 500×500 JPEG, store, serve, delete) |
 
 Rules:
 
@@ -65,9 +66,10 @@ Rules:
 | Package | Content |
 |---|---|
 | `httpapi` | Router (`NewRouter`), `Module` interface, JSON read/write, `PathID`, middleware (logging, recover, require JSON content type), error mapping |
-| `apperr` | `ErrNotFound`, `ErrConflict`, `ErrTooLarge`, validation error |
+| `apperr` | `ErrNotFound`, `ErrConflict`, `ErrTooLarge`, `ErrTooManyRequests`, validation error, upstream error |
 | `db` | Open SQLite with pragmas, `AutoMigrate`, transactor |
 | `jsoncol` | GORM column type for JSON stored as `TEXT` |
+| `imaging` | Uploaded images (JPEG, PNG, WebP): format check, header check (≤ 60 MP), decode, EXIF orientation, flatten on white, optional square center crop, downscale, JPEG encode. `DecodeLimiter`: one instance per server (made in `main.go`, 2 slots), shared by `photo` and `profile` |
 | `config` | `COLLAGEOMAT_*` environment variables (see [development.md](development.md#environment-variables)) |
 | `secretbox` | AES-256-GCM, key = SHA-256(`COLLAGEOMAT_SECRET`) |
 | `web` | Embedded SPA from `internal/web/dist` (filled by `make build` or the Dockerfile) |
@@ -75,9 +77,13 @@ Rules:
 ### Security
 
 - All `/api` routes need a session, except `GET /api/health` and `POST /api/auth/login`.
-- Mutating `/api` requests must have `Content-Type: application/json` (the upload route also accepts its
-  image types, see `httpapi.RequireJSON`). With the
-  `SameSite=Lax` cookie this is the CSRF protection.
+- Mutating `/api` requests must have `Content-Type: application/json`. Exceptions (see
+  `httpapi.RequireJSON`): `POST /api/collages/{id}/uploads` and `PUT /api/profile/avatar` also accept
+  `image/jpeg|png|webp`. With the `SameSite=Lax` cookie this is the CSRF protection.
+- Password change (`PUT /api/profile/password`) needs the current password. Wrong current passwords count
+  in the login rate limit (same `LoginLimiter`, same key username + client IP; blocked → 429). A wrong
+  current password gives 400, not 401, because the frontend logs out on 401. Success deletes all other
+  sessions of the user; the current session stays.
 - Connector API keys are stored encrypted and are never returned by the API (`apiKeySet: true` only).
 
 ## Frontend (`frontend/`)
@@ -87,9 +93,9 @@ library. UI language English, all texts marked for i18n (build-time Angular i18n
 
 | Path | Content |
 |---|---|
-| `src/app/app.routes.ts` | Routes: `login` (own layout); `AppShell` with `authGuard` and the children `collages`, `collages/:id` (editor), `settings/connectors`, `about` |
-| `src/app/layout/app-shell.*` | `AppShell`: base layout of all signed-in pages (main toolbar + page outlet) |
-| `src/app/core/api/` | One API service per resource (`CollageApi`, `PhotoApi`, `ConnectorApi`, `ImmichApi`, `AuthApi`) |
+| `src/app/app.routes.ts` | Routes: `login` (own layout); `AppShell` with `authGuard` and the children `collages`, `collages/:id` (editor), `settings/connectors`, `profile`, `about` |
+| `src/app/layout/app-shell.*` | `AppShell`: base layout of all signed-in pages (main toolbar + page outlet). Toolbar: round profile button (`UserAvatar`) opens a `mat-menu` (username, Admin badge, Profile, Log out) |
+| `src/app/core/api/` | One API service per resource (`CollageApi`, `PhotoApi`, `ConnectorApi`, `ImmichApi`, `AuthApi`, `ProfileApi`) |
 | `src/app/core/models/` | Typed DTOs and JSON props models (`collage.ts`, `photo.ts`, `text.ts`, `shadow.ts`, `layout.ts`) |
 | `src/app/features/editor/` | Editor page and store (`editor.store.ts`), undo history, auto save |
 | `features/editor/canvas/` | Konva rendering, transformers, crop mode, viewport, export renderer, adjusted/blurred image copies |
@@ -101,7 +107,8 @@ library. UI language English, all texts marked for i18n (build-time Angular i18n
 | `features/editor/geometry/` | Pure math: crop, units (mm/pt/px), gradients, snap grid |
 | `features/editor/import/`, `upload/` | Immich import dialog, local file upload |
 | `features/editor/export/` | PNG/JPG export dialog |
-| `src/app/shared/` | `ConfirmDialog`, `NotificationService`, `errorMessage(err)` |
+| `src/app/features/profile/` | Profile page: info (username, Admin badge, member since), avatar card (upload, remove), change password card |
+| `src/app/shared/` | `ConfirmDialog`, `NotificationService`, `errorMessage(err)`, `UserAvatar` (round avatar image or first letter of the username) |
 
 Rules: only `core/api` services use `HttpClient`. Page components load data and hold state; dialogs and
 presentational components use `input()`/`output()` and do no API calls.
@@ -114,6 +121,7 @@ All tables have `created_at`, `updated_at`. JSON columns are `TEXT`.
 |---|---|
 | `users` | `id`, `username` unique, `password_hash` (bcrypt), `is_admin` |
 | `sessions` | `id`, `token_hash` unique, `user_id` FK, `expires_at` |
+| `user_avatars` | `user_id` PK + FK (`ON DELETE CASCADE`), `data` BLOB (JPEG, square, ≤ 500×500 px), `mime_type`. Own table, because `RequireAuth` loads the `users` row on each request |
 | `collages` | `id`, `user_id` FK, `name`, `settings` JSON |
 | `collage_texts` | `id` (UUID from frontend), `collage_id` FK, `props` JSON |
 | `connectors` | `id`, `user_id` FK, `type` (`immich`), `name`, `config` (encrypted JSON) |
@@ -142,7 +150,10 @@ background image always shows the original photo.
 | GET | `/api/health` | Health check (public) |
 | POST | `/api/auth/login` | Login, sets the session cookie (public) |
 | POST | `/api/auth/logout` | Logout |
-| GET | `/api/auth/me` | Session user |
+| GET | `/api/auth/me` | Session user (`id`, `username`, `isAdmin`, `createdAt`, `avatarVersion` = unix ms of the last avatar change or `null`); the login response has the same shape |
+| PUT | `/api/profile/password` | Change the own password (`currentPassword`, `newPassword`) → 204 |
+| PUT, DELETE | `/api/profile/avatar` | Set the avatar (raw image body, max 10 MiB, max 60 MP), remove it → user DTO |
+| GET | `/api/profile/avatar?v=<avatarVersion>` | Own avatar JPEG (immutable cache), 404 if not set |
 | GET, POST | `/api/collages` | List, create |
 | GET, PATCH, DELETE | `/api/collages/{id}` | Load full collage, rename, delete (rows + photo dir) |
 | POST | `/api/collages/{id}/duplicate` | Copy the collage (settings with remapped photo ids, photo rows + files, texts with new ids) in one transaction; skips photos with a missing file (`skippedPhotos`) |

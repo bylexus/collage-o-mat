@@ -48,6 +48,11 @@ export class AuthService {
     }
   }
 
+  /** Replaces the current user, e.g. with the DTO returned after an avatar change. */
+  setUser(user: User): void {
+    this.user.set(user);
+  }
+
   /** Forgets the current user locally (e.g. after a 401 from the API). */
   clearUser(): void {
     this.user.set(null);

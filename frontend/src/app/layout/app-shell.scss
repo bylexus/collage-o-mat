@@ -19,22 +19,24 @@
   color: var(--mat-sys-on-secondary-container);
 }
 
-.toolbar-user {
-  font: var(--mat-sys-body-large);
+.profile-menu-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 16px 12px;
+}
+
+.profile-menu-name {
+  font: var(--mat-sys-title-small);
+  overflow-wrap: anywhere;
 }
 
 .admin-badge {
-  margin-left: 8px;
   padding: 2px 8px;
   border-radius: 8px;
   background-color: var(--mat-sys-secondary-container);
   color: var(--mat-sys-on-secondary-container);
   font: var(--mat-sys-label-medium);
-}
-
-.toolbar-user + .toolbar-about,
-.admin-badge + .toolbar-about {
-  margin-left: 8px;
 }
 
 .app-content {

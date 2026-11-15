@@ -1,10 +1,13 @@
 import { Component, inject } from '@angular/core';
 import { MatButtonModule } from '@angular/material/button';
+import { MatDividerModule } from '@angular/material/divider';
 import { MatIconModule } from '@angular/material/icon';
+import { MatMenuModule } from '@angular/material/menu';
 import { MatToolbarModule } from '@angular/material/toolbar';
 import { MatTooltipModule } from '@angular/material/tooltip';
 import { Router, RouterLink, RouterLinkActive, RouterOutlet } from '@angular/router';
 import { AuthService } from '../core/auth.service';
+import { UserAvatar } from '../shared/user-avatar';
 
 /** Base layout for all signed-in pages: main toolbar and the page content below it. */
 @Component({
@@ -15,8 +18,11 @@ import { AuthService } from '../core/auth.service';
     RouterLinkActive,
     MatToolbarModule,
     MatButtonModule,
+    MatDividerModule,
     MatIconModule,
+    MatMenuModule,
     MatTooltipModule,
+    UserAvatar,
   ],
   templateUrl: './app-shell.html',
   styleUrl: './app-shell.scss',

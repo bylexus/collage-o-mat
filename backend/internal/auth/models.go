@@ -1,5 +1,6 @@
 // Package auth contains users, sessions, password hashing, the session
-// middleware, the login/logout/me handlers and helpers for the user CLI.
+// middleware, the login/logout/me handlers, the password change of a
+// logged-in user (PasswordChanger) and helpers for the user CLI.
 package auth
 
 import "time"

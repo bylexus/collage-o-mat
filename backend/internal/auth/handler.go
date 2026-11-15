@@ -1,6 +1,7 @@
 package auth
 
 import (
+	"context"
 	"crypto/rand"
 	"errors"
 	"fmt"
@@ -26,15 +27,29 @@ type Handler struct {
 	// limiter blocks a (username, client IP) key after too many failed
 	// logins.
 	limiter *LoginLimiter
+	// avatars gives the avatar version of the user DTO.
+	avatars AvatarVersions
 }
 
-// NewHandler returns the auth handler.
-func NewHandler(db *gorm.DB, cookie CookieOptions) (*Handler, error) {
+// AvatarVersions is the part of the profile domain that the user DTO needs.
+// The profile package implements it (profile.Service), main.go wires it;
+// auth does not import profile (dependency inversion).
+type AvatarVersions interface {
+	// AvatarVersion returns the version of the avatar of the user (unix
+	// milliseconds of its last change), or nil if the user has no avatar.
+	AvatarVersion(ctx context.Context, userID uint) (*int64, error)
+}
+
+// NewHandler returns the auth handler. limiter counts the failed logins; pass
+// the same instance to NewPasswordChanger, so that logins and password
+// changes share the counter. avatars gives the avatar version of the user
+// DTO.
+func NewHandler(db *gorm.DB, cookie CookieOptions, limiter *LoginLimiter, avatars AvatarVersions) (*Handler, error) {
 	dummy, err := hashPassword(rand.Text())
 	if err != nil {
 		return nil, err
 	}
-	return &Handler{db: db, cookie: cookie, dummyHash: dummy, limiter: NewLoginLimiter(time.Now)}, nil
+	return &Handler{db: db, cookie: cookie, dummyHash: dummy, limiter: limiter, avatars: avatars}, nil
 }
 
 // RegisterRoutes implements httpapi.Module.
@@ -46,8 +61,8 @@ func (h *Handler) RegisterRoutes(mux *http.ServeMux, requireAuth httpapi.Middlew
 	mux.Handle("GET /api/auth/me", requireAuth(http.HandlerFunc(h.me)))
 }
 
-// RequireAuth loads the user of the session cookie into the request context
-// (see UserFromContext) and extends the session if needed. Without a valid
+// RequireAuth loads the user and the session ID of the session cookie into
+// the request context (see UserFromContext, SessionID) and extends the session if needed. Without a valid
 // session it answers 401.
 func (h *Handler) RequireAuth(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -68,7 +83,8 @@ func (h *Handler) RequireAuth(next http.Handler) http.Handler {
 			// The session is still valid; log and continue.
 			slog.Error("session extend", "err", err)
 		}
-		next.ServeHTTP(w, r.WithContext(withUser(r.Context(), &sess.User)))
+		ctx := withSessionID(withUser(r.Context(), &sess.User), sess.ID)
+		next.ServeHTTP(w, r.WithContext(ctx))
 	})
 }
 
@@ -77,14 +93,32 @@ type loginRequest struct {
 	Password string `json:"password"`
 }
 
-type userResponse struct {
-	ID       uint   `json:"id"`
-	Username string `json:"username"`
-	IsAdmin  bool   `json:"isAdmin"`
+// UserResponse is the user DTO of the login and me responses (and of the
+// profile avatar responses).
+type UserResponse struct {
+	ID        uint      `json:"id"`
+	Username  string    `json:"username"`
+	IsAdmin   bool      `json:"isAdmin"`
+	CreatedAt time.Time `json:"createdAt"`
+	// AvatarVersion is the unix milliseconds of the last avatar change, or
+	// null if the user has no avatar.
+	AvatarVersion *int64 `json:"avatarVersion"`
 }
 
-func toUserResponse(u *User) userResponse {
-	return userResponse{ID: u.ID, Username: u.Username, IsAdmin: u.IsAdmin}
+// NewUserResponse returns the user DTO of u; avatars gives the avatar
+// version.
+func NewUserResponse(ctx context.Context, u *User, avatars AvatarVersions) (UserResponse, error) {
+	version, err := avatars.AvatarVersion(ctx, u.ID)
+	if err != nil {
+		return UserResponse{}, fmt.Errorf("avatar version of user %d: %w", u.ID, err)
+	}
+	return UserResponse{
+		ID:            u.ID,
+		Username:      u.Username,
+		IsAdmin:       u.IsAdmin,
+		CreatedAt:     u.CreatedAt,
+		AvatarVersion: version,
+	}, nil
 }
 
 func (h *Handler) login(w http.ResponseWriter, r *http.Request) {
@@ -143,7 +177,13 @@ func (h *Handler) login(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	h.limiter.Reset(key)
-	httpapi.WriteJSON(w, http.StatusOK, toUserResponse(&user))
+	resp, err := NewUserResponse(r.Context(), &user, h.avatars)
+	if err != nil {
+		// The session cookie is set; the client can load the user with /me.
+		httpapi.WriteServiceError(w, err)
+		return
+	}
+	httpapi.WriteJSON(w, http.StatusOK, resp)
 }
 
 // blockedLoginMessage is the 429 text; the remaining time is rounded up to
@@ -166,5 +206,10 @@ func (h *Handler) logout(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) me(w http.ResponseWriter, r *http.Request) {
-	httpapi.WriteJSON(w, http.StatusOK, toUserResponse(UserFromContext(r.Context())))
+	resp, err := NewUserResponse(r.Context(), UserFromContext(r.Context()), h.avatars)
+	if err != nil {
+		httpapi.WriteServiceError(w, err)
+		return
+	}
+	httpapi.WriteJSON(w, http.StatusOK, resp)
 }

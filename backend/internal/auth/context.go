@@ -7,6 +7,8 @@ import (
 
 type userContextKey struct{}
 
+type sessionIDContextKey struct{}
+
 func withUser(ctx context.Context, user *User) context.Context {
 	return context.WithValue(ctx, userContextKey{}, user)
 }
@@ -21,4 +23,16 @@ func UserFromContext(ctx context.Context) *User {
 // behind RequireAuth, which always puts the user into the request context.
 func UserID(r *http.Request) uint {
 	return UserFromContext(r.Context()).ID
+}
+
+func withSessionID(ctx context.Context, sessionID uint) context.Context {
+	return context.WithValue(ctx, sessionIDContextKey{}, sessionID)
+}
+
+// SessionID returns the ID of the current session. It is only valid in
+// handlers behind RequireAuth, which always puts the session ID into the
+// request context.
+func SessionID(r *http.Request) uint {
+	id, _ := r.Context().Value(sessionIDContextKey{}).(uint)
+	return id
 }

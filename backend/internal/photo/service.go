@@ -16,6 +16,7 @@ import (
 
 	"collageomat/internal/apperr"
 	"collageomat/internal/collage"
+	"collageomat/internal/imaging"
 	"collageomat/internal/jsoncol"
 )
 
@@ -104,19 +105,20 @@ type Service struct {
 	files    FileStorage
 	collages Collages
 	sources  Sources
-	// decodeSlots limits the uploads that are decoded and processed at the
-	// same time (server-wide, maxConcurrentDecodes).
-	decodeSlots chan struct{}
+	// decoder limits the uploads that are decoded and processed at the
+	// same time (server-wide, shared with other packages).
+	decoder *imaging.DecodeLimiter
 }
 
-// NewService returns a photo service.
-func NewService(store Store, files FileStorage, collages Collages, sources Sources) *Service {
+// NewService returns a photo service. decoder is the server-wide limiter
+// for image decodes.
+func NewService(store Store, files FileStorage, collages Collages, sources Sources, decoder *imaging.DecodeLimiter) *Service {
 	return &Service{
-		store:       store,
-		files:       files,
-		collages:    collages,
-		sources:     sources,
-		decodeSlots: make(chan struct{}, maxConcurrentDecodes),
+		store:    store,
+		files:    files,
+		collages: collages,
+		sources:  sources,
+		decoder:  decoder,
 	}
 }
 
@@ -262,7 +264,7 @@ func (s *Service) Upload(ctx context.Context, userID, collageID uint, contentTyp
 	if _, err := s.collages.Get(ctx, userID, collageID); err != nil {
 		return ImportResult{}, err
 	}
-	format, err := uploadFormat(contentType)
+	format, err := imaging.Format(contentType)
 	if err != nil {
 		return ImportResult{}, err
 	}
@@ -278,7 +280,7 @@ func (s *Service) Upload(ctx context.Context, userID, collageID uint, contentTyp
 	if exists {
 		return ImportResult{Skipped: 1}, nil
 	}
-	img, err := s.processLimited(ctx, data, format)
+	img, err := s.processUpload(ctx, data, format)
 	if err != nil {
 		return ImportResult{}, err
 	}
@@ -287,19 +289,6 @@ func (s *Service) Upload(ctx context.Context, userID, collageID uint, contentTyp
 		return ImportResult{}, fmt.Errorf("store upload in collage %d: %w", collageID, err)
 	}
 	return ImportResult{Photos: []Photo{p}}, nil
-}
-
-// processLimited runs processUpload when a decode slot is free, so that at
-// most maxConcurrentDecodes uploads are decoded at the same time. It stops
-// waiting when ctx is done.
-func (s *Service) processLimited(ctx context.Context, data []byte, format string) (preview, error) {
-	select {
-	case s.decodeSlots <- struct{}{}:
-	case <-ctx.Done():
-		return preview{}, fmt.Errorf("wait for decode slot: %w", ctx.Err())
-	}
-	defer func() { <-s.decodeSlots }()
-	return processUpload(data, format)
 }
 
 // readUpload reads an uploaded file of at most MaxUploadBytes.

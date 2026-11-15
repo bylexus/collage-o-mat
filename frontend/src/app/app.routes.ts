@@ -31,6 +31,10 @@ export const routes: Routes = [
           import('./features/connectors/connectors.page').then((m) => m.ConnectorsPage),
       },
       {
+        path: 'profile',
+        loadComponent: () => import('./features/profile/profile.page').then((m) => m.ProfilePage),
+      },
+      {
         path: 'about',
         loadComponent: () => import('./features/about/about.page').then((m) => m.AboutPage),
       },
