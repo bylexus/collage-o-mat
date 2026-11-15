@@ -2,7 +2,7 @@
 
 **Ticket/Source:** none (rough idea of the developer, 2026-11-14; grilling 2026-11-15)
 **Branch:** none (work on `main`, developer decides about commits)
-**Status:** in progress (all steps implemented 2026-11-15; manual review by the developer open)
+**Status:** done
 
 ## Goal
 
@@ -179,7 +179,7 @@ admin (works) and as normal user (403) and without session (401).
 ## Steps
 
 ### Step 1 — Backend: active flag
-- **Status:** implemented 2026-11-15, manual review open
+- **Status:** done (reviewed 2026-11-15)
 - **What:** `auth.User.IsActive bool` (`not null;default:true`). `CreateUser` sets `IsActive: true`.
   `login` treats an inactive user like a wrong password (generic 401, counts in the limiter as a fail).
   `RequireAuth` (session lookup) rejects sessions of inactive users (401). Expose `isActive` nowhere yet
@@ -190,7 +190,7 @@ admin (works) and as normal user (403) and without session (401).
 - **Notes:** `IsActive` tag `not null;default:true` → SQLite column `is_active numeric NOT NULL DEFAULT true`; an old DB without the column got `is_active = 1` for existing rows (tested). Login: inactive user = generic 401 and counts as a fail in the limiter. `auth.lookupSession` (`auth/session.go`) returns no session for inactive users, so `RequireAuth` answers 401 and clears the cookie. `auth.hashPassword` was exported as `auth.HashPassword` (used by `admin`).
 
 ### Step 2 — Backend: admin users API
-- **Status:** implemented 2026-11-15, manual review open
+- **Status:** done (reviewed 2026-11-15)
 - **What:** `auth.Handler.RequireAdmin` (403 `forbidden` for non-admins; used after `requireAuth`).
   Package `backend/internal/admin` (store, service, handler, interfaces `Collages`, `Usage`, `Avatars`;
   adapter for `Usage` in package `collage`). Endpoints:
@@ -209,7 +209,7 @@ admin (works) and as normal user (403) and without session (401).
 - **Notes:** Files: `backend/internal/admin/{store,service,handler}.go`, `backend/internal/collage/user_usage.go` (`UserUsage` implements `admin.Usage`), new `Photos.CountAllByCollage` (one grouped query in `photo/store.go`, avoids the SQLite parameter limit), `collage` store `OwnerByCollage`. `RequireAdmin` is a method of `auth.Handler`, returns 403 `{"error":"forbidden"}`. PATCH: `isAdmin`/`isActive` are required (else 400); own row is accepted only without changes. Last-admin rule: change is applied, then active admins are counted in the same transaction; 0 → rollback + 409. Delete: tx 1 checks rules and deletes sessions; then each collage via `collage.Service.Delete` (404 ignored); tx 2 deletes the user row and checks the admin rule again; repeatable. `avatarVersion` in the list = one query per user via `profile.Service.AvatarVersion` (accepted: few users). Avatar endpoint copies the profile cache headers. Smoke test with curl passed (403/401/409/404, files removed).
 
 ### Step 3 — Backend: system settings
-- **Status:** implemented 2026-11-15, manual review open
+- **Status:** done (reviewed 2026-11-15)
 - **What:** package `backend/internal/settings`: model `SystemSetting` (`Key string` PK, `Value
   jsoncol.JSON`), table `system_settings`, added to `models()`. Service: `Get(ctx) (Settings, error)`
   (defaults for missing keys), `Update(ctx, Settings) (Settings, error)` (validation, upsert all keys in
@@ -221,7 +221,7 @@ admin (works) and as normal user (403) and without session (401).
 - **Notes:** Files: `backend/internal/settings/{model,store,service,handler}.go`, `SystemSetting` in `models()`. Keys = JSON names of `Settings` fields. PUT starts from the stored settings (a missing field keeps its value), unknown fields → 400. Smoke test passed (default, PUT, restart, -1 → 400, 0 ok).
 
 ### Step 4 — Frontend: admin shell, toolbar button, users list, create
-- **Status:** implemented 2026-11-15, manual review open
+- **Status:** done (reviewed 2026-11-15)
 - **What:** `adminGuard` (`core/auth.guard.ts`, non-admin → `/`); route `admin` (child of `AppShell`) with
   `features/admin/admin.page` (tab nav bar "Users" / "Settings", `router-outlet`), children `users`
   (default redirect) and `settings` (placeholder until step 6); toolbar button in
@@ -234,7 +234,7 @@ admin (works) and as normal user (403) and without session (401).
 - **Notes:** Files: `core/auth.guard.ts` (`adminGuard`), `app.routes.ts`, `layout/app-shell.html` (`@@toolbar.admin`), `core/models/admin.ts`, `core/api/admin.api.ts`, `features/admin/admin.page.*`, `features/admin/users/admin-users.page.*`, `admin-dialogs.service.ts`, `user-create-dialog.ts`, `password-validators.ts`, `user-dialog.scss`. `shared/user-avatar.ts` got an optional input `imageUrl` (default behaviour unchanged). Dialog error handling follows `ConnectorDialog`: the page passes a `save`/`remove` callback, the dialog stays open and shows the server message on error. Admin column is a badge (like the toolbar Admin badge); the active column is called "Status", inactive rows are dimmed. Password validators duplicate the private ones in `profile.page.ts` (profile page not changed, out of scope). No `ChangeDetectionStrategy` set, because no existing component sets it. No `messages*.xlf` file exists in the project.
 
 ### Step 5 — Frontend: edit dialog and delete
-- **Status:** implemented 2026-11-15, manual review open
+- **Status:** done (reviewed 2026-11-15)
 - **What:** edit dialog (Admin, Active, new password + repeat, Save, Cancel, Delete). Own row: Admin/Active
   /Delete disabled, password fields hidden. Delete opens a dialog where the username must be typed to
   enable Delete. List reloads after changes.
@@ -243,13 +243,13 @@ admin (works) and as normal user (403) and without session (401).
 - **Notes:** `features/admin/users/user-edit-dialog.ts`, `user-delete-dialog.ts`. Delete from the edit dialog: the page's `remove` callback opens the delete dialog; after success the edit dialog closes with `'deleted'`.
 
 ### Step 6 — Frontend: settings tab + docs
-- **Status:** implemented 2026-11-15, manual review open
+- **Status:** done (reviewed 2026-11-15)
 - **What:** settings tab: field "Storage limit per user (GB)" (decimal, ≥ 0, 0 = unlimited) with hint "Not
   enforced yet", Save; converts GB ↔ bytes (10⁹). Update `doc/architecture.md` (packages `admin`,
   `settings`, `RequireAdmin`, `users.is_active`, table `system_settings`, API rows, routes `/admin/...`,
   frontend feature `admin`). Set plan status done and move this file to `doc/agent-plans/done/`.
 - **Acceptance criteria:** value round-trips (save, reload page); invalid input blocked; docs match code.
-- **Notes:** `features/admin/settings/admin-settings.page.*`. `doc/architecture.md` updated (packages, security, routes, toolbar, tables, API). Deviation: the plan file is NOT moved to `done/` yet, because the developer's manual review is still open.
+- **Notes:** `features/admin/settings/admin-settings.page.*`. `doc/architecture.md` updated (packages, security, routes, toolbar, tables, API). Plan file moved to `doc/agent-plans/done/` after the developer's review.
 
 ## Open questions
 
@@ -262,7 +262,6 @@ admin (works) and as normal user (403) and without session (401).
 Plan approved 2026-11-15. The developer asked to implement all steps without a review stop after each step
 (stop only for questions), with sub-agents. All 6 steps are implemented; `go build ./... && go vet ./...`
 and `npx ng build` pass. Backend smoke-tested with curl; frontend not tested in a browser.
-Next: manual review by the developer. After approval: set **Status:** done, step statuses to
-`done (reviewed <date>)`, move this file to `doc/agent-plans/done/`. Nothing is committed.
+The developer reviewed and approved the implementation on 2026-11-15. Feature done. Nothing is committed.
 Not tested: the "last active admin" 409 (only reachable in a race, because an admin cannot change the own
 row); FK cascade of `connectors` on user delete (expected to work like `user_avatars`/`sessions`).
