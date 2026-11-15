@@ -10,7 +10,8 @@ export class PhotoApi {
 
   /**
    * Imports assets of a connector into the collage (synchronous, can take several seconds).
-   * Assets that are already in the collage are skipped.
+   * Assets that are already in the collage are skipped. `request.size` chooses preview or
+   * original size.
    */
   import(collageId: number, request: ImportRequest): Observable<ImportResult> {
     return this.http.post<ImportResult>(`/api/collages/${collageId}/import`, request);

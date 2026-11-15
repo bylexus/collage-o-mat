@@ -45,6 +45,8 @@ type assetResponse struct {
 	FileName string `json:"fileName"`
 	Width    int    `json:"width"`
 	Height   int    `json:"height"`
+	// MimeType is the MIME type of the original file (e.g. "image/heic").
+	MimeType string `json:"mimeType"`
 }
 
 type assetPageResponse struct {
@@ -64,7 +66,13 @@ func toAlbumResponse(a Album) albumResponse {
 func toAssetPageResponse(p AssetPage) assetPageResponse {
 	resp := assetPageResponse{Items: make([]assetResponse, len(p.Items))}
 	for i, a := range p.Items {
-		resp.Items[i] = assetResponse{ID: a.ID, FileName: a.OriginalFileName, Width: a.Width, Height: a.Height}
+		resp.Items[i] = assetResponse{
+			ID:       a.ID,
+			FileName: a.OriginalFileName,
+			Width:    a.Width,
+			Height:   a.Height,
+			MimeType: a.OriginalMimeType,
+		}
 	}
 	if p.NextPage > 0 {
 		resp.NextPage = &p.NextPage

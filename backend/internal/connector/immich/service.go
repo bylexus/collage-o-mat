@@ -4,8 +4,10 @@ import (
 	"cmp"
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"mime"
+	"net/http"
 	"slices"
 	"strings"
 
@@ -83,7 +85,7 @@ func (s *Service) Thumbnail(ctx context.Context, userID, connectorID uint, asset
 	if err != nil {
 		return nil, "", err
 	}
-	body, contentType, err := client.Thumbnail(ctx, assetID, ThumbnailSizeThumbnail)
+	body, contentType, _, err := client.Thumbnail(ctx, assetID, ThumbnailSizeThumbnail)
 	if err != nil {
 		return nil, "", upstream(err)
 	}
@@ -94,14 +96,14 @@ func (s *Service) Thumbnail(ctx context.Context, userID, connectorID uint, asset
 	return body, contentType, nil
 }
 
-// Source implements photo.Sources: the previews of the connector's Immich
-// server.
+// Source implements photo.Sources: the preview and original images of the
+// connector's Immich server.
 func (s *Service) Source(ctx context.Context, userID, connectorID uint) (photo.Source, error) {
 	client, err := s.client(ctx, userID, connectorID)
 	if err != nil {
 		return nil, err
 	}
-	return previewSource{client: client}, nil
+	return imageSource{client: client}, nil
 }
 
 // client returns an Immich client for a connector of the user. A connector
@@ -117,18 +119,28 @@ func (s *Service) client(ctx context.Context, userID, connectorID uint) (*Client
 	return s.kind.Client(config)
 }
 
-// previewSource implements photo.Source with the preview size of Immich.
-type previewSource struct {
+// imageSource implements photo.Source with the Immich sizes preview
+// (photo.SizePreview) and fullsize (photo.SizeOriginal).
+type imageSource struct {
 	client *Client
 }
 
-// Preview implements photo.Source.
-func (p previewSource) Preview(ctx context.Context, assetID string) (io.ReadCloser, string, error) {
-	body, contentType, err := p.client.Thumbnail(ctx, assetID, ThumbnailSizePreview)
-	if err != nil {
-		return nil, "", upstream(err)
+// Image implements photo.Source. A 403 on the original file (the key has
+// no permission asset.download) gives a specific upstream error.
+func (p imageSource) Image(ctx context.Context, assetID string, size photo.ImageSize) (photo.SourceImage, error) {
+	thumbSize := ThumbnailSizePreview
+	if size == photo.SizeOriginal {
+		thumbSize = ThumbnailSizeFullsize
 	}
-	return body, contentType, nil
+	body, contentType, fallback, err := p.client.Thumbnail(ctx, assetID, thumbSize)
+	if err != nil {
+		var se *StatusError
+		if errors.As(err, &se) && se.StatusCode == http.StatusForbidden && strings.HasSuffix(se.Path, "/original") {
+			return photo.SourceImage{}, apperr.Upstream("Original size needs the permission asset.download on the Immich API key")
+		}
+		return photo.SourceImage{}, upstream(err)
+	}
+	return photo.SourceImage{Body: body, ContentType: contentType, Fallback: fallback}, nil
 }
 
 // upstream marks an error of the Immich client as an upstream error. The

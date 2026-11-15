@@ -160,14 +160,20 @@ func parseNextPage(s *string) (int, error) {
 
 // Thumbnail returns the image bytes of an asset in the given size and the
 // Content-Type of the response (e.g. "image/jpeg" or "image/webp"). The
-// caller must close the reader. Needs the permission asset.view.
-func (c *Client) Thumbnail(ctx context.Context, assetID string, size ThumbnailSize) (io.ReadCloser, string, error) {
+// caller must close the reader. Needs the permission asset.view; for
+// ThumbnailSizeFullsize of a web format also asset.download.
+//
+// previewFallback is true if ThumbnailSizeFullsize was requested and Immich
+// redirected to the preview (the final request URL has size=preview).
+func (c *Client) Thumbnail(ctx context.Context, assetID string, size ThumbnailSize) (body io.ReadCloser, contentType string, previewFallback bool, err error) {
 	path := "/assets/" + url.PathEscape(assetID) + "/thumbnail?size=" + url.QueryEscape(string(size))
 	resp, err := c.do(ctx, http.MethodGet, path, nil)
 	if err != nil {
-		return nil, "", err
+		return nil, "", false, err
 	}
-	return resp.Body, resp.Header.Get("Content-Type"), nil
+	previewFallback = size == ThumbnailSizeFullsize &&
+		resp.Request.URL.Query().Get("size") == string(ThumbnailSizePreview)
+	return resp.Body, resp.Header.Get("Content-Type"), previewFallback, nil
 }
 
 // doJSON sends a request with an optional JSON body and decodes the JSON
@@ -198,7 +204,8 @@ func (c *Client) doJSON(ctx context.Context, method, path string, body, out any)
 }
 
 // do sends a request and returns the response if its status is 2xx. For
-// other statuses it closes the body and returns a *StatusError.
+// other statuses it closes the body and returns a *StatusError. Its Path is
+// the path of the request that failed (after redirects the last one).
 func (c *Client) do(ctx context.Context, method, path string, body io.Reader) (*http.Response, error) {
 	req, err := http.NewRequestWithContext(ctx, method, c.apiURL+path, body)
 	if err != nil {
@@ -215,7 +222,7 @@ func (c *Client) do(ctx context.Context, method, path string, body io.Reader) (*
 	if resp.StatusCode < 200 || resp.StatusCode > 299 {
 		_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, 64<<10))
 		resp.Body.Close()
-		return nil, &StatusError{Method: method, Path: req.URL.Path, StatusCode: resp.StatusCode}
+		return nil, &StatusError{Method: resp.Request.Method, Path: resp.Request.URL.Path, StatusCode: resp.StatusCode}
 	}
 	return resp, nil
 }

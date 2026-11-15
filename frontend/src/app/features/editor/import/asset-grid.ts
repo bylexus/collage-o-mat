@@ -4,7 +4,8 @@ import { ImmichAsset, immichThumbnailUrl } from '../../../core/models/immich';
 
 /**
  * Thumbnail grid of the step "choose photos" (presentational). A click toggles the selection of
- * an asset; assets that are already imported are marked and cannot be selected.
+ * an asset; assets that are already imported or that are not available in the chosen size are
+ * marked and cannot be selected.
  */
 @Component({
   selector: 'app-asset-grid',
@@ -12,20 +13,26 @@ import { ImmichAsset, immichThumbnailUrl } from '../../../core/models/immich';
   template: `
     @for (asset of assets(); track asset.id) {
       @let imported = importedIds().has(asset.id);
+      @let unavailable = !imported && unavailableIds().has(asset.id);
       @let selected = selectedIds().has(asset.id);
       <button
         type="button"
         class="asset-tile"
         [class.selected]="selected"
         [class.imported]="imported"
-        [disabled]="imported || disabled()"
+        [class.unavailable]="unavailable"
+        [disabled]="imported || unavailable || disabled()"
         [attr.aria-pressed]="selected"
-        [title]="asset.fileName"
+        [title]="unavailable ? asset.fileName + ' – ' + unavailableReason : asset.fileName"
         (click)="toggled.emit(asset.id)"
       >
         <img [src]="thumbnailUrl(asset.id)" [alt]="asset.fileName" loading="lazy" />
         @if (imported) {
           <span class="asset-badge" i18n="@@import.assets.imported">Imported</span>
+        } @else if (unavailable) {
+          <span class="asset-badge unavailable-badge" i18n="@@import.assets.originalUnavailable">
+            Not available in original size
+          </span>
         } @else if (selected) {
           <mat-icon class="asset-check">check_circle</mat-icon>
         }
@@ -63,8 +70,13 @@ import { ImmichAsset, immichThumbnailUrl } from '../../../core/models/immich';
         outline-offset: -3px;
       }
 
-      &.imported img {
+      &.imported img,
+      &.unavailable img {
         opacity: 0.4;
+      }
+
+      &.unavailable img {
+        filter: grayscale(1);
       }
 
       img {
@@ -92,6 +104,11 @@ import { ImmichAsset, immichThumbnailUrl } from '../../../core/models/immich';
       background-color: var(--mat-sys-secondary-container);
       color: var(--mat-sys-on-secondary-container);
       font: var(--mat-sys-label-small);
+
+      &.unavailable-badge {
+        background-color: var(--mat-sys-surface-container-highest);
+        color: var(--mat-sys-on-surface-variant);
+      }
     }
   `,
 })
@@ -101,10 +118,14 @@ export class AssetGrid {
   readonly selectedIds = input.required<ReadonlySet<string>>();
   /** Assets that are already in the collage. */
   readonly importedIds = input.required<ReadonlySet<string>>();
+  /** Assets that cannot be imported in the chosen size (greyed out, not selectable). */
+  readonly unavailableIds = input<ReadonlySet<string>>(new Set());
   /** Disables all tiles (e.g. while the import runs). */
   readonly disabled = input(false);
   /** Emits the id of the clicked asset. */
   readonly toggled = output<string>();
+
+  protected readonly unavailableReason = $localize`:@@import.assets.originalUnavailableReason:Not available in original size: AVIF, GIF and BMP files and images over 60 megapixels are not supported. Use the preview size.`;
 
   protected thumbnailUrl(assetId: string): string {
     return immichThumbnailUrl(this.connectorId(), assetId);

@@ -1,5 +1,6 @@
 import { Component, computed, inject, signal } from '@angular/core';
 import { MatButtonModule } from '@angular/material/button';
+import { MatButtonToggleModule } from '@angular/material/button-toggle';
 import { MAT_DIALOG_DATA, MatDialogModule, MatDialogRef } from '@angular/material/dialog';
 import { MatIconModule } from '@angular/material/icon';
 import { MatProgressSpinnerModule } from '@angular/material/progress-spinner';
@@ -9,11 +10,15 @@ import { ConnectorApi } from '../../../core/api/connector.api';
 import { ImmichApi } from '../../../core/api/immich.api';
 import { ConnectorSummary } from '../../../core/models/connector';
 import { ImmichAlbum, ImmichAsset } from '../../../core/models/immich';
-import { ImportRequest, ImportResult, Photo } from '../../../core/models/photo';
+import { ImportRequest, ImportResult, ImportSize, Photo } from '../../../core/models/photo';
 import { errorMessage } from '../../../shared/error-message';
 import { AlbumList } from './album-list';
 import { AssetGrid } from './asset-grid';
 import { ConnectorList } from './connector-list';
+import { supportsOriginalSize } from './original-size';
+
+/** localStorage key of the last chosen import size (per browser). */
+const IMPORT_SIZE_STORAGE_KEY = 'collageomat.importSize';
 
 /** Input of the import dialog. */
 export interface ImportDialogData {
@@ -37,6 +42,7 @@ export interface ImportDialogData {
   imports: [
     RouterLink,
     MatButtonModule,
+    MatButtonToggleModule,
     MatDialogModule,
     MatIconModule,
     MatProgressSpinnerModule,
@@ -62,6 +68,8 @@ export class ImportDialog {
   protected readonly assets = signal<readonly ImmichAsset[]>([]);
   protected readonly nextPage = signal<number | null>(null);
   protected readonly selectedIds = signal<ReadonlySet<string>>(new Set());
+  /** Image size of the import; the last choice is remembered in localStorage. */
+  protected readonly size = signal<ImportSize>(readStoredSize());
 
   protected readonly loading = signal(false);
   protected readonly loadError = signal<string | null>(null);
@@ -80,6 +88,12 @@ export class ImportDialog {
       this.data.photos.filter((p) => p.connectorId === connectorId).map((p) => p.sourceAssetId),
     );
   });
+  /** Loaded assets that cannot be imported in the chosen size (only in original mode). */
+  protected readonly unavailableIds = computed<ReadonlySet<string>>(() =>
+    this.size() === 'original'
+      ? new Set(this.assets().flatMap((a) => (supportsOriginalSize(a) ? [] : [a.id])))
+      : new Set(),
+  );
   protected readonly selectedCount = computed(() => this.selectedIds().size);
 
   /** Increased by each new request and by back navigation; older responses are ignored. */
@@ -143,10 +157,27 @@ export class ImportDialog {
     });
   }
 
-  /** Selects all loaded assets that are not imported yet. */
+  /** Selects all loaded assets that are not imported yet and are available in the chosen size. */
   protected selectAll(): void {
     const imported = this.importedIds();
-    this.selectedIds.set(new Set(this.assets().flatMap((a) => (imported.has(a.id) ? [] : [a.id]))));
+    const unavailable = this.unavailableIds();
+    this.selectedIds.set(
+      new Set(
+        this.assets().flatMap((a) => (imported.has(a.id) || unavailable.has(a.id) ? [] : [a.id])),
+      ),
+    );
+  }
+
+  /** Sets and remembers the import size; removes assets that are not available from the selection. */
+  protected setSize(size: ImportSize): void {
+    this.size.set(size);
+    storeSize(size);
+    const unavailable = this.unavailableIds();
+    if (unavailable.size > 0) {
+      this.selectedIds.update(
+        (current) => new Set([...current].filter((id) => !unavailable.has(id))),
+      );
+    }
   }
 
   protected selectNone(): void {
@@ -166,7 +197,9 @@ export class ImportDialog {
     this.setImporting(true);
     this.importError.set(null);
     try {
-      this.ref.close(await this.data.importPhotos({ connectorId: connector.id, assetIds }));
+      this.ref.close(
+        await this.data.importPhotos({ connectorId: connector.id, assetIds, size: this.size() }),
+      );
     } catch (err) {
       this.importError.set(errorMessage(err));
       this.setImporting(false);
@@ -220,5 +253,24 @@ export class ImportDialog {
   private setImporting(importing: boolean): void {
     this.importing.set(importing);
     this.ref.disableClose = importing;
+  }
+}
+
+/** Last chosen import size from localStorage; `preview` if none, invalid or not readable. */
+function readStoredSize(): ImportSize {
+  try {
+    const value = localStorage.getItem(IMPORT_SIZE_STORAGE_KEY);
+    return value === 'original' ? 'original' : 'preview';
+  } catch {
+    return 'preview';
+  }
+}
+
+/** Remembers the import size; ignores storage errors (e.g. blocked site data). */
+function storeSize(size: ImportSize): void {
+  try {
+    localStorage.setItem(IMPORT_SIZE_STORAGE_KEY, size);
+  } catch {
+    // Not remembered; the choice still applies to this dialog.
   }
 }

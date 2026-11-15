@@ -34,11 +34,17 @@ func (h *Handler) RegisterRoutes(mux *http.ServeMux, requireAuth httpapi.Middlew
 type importRequest struct {
 	ConnectorID uint     `json:"connectorId"`
 	AssetIDs    []string `json:"assetIds"`
+	// Size is "preview" (default if empty) or "original".
+	Size string `json:"size"`
 }
 
 type importResponse struct {
 	Photos  []collage.PhotoView `json:"photos"`
 	Skipped int                 `json:"skipped"`
+	// PreviewFallbacks is the number of photos that were requested in
+	// original size, but that the source delivered as preview (always 0
+	// for uploads).
+	PreviewFallbacks int `json:"previewFallbacks"`
 }
 
 func (h *Handler) importAssets(w http.ResponseWriter, r *http.Request) {
@@ -51,12 +57,21 @@ func (h *Handler) importAssets(w http.ResponseWriter, r *http.Request) {
 	if !httpapi.DecodeJSON(w, r, &req) {
 		return
 	}
-	res, err := h.svc.Import(r.Context(), auth.UserID(r), collageID, req.ConnectorID, req.AssetIDs)
+	size, err := ParseImageSize(req.Size)
 	if err != nil {
 		httpapi.WriteServiceError(w, err)
 		return
 	}
-	httpapi.WriteJSON(w, http.StatusOK, importResponse{Photos: views(res.Photos), Skipped: res.Skipped})
+	res, err := h.svc.Import(r.Context(), auth.UserID(r), collageID, req.ConnectorID, req.AssetIDs, size)
+	if err != nil {
+		httpapi.WriteServiceError(w, err)
+		return
+	}
+	httpapi.WriteJSON(w, http.StatusOK, importResponse{
+		Photos:           views(res.Photos),
+		Skipped:          res.Skipped,
+		PreviewFallbacks: res.PreviewFallbacks,
+	})
 }
 
 // upload stores one image file sent as the raw request body (Content-Type

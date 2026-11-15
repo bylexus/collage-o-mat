@@ -69,4 +69,10 @@ type ThumbnailSize string
 const (
 	ThumbnailSizeThumbnail ThumbnailSize = "thumbnail"
 	ThumbnailSizePreview   ThumbnailSize = "preview"
+	// ThumbnailSizeFullsize is the full-resolution image. Immich redirects
+	// to /assets/{id}/original for web formats (needs the permission
+	// asset.download), sends its converted full-size image for other
+	// formats (e.g. HEIC, RAW), or redirects to the preview if the server
+	// has no full-size image.
+	ThumbnailSizeFullsize ThumbnailSize = "fullsize"
 )

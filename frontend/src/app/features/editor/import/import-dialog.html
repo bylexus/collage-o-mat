@@ -39,6 +39,24 @@
         >
           Select none
         </button>
+        <span class="size-choice">
+          <span class="size-label" i18n="@@import.size.label">Size</span>
+          <mat-button-toggle-group
+            hideSingleSelectionIndicator
+            [value]="size()"
+            [disabled]="importing()"
+            (change)="setSize($event.value)"
+            i18n-aria-label="@@import.size.ariaLabel"
+            aria-label="Image size"
+          >
+            <mat-button-toggle value="preview" i18n="@@import.size.preview">
+              Preview
+            </mat-button-toggle>
+            <mat-button-toggle value="original" i18n="@@import.size.original">
+              Original
+            </mat-button-toggle>
+          </mat-button-toggle-group>
+        </span>
       </div>
       @if (!loading() && !loadError() && assets().length === 0) {
         <p class="import-message" i18n="@@import.assets.empty">This album has no photos.</p>
@@ -48,6 +66,7 @@
         [assets]="assets()"
         [selectedIds]="selectedIds()"
         [importedIds]="importedIds()"
+        [unavailableIds]="unavailableIds()"
         [disabled]="importing()"
         (toggled)="toggle($event)"
       />

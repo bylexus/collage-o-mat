@@ -6,9 +6,9 @@ A Photo collage web app inspired by CollageIt! Pro, in Go / Angular.
 
 ## Features
 
-* Import Photos from [an Immich Server](https://immich.app/), local files
+* Import Photos from [an **Immich Server**](https://immich.app/), local files
 * Page presets (A5, A4, A3, Letter, 30 × 30 cm) or custom size, DPI setting
-* Arrange photos automatically in several modes (grid, center mode, random heap, masonry, free placement)
+* **Arrange photos automatically** in several modes (grid, center mode, random heap, masonry, free placement)
 * Settings dialog per arrangement mode, quick re-roll with the same settings
 * Random photo order for grid and center mode
 * Swap two photos, set the centre photo
@@ -17,13 +17,22 @@ A Photo collage web app inspired by CollageIt! Pro, in Go / Angular.
 * Free placement and rotation
 * Crop photos inside their frame (pan, zoom)
 * Photo adjustments (non-destructive): brightness, contrast, colour tint (e.g. sepia, greyscale)
-* Floating toolbar below the selected photo or text, with movable popovers for its settings
 * Display lengths in mm or px
-* Snap grid to align photos and texts
-* Text elements with 16 bundled fonts
+* **Snap grid** to align photos and texts
+* **Text elements** with 16 bundled fonts
 * Undo/redo and auto-save
 * Duplicate a collage (full, independent copy with all photos and texts)
 * Export final image to png, jpg
+* **single-binary server**: just deploy one single binary to your server / container!
+
+## Connect an [Immich](https://immich.app/) server
+
+Collageomat can directly import photos from Immich albums. You define an Immich Connector in Collageomat and 
+provide the Immich server URL and an API key.
+
+The API Key needs the following permissions:
+
+`asset.read`, `asset.download`, `asset.view`, `album.read`
 
 ## Development
 

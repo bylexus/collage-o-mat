@@ -19,7 +19,7 @@ export interface UploadBatchState {
   /** Number of finished files (uploaded, skipped or failed). */
   done: number;
   total: number;
-  /** Merged result of the uploaded files: photos sorted by id ascending, skipped summed. */
+  /** Merged result of the uploaded files: photos sorted by id ascending, counts summed. */
   result: ImportResult;
   failures: UploadFailure[];
 }
@@ -39,7 +39,7 @@ export function uploadBatch(
   const start: UploadBatchState = {
     done: 0,
     total: files.length,
-    result: { photos: [], skipped: 0 },
+    result: { photos: [], skipped: 0, previewFallbacks: 0 },
     failures: [],
   };
   return from(files).pipe(
@@ -72,5 +72,6 @@ function addOutcome(state: UploadBatchState, outcome: FileOutcome): UploadBatchS
   }
   const photos = [...state.result.photos, ...outcome.result.photos].sort((a, b) => a.id - b.id);
   const skipped = state.result.skipped + outcome.result.skipped;
-  return { ...state, done, result: { photos, skipped } };
+  const previewFallbacks = state.result.previewFallbacks + outcome.result.previewFallbacks;
+  return { ...state, done, result: { photos, skipped, previewFallbacks } };
 }

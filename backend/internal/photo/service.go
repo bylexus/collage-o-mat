@@ -82,10 +82,44 @@ type Sources interface {
 
 // Source downloads images of one connector.
 type Source interface {
-	// Preview returns the preview image of an asset and its Content-Type.
-	// The caller must close the reader. Problems of the source are apperr
+	// Image returns the image of an asset in the given size. The caller
+	// must close SourceImage.Body. Problems of the source are apperr
 	// upstream errors.
-	Preview(ctx context.Context, assetID string) (io.ReadCloser, string, error)
+	Image(ctx context.Context, assetID string, size ImageSize) (SourceImage, error)
+}
+
+// SourceImage is an image downloaded from a Source.
+type SourceImage struct {
+	// Body is the image data. The caller must close it.
+	Body io.ReadCloser
+	// ContentType is the Content-Type of the image (e.g. "image/jpeg").
+	ContentType string
+	// Fallback is true if SizeOriginal was requested, but the source could
+	// only deliver the preview.
+	Fallback bool
+}
+
+// ImageSize is the image size of an import from a Source.
+type ImageSize string
+
+// Image sizes of an import.
+const (
+	// SizePreview is the big preview of the source (Immich: about 1440 px).
+	SizePreview ImageSize = "preview"
+	// SizeOriginal is the original size of the image.
+	SizeOriginal ImageSize = "original"
+)
+
+// ParseImageSize returns the ImageSize of s. An empty s gives SizePreview;
+// an unknown value gives an apperr validation error.
+func ParseImageSize(s string) (ImageSize, error) {
+	switch ImageSize(s) {
+	case "", SizePreview:
+		return SizePreview, nil
+	case SizeOriginal:
+		return SizeOriginal, nil
+	}
+	return "", apperr.Validation("size must be %q or %q", SizePreview, SizeOriginal)
 }
 
 // ImportResult is the result of an import or upload.
@@ -95,6 +129,9 @@ type ImportResult struct {
 	// Skipped is the number of requested assets that were already in the
 	// collage (same connector and asset ID; for uploads: same file content).
 	Skipped int
+	// PreviewFallbacks is the number of imported photos that were requested
+	// in SizeOriginal, but that the source could only deliver as preview.
+	PreviewFallbacks int
 }
 
 // Service contains the business rules for photos. Every method takes the id
@@ -122,21 +159,26 @@ func NewService(store Store, files FileStorage, collages Collages, sources Sourc
 	}
 }
 
-// Import copies the preview images of the given assets of a connector into
-// the collage. Assets that are already in the collage are skipped; duplicate
-// IDs in assetIDs are imported once. Up to importWorkers downloads run in
-// parallel.
+// Import copies the images of the given assets of a connector into the
+// collage, in the given size (see ParseImageSize). Originals are converted
+// to a JPEG without scaling (see processOriginal); previews and preview
+// fallbacks are stored as they are (see readPreview). Assets that are
+// already in the collage are skipped; duplicate IDs in assetIDs are
+// imported once. Up to importWorkers downloads run in parallel.
 //
 // If an asset fails, no further downloads are started and the error names
 // the asset; downloads that are already running are finished. Photos that
 // were imported before the error stay in the collage (a repeated request
 // skips them).
-func (s *Service) Import(ctx context.Context, userID, collageID, connectorID uint, assetIDs []string) (ImportResult, error) {
+func (s *Service) Import(ctx context.Context, userID, collageID, connectorID uint, assetIDs []string, size ImageSize) (ImportResult, error) {
 	if _, err := s.collages.Get(ctx, userID, collageID); err != nil {
 		return ImportResult{}, err
 	}
 	if connectorID == 0 {
 		return ImportResult{}, apperr.Validation("connectorId is required")
+	}
+	if size != SizePreview && size != SizeOriginal {
+		return ImportResult{}, apperr.Validation("size must be %q or %q", SizePreview, SizeOriginal)
 	}
 	ids, err := normalizeAssetIDs(assetIDs)
 	if err != nil {
@@ -156,19 +198,21 @@ func (s *Service) Import(ctx context.Context, userID, collageID, connectorID uin
 	}
 	todo := slices.DeleteFunc(ids, func(id string) bool { return skip[id] })
 
-	photos, err := s.importAll(ctx, src, collageID, connectorID, todo)
+	photos, fallbacks, err := s.importAll(ctx, src, collageID, connectorID, todo, size)
 	slices.SortFunc(photos, func(a, b Photo) int { return cmp.Compare(a.ID, b.ID) })
-	return ImportResult{Photos: photos, Skipped: len(existing)}, err
+	return ImportResult{Photos: photos, Skipped: len(existing), PreviewFallbacks: fallbacks}, err
 }
 
 // importAll imports the assets with importWorkers parallel workers. It
-// returns the imported photos and the first error.
-func (s *Service) importAll(ctx context.Context, src Source, collageID, connectorID uint, assetIDs []string) ([]Photo, error) {
+// returns the imported photos, the number of preview fallbacks among them
+// and the first error.
+func (s *Service) importAll(ctx context.Context, src Source, collageID, connectorID uint, assetIDs []string, size ImageSize) ([]Photo, int, error) {
 	var (
-		mu       sync.Mutex
-		photos   = make([]Photo, 0, len(assetIDs))
-		firstErr error
-		wg       sync.WaitGroup
+		mu        sync.Mutex
+		photos    = make([]Photo, 0, len(assetIDs))
+		fallbacks int
+		firstErr  error
+		wg        sync.WaitGroup
 	)
 	failed := make(chan struct{}) // closed on the first error
 	fail := func(err error) {
@@ -187,13 +231,16 @@ func (s *Service) importAll(ctx context.Context, src Source, collageID, connecto
 				if isClosed(failed) {
 					continue
 				}
-				p, err := s.importOne(ctx, src, collageID, connectorID, assetID)
+				p, fallback, err := s.importOne(ctx, src, collageID, connectorID, assetID, size)
 				if err != nil {
 					fail(assetError(assetID, err))
 					continue
 				}
 				mu.Lock()
 				photos = append(photos, p)
+				if fallback {
+					fallbacks++
+				}
 				mu.Unlock()
 			}
 		})
@@ -208,17 +255,19 @@ feed:
 	}
 	close(jobs)
 	wg.Wait()
-	return photos, firstErr
+	return photos, fallbacks, firstErr
 }
 
-// importOne downloads and checks the preview of one asset, then creates the
-// photo row and file together.
-func (s *Service) importOne(ctx context.Context, src Source, collageID, connectorID uint, assetID string) (Photo, error) {
-	img, err := download(ctx, src, assetID)
+// importOne downloads and checks the image of one asset in the given size,
+// then creates the photo row and file together. fallback is true if the
+// source delivered the preview instead of the original.
+func (s *Service) importOne(ctx context.Context, src Source, collageID, connectorID uint, assetID string, size ImageSize) (p Photo, fallback bool, err error) {
+	img, fallback, err := s.download(ctx, src, assetID, size)
 	if err != nil {
-		return Photo{}, err
+		return Photo{}, false, err
 	}
-	return s.createPhoto(ctx, collageID, &connectorID, assetID, img)
+	p, err = s.createPhoto(ctx, collageID, &connectorID, assetID, img)
+	return p, fallback, err
 }
 
 // createPhoto creates the photo row and its file together. connectorID is
@@ -313,14 +362,22 @@ func uploadAssetID(data []byte) string {
 	return "sha256:" + hex.EncodeToString(sum[:])
 }
 
-// download fetches and checks the preview image of an asset.
-func download(ctx context.Context, src Source, assetID string) (preview, error) {
-	body, contentType, err := src.Preview(ctx, assetID)
+// download fetches the image of an asset in the given size. An original is
+// converted with processOriginal; a preview or a preview fallback is
+// checked with readPreview. fallback is true if the source delivered the
+// preview instead of the original.
+func (s *Service) download(ctx context.Context, src Source, assetID string, size ImageSize) (img preview, fallback bool, err error) {
+	res, err := src.Image(ctx, assetID, size)
 	if err != nil {
-		return preview{}, err
+		return preview{}, false, err
 	}
-	defer body.Close()
-	return readPreview(body, contentType)
+	defer res.Body.Close()
+	if size == SizeOriginal && !res.Fallback {
+		img, err = s.processOriginal(ctx, res.Body, res.ContentType)
+		return img, false, err
+	}
+	img, err = readPreview(res.Body, res.ContentType)
+	return img, res.Fallback, err
 }
 
 // assetError adds the asset ID to an import error. Upstream errors keep

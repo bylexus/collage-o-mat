@@ -29,6 +29,17 @@
   min-width: 140px;
 }
 
+.size-choice {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.size-label {
+  color: var(--mat-sys-on-surface-variant);
+  font: var(--mat-sys-label-large);
+}
+
 .load-more {
   display: flex;
   justify-content: center;

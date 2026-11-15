@@ -72,7 +72,7 @@ export function createImmichConfigGroup(
         </mat-hint>
       } @else {
         <mat-hint i18n="@@connectors.immich.apiKeyPermissions">
-          Needs the permissions album.read, asset.read and asset.view.
+          Needs the permissions album.read, asset.read, asset.view and asset.download (for the original size).
         </mat-hint>
       }
       @if (group().controls.apiKey.hasError('required')) {

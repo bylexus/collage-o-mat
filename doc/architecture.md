@@ -47,7 +47,7 @@ package-level mutable state.
 |---|---|
 | `auth` | Users, sessions (cookie token, SHA-256 hash in DB), login rate limit (`LoginLimiter`), `RequireAuth`, `auth.UserID(r)`, `auth.SessionID(r)`. `PasswordChanger` (implements `profile.Passwords`, uses the same `LoginLimiter` instance as the login). Declares `AvatarVersions` (implemented by `profile.Service`) for the user DTO. Older code, no store/service split |
 | `collage` | Collages, texts, layout save (one transaction) |
-| `photo` | Photo rows and files, Immich import, local upload (`process.go`: calls `imaging`, long edge ≤ 2560 px), file serving |
+| `photo` | Photo rows and files, Immich import (preview: stored as downloaded; original: `process.go` calls `imaging`, no scaling), local upload (`process.go`: calls `imaging`, long edge ≤ 2560 px), file serving |
 | `connector` | Connectors per user, `Kind` registry (strategy per connector type), config encrypted with `secretbox` |
 | `connector/immich` | Immich HTTP client, album/asset listing, thumbnail proxy |
 | `profile` | Profile of the session user: password change (through the `Passwords` interface), avatar (upload → `imaging` square ≤ 500×500 JPEG, store, serve, delete) |
@@ -158,7 +158,7 @@ background image always shows the original photo.
 | GET, PATCH, DELETE | `/api/collages/{id}` | Load full collage, rename, delete (rows + photo dir) |
 | POST | `/api/collages/{id}/duplicate` | Copy the collage (settings with remapped photo ids, photo rows + files, texts with new ids) in one transaction; skips photos with a missing file (`skippedPhotos`) |
 | PUT | `/api/collages/{id}/layout` | Save settings + photo props + texts in one transaction |
-| POST | `/api/collages/{id}/import` | Import Immich assets |
+| POST | `/api/collages/{id}/import` | Import Immich assets (`connectorId`, `assetIds`, `size` = `"preview"` (default) or `"original"`) → `photos`, `skipped`, `previewFallbacks` (original requests that Immich answered with the preview) |
 | POST | `/api/collages/{id}/uploads` | Upload one local image (raw body) |
 | GET | `/api/collages/{id}/photos/{photoId}/file` | Image bytes (immutable cache) |
 | DELETE | `/api/collages/{id}/photos/{photoId}` | Delete photo row and file |
@@ -166,7 +166,7 @@ background image always shows the original photo.
 | PUT, DELETE | `/api/connectors/{id}` | Update, delete |
 | POST | `/api/connectors/{id}/test` | Test the connection |
 | GET | `/api/connectors/{id}/immich/albums` | Immich albums |
-| GET | `/api/connectors/{id}/immich/albums/{albumId}/assets?page=N` | Album assets (images, paged) |
+| GET | `/api/connectors/{id}/immich/albums/{albumId}/assets?page=N` | Album assets (images, paged); items `{id, fileName, width, height, mimeType}` (`mimeType` = Immich original MIME type) |
 | GET | `/api/connectors/{id}/immich/assets/{assetId}/thumbnail` | Proxied thumbnail |
 
 Unknown `/api/...` paths always return a JSON 404, never the SPA.

@@ -12,8 +12,9 @@ import (
 	"collageomat/internal/apperr"
 )
 
-// maxPreviewBytes limits the size of one downloaded preview image. Immich
-// previews (about 1440 px) are a few hundred KB.
+// maxPreviewBytes limits the size of one downloaded image (preview or
+// original, see readOriginal). Immich previews (about 1440 px) are a few
+// hundred KB.
 const maxPreviewBytes = 50 << 20 // 50 MiB
 
 // imageFormat describes an accepted preview image type.

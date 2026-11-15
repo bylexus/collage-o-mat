@@ -16,6 +16,8 @@ export interface ImmichAsset {
   fileName: string;
   width: number;
   height: number;
+  /** MIME type of the original file in Immich (e.g. `image/jpeg`); may be an empty string. */
+  mimeType: string;
 }
 
 /** One page of `GET .../immich/albums/{albumId}/assets?page=N` (images only). */

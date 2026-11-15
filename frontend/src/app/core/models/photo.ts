@@ -79,10 +79,17 @@ export function isPlaced(props: PhotoProps | UnplacedProps): props is PhotoProps
   return typeof (props as Partial<PhotoProps>).widthMm === 'number';
 }
 
+/**
+ * Image size of an Immich import: `preview` = the big Immich thumbnail (about 1440 px),
+ * `original` = full resolution (re-encoded as JPEG by the backend).
+ */
+export type ImportSize = 'preview' | 'original';
+
 /** Body of `POST /api/collages/{id}/import`. */
 export interface ImportRequest {
   connectorId: number;
   assetIds: string[];
+  size: ImportSize;
 }
 
 /** Result of `POST /api/collages/{id}/import` and `POST /api/collages/{id}/uploads`. */
@@ -91,6 +98,11 @@ export interface ImportResult {
   photos: Photo[];
   /** Number of assets not imported because they are already in the collage. */
   skipped: number;
+  /**
+   * Number of photos imported in preview size although the original size was requested (Immich
+   * could not deliver a full-size image). Always 0 for uploads.
+   */
+  previewFallbacks: number;
 }
 
 /** URL of the stored image file of a photo (usable as `<img src>`). */
