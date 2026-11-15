@@ -2,7 +2,7 @@
 
 A Photo collage web app inspired by CollageIt! Pro, in Go / Angular.
 
-![Main screen screenshot](doc/screens/main-screen.png)
+![Main screen screenshot](doc/screens/main-screen.jpg)
 
 ## Features
 
