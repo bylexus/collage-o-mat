@@ -3,11 +3,12 @@ import Konva from 'konva/lib/Core';
 import { Image as KonvaImage } from 'konva/lib/shapes/Image';
 import { Rect as KonvaRect } from 'konva/lib/shapes/Rect';
 import type { BorderSettings } from '../../../core/models/collage';
-import type { NormalizedRect, PhotoProps } from '../../../core/models/photo';
+import type { NormalizedRect, PhotoAdjust, PhotoProps } from '../../../core/models/photo';
 import type { Shadow } from '../../../core/models/shadow';
 import { fullCrop } from '../geometry/crop';
 import type { FrameBox } from '../geometry/transform';
 import { effectiveShadow } from '../photo-shadow';
+import { adjustedImage, isNeutralAdjust } from './adjusted-image';
 import { DRAG_THRESHOLD_PX } from './canvas-theme';
 import { isLoaded } from './image-cache';
 import type { Point } from './viewport';
@@ -55,6 +56,10 @@ export interface FrameTransform {
  * ratio when it draws, so they keep their mm size at every zoom and in the export. The offset is
  * not rotated with the frame (same light direction for all photos).
  *
+ * With an adjustment (`props.adjust`, not neutral) the image is an adjusted copy of the source
+ * (`adjustedImage`, same size as the source, so the crop in source px applies unchanged). The copy
+ * is kept and only rebuilt when the source or the adjustment values change.
+ *
  * Frame-local coordinates are mm with the origin at the top-left frame corner (both groups).
  */
 export class PhotoView {
@@ -67,6 +72,9 @@ export class PhotoView {
   private readonly border: KonvaRect;
   private source: HTMLImageElement | null = null;
   private crop: NormalizedRect = fullCrop();
+  private adjust: PhotoAdjust | null = null;
+  /** Last adjusted copy of the source and the key it was made for; `null` without one. */
+  private adjusted: { key: AdjustKey; canvas: HTMLCanvasElement } | null = null;
   private defaultBorder: BorderSettings | null = null;
   private defaultShadow: Shadow | null = null;
   /** True while a drag or transform changes the group; `update` then keeps the gesture's geometry. */
@@ -122,7 +130,7 @@ export class PhotoView {
     }
   }
 
-  /** Draws frame, crop, border and shadow of the props (scale reset to 1). */
+  /** Draws frame, crop, adjustment, border and shadow of the props (scale reset to 1). */
   showProps(props: PhotoProps): void {
     const { cxMm, cyMm, widthMm, heightMm, rotationDeg } = props;
     this.group.setAttrs({
@@ -136,6 +144,7 @@ export class PhotoView {
     });
     this.content.clip({ x: 0, y: 0, width: widthMm, height: heightMm });
     this.image.size({ width: widthMm, height: heightMm });
+    this.adjust = props.adjust ?? null;
     this.showCrop(props.crop);
     this.drawBorder(props);
     this.drawShadow(props);
@@ -149,6 +158,9 @@ export class PhotoView {
 
   /** Sets the source image; it is shown once it has loaded (placeholder colour until then). */
   setImage(image: HTMLImageElement): void {
+    if (image !== this.source) {
+      this.adjusted = null;
+    }
     this.source = image;
     this.applySource();
   }
@@ -253,13 +265,16 @@ export class PhotoView {
     });
   }
 
-  /** Shows the source with the current crop (in source pixels), or the placeholder until it is loaded. */
+  /**
+   * Shows the source (or its adjusted copy) with the current crop (in source pixels), or the
+   * placeholder until it is loaded.
+   */
   private applySource(): void {
     const image = this.loadedImage();
     // Remove the placeholder colour instead of `fillEnabled(false)`: a disabled fill also removes the
     // shape from Konva's hit graph, and the photo could no longer be clicked.
     this.image.fill(image ? '' : PLACEHOLDER_FILL);
-    this.image.image(image ?? undefined);
+    this.image.image(image ? this.adjustedSource(image) : undefined);
     if (image) {
       this.image.crop({
         x: this.crop.x * image.naturalWidth,
@@ -269,4 +284,36 @@ export class PhotoView {
       });
     }
   }
+
+  /**
+   * The loaded source, or its adjusted copy if the adjustment is not neutral. The copy is rebuilt
+   * only when the key changes; it is dropped when the adjustment is neutral.
+   */
+  private adjustedSource(image: HTMLImageElement): HTMLImageElement | HTMLCanvasElement {
+    const adjust = this.adjust;
+    if (!adjust || isNeutralAdjust(adjust)) {
+      this.adjusted = null;
+      return image;
+    }
+    const key: AdjustKey = { image, ...adjust };
+    if (!this.adjusted || !sameAdjustKey(this.adjusted.key, key)) {
+      this.adjusted = { key, canvas: adjustedImage(image, adjust) };
+    }
+    return this.adjusted.canvas;
+  }
+}
+
+/** What an adjusted copy is made from: the source element and the adjustment values. */
+interface AdjustKey extends PhotoAdjust {
+  image: HTMLImageElement;
+}
+
+function sameAdjustKey(a: AdjustKey, b: AdjustKey): boolean {
+  return (
+    a.image === b.image &&
+    a.brightness === b.brightness &&
+    a.contrast === b.contrast &&
+    a.tintColor === b.tintColor &&
+    a.tintStrength === b.tintStrength
+  );
 }

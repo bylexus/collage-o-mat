@@ -92,7 +92,7 @@ library. UI language English, all texts marked for i18n (build-time Angular i18n
 | `src/app/core/api/` | One API service per resource (`CollageApi`, `PhotoApi`, `ConnectorApi`, `ImmichApi`, `AuthApi`) |
 | `src/app/core/models/` | Typed DTOs and JSON props models (`collage.ts`, `photo.ts`, `text.ts`, `shadow.ts`, `layout.ts`) |
 | `src/app/features/editor/` | Editor page and store (`editor.store.ts`), undo history, auto save |
-| `features/editor/canvas/` | Konva rendering, transformers, crop mode, viewport, export renderer |
+| `features/editor/canvas/` | Konva rendering, transformers, crop mode, viewport, export renderer, adjusted/blurred image copies |
 | `features/editor/arrange/` | Pure arrangement functions (grid, center, random heap, masonry, lanes, justified lines) |
 | `features/editor/fields/` | Shared form fields (colour, number, `BorderFields`, `ShadowFields` + `SHADOW_LIMITS`) |
 | `features/editor/geometry/` | Pure math: crop, units (mm/pt/px), gradients, snap grid |
@@ -123,7 +123,14 @@ The exact JSON shapes are the TypeScript models in `frontend/src/app/core/models
 Photo look: the collage settings hold `defaultBorder` and `defaultShadow`; each photo's props can override
 them (`border`: per-field `null` = default; `shadow`: missing or `null` = default, else a full own
 `Shadow`, `enabled: false` = no shadow for this photo). Texts and photos use the same `Shadow` type.
-Re-arrange sets new frames but keeps each photo's own border and shadow.
+Re-arrange sets new frames but keeps each photo's own border, shadow and adjustment.
+
+Photo adjustments: each photo's props can have `adjust` (`brightness`, `contrast` -100..100,
+`tintColor`, `tintStrength` 0..100 %); missing or `null` = none, there is no collage default. They are
+non-destructive: `PhotoView` draws an adjusted copy of the source (`canvas/adjusted-image.ts`, own pixel
+pass, same size as the source, so crop and export work unchanged). `ctx.filter` and Konva filters are not
+used (Safari has `ctx.filter` only behind a flag; Konva filters need `cache()` per zoom and DPI). The page
+background image always shows the original photo.
 
 ## API
 

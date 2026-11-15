@@ -30,6 +30,21 @@ export interface PhotoBorder {
   color: string | null;
 }
 
+/**
+ * Non-destructive image adjustment of one photo, applied in this order: brightness, contrast, tint.
+ * The neutral values (brightness 0, contrast 0, tint strength 0) show the original image.
+ */
+export interface PhotoAdjust {
+  /** -100..100; 0 = unchanged. Each channel is multiplied by `1 + brightness / 100`. */
+  brightness: number;
+  /** -100..100; 0 = unchanged. Each channel is scaled around mid-grey by `1 + contrast / 100`. */
+  contrast: number;
+  /** Tint colour `#rrggbb`: luminance is mapped black → tint colour → white (`#808080` = greyscale). */
+  tintColor: string;
+  /** 0..100 % mix of the tinted image with the original; 0 = no tint (the colour is ignored). */
+  tintStrength: number;
+}
+
 /** The `props` JSON document of a placed photo. All lengths in mm, page origin top-left. */
 export interface PhotoProps {
   /** Frame centre (rotation is around the centre). */
@@ -49,6 +64,11 @@ export interface PhotoProps {
    * photo props are not normalized on load (photos saved before shadows existed have none).
    */
   shadow?: Shadow | null;
+  /**
+   * Brightness, contrast and tint of the photo. Missing or `null` = no adjustment. Optional because
+   * photo props are not normalized on load (photos saved before adjustments existed have none).
+   */
+  adjust?: PhotoAdjust | null;
 }
 
 /** `props` of a photo that is not arranged yet. */

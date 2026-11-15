@@ -41,6 +41,86 @@
   />
 }
 
+<h4 class="panel-heading" i18n="@@editor.photo.adjustHeading">Adjustments</h4>
+<div class="slider-field">
+  <span class="slider-label" i18n="@@editor.photo.brightness">Brightness: {{ brightness() }}</span>
+  <mat-slider
+    [min]="adjustLimits.brightness.min"
+    [max]="adjustLimits.brightness.max"
+    [step]="adjustLimits.brightness.step"
+    i18n-aria-label="@@editor.photo.brightnessAria"
+    aria-label="Brightness"
+  >
+    <input
+      matSliderThumb
+      [value]="brightness()"
+      (input)="previewSlider(brightness, $event)"
+      (change)="commitAdjust()"
+    />
+  </mat-slider>
+</div>
+<div class="slider-field">
+  <span class="slider-label" i18n="@@editor.photo.contrast">Contrast: {{ contrast() }}</span>
+  <mat-slider
+    [min]="adjustLimits.contrast.min"
+    [max]="adjustLimits.contrast.max"
+    [step]="adjustLimits.contrast.step"
+    i18n-aria-label="@@editor.photo.contrastAria"
+    aria-label="Contrast"
+  >
+    <input
+      matSliderThumb
+      [value]="contrast()"
+      (input)="previewSlider(contrast, $event)"
+      (change)="commitAdjust()"
+    />
+  </mat-slider>
+</div>
+<div class="slider-field">
+  <span class="slider-label" i18n="@@editor.photo.tintStrength">
+    Tint strength: {{ tintStrength() }} %
+  </span>
+  <mat-slider
+    [min]="adjustLimits.tintStrength.min"
+    [max]="adjustLimits.tintStrength.max"
+    [step]="adjustLimits.tintStrength.step"
+    i18n-aria-label="@@editor.photo.tintStrengthAria"
+    aria-label="Tint strength"
+  >
+    <input
+      matSliderThumb
+      [value]="tintStrength()"
+      (input)="previewSlider(tintStrength, $event)"
+      (change)="commitAdjust()"
+    />
+  </mat-slider>
+</div>
+<app-color-field
+  [control]="tintColor"
+  i18n-label="@@editor.photo.tintColor"
+  label="Tint colour"
+  (previewed)="schedulePreview()"
+  (committed)="commitAdjust()"
+/>
+<div class="button-row">
+  <button matButton="outlined" type="button" (click)="applyTintPreset(tintPresets.sepia)">
+    <span i18n="@@editor.photo.tintSepia">Sepia</span>
+  </button>
+  <button matButton="outlined" type="button" (click)="applyTintPreset(tintPresets.greyscale)">
+    <span i18n="@@editor.photo.tintGreyscale">Greyscale</span>
+  </button>
+</div>
+<button
+  matButton="outlined"
+  type="button"
+  class="reset-adjust-button"
+  [disabled]="adjustIsNeutral()"
+  (click)="resetAdjust()"
+>
+  <mat-icon>restart_alt</mat-icon>
+  <span i18n="@@editor.photo.resetAdjust">Reset adjustments</span>
+</button>
+
 <div class="button-row">
   <button matButton="outlined" type="button" (click)="bringToFront.emit()">
     <mat-icon>flip_to_front</mat-icon>

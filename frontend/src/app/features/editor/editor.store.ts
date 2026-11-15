@@ -5,7 +5,14 @@ import { CollageApi } from '../../core/api/collage.api';
 import { PhotoApi } from '../../core/api/photo.api';
 import { CollageSettings, DisplayUnit, normalizeSettings } from '../../core/models/collage';
 import { SaveLayoutRequest } from '../../core/models/layout';
-import { ImportResult, isPlaced, Photo, PhotoBorder, PhotoProps } from '../../core/models/photo';
+import {
+  ImportResult,
+  isPlaced,
+  Photo,
+  PhotoAdjust,
+  PhotoBorder,
+  PhotoProps,
+} from '../../core/models/photo';
 import type { Shadow } from '../../core/models/shadow';
 import { CollageText, TextProps } from '../../core/models/text';
 import { ConfirmService } from '../../shared/confirm-dialog/confirm.service';
@@ -15,6 +22,7 @@ import { arrangePhotos, FrameMap, placeBesidePage, resolveCentrePhotoId } from '
 import { AutoSaver } from './auto-saver';
 import { ExportContent } from './export/page-export';
 import { LayoutSnapshot, restoreSnapshot, takeSnapshot } from './layout-snapshot';
+import { isNeutralAdjust } from './canvas/adjusted-image';
 import { hasBorderOverride, inheritedBorder, sameBorder } from './photo-border';
 import { hasShadowOverride } from './photo-shadow';
 import { EditorSelection, sameSelection, selectedPhotoIdOf, selectedTextIdOf } from './selection';
@@ -43,6 +51,12 @@ interface BorderPreview {
 interface ShadowPreview {
   photoId: number;
   shadow: Shadow | null;
+}
+
+/** An adjustment (or `null` = none) shown on the canvas before it is committed (slider moving). */
+interface AdjustPreview {
+  photoId: number;
+  adjust: PhotoAdjust | null;
 }
 
 /** Default text of a new overlay text. */
@@ -74,6 +88,7 @@ export class EditorStore {
   private readonly loadErrorSignal = signal<string | null>(null);
   private readonly borderPreviewSignal = signal<BorderPreview | null>(null);
   private readonly shadowPreviewSignal = signal<ShadowPreview | null>(null);
+  private readonly adjustPreviewSignal = signal<AdjustPreview | null>(null);
   /** Text shown on the canvas before it is committed (panel edit in progress). */
   private readonly textPreviewSignal = signal<CollageText | null>(null);
   /** Settings shown on the canvas before they are committed (colour picker open). */
@@ -99,13 +114,16 @@ export class EditorStore {
   /** Id of the selected photo; `null` if no photo is selected. */
   readonly selectedPhotoId = computed(() => selectedPhotoIdOf(this.selectionSignal()));
   /**
-   * Photos as the canvas draws them: `photos` with the border and shadow previews applied. Not
-   * saved and not part of the undo history.
+   * Photos as the canvas draws them: `photos` with the border, shadow and adjustment previews
+   * applied. Not saved and not part of the undo history.
    */
   readonly displayedPhotos = computed(() =>
-    withShadowPreview(
-      withBorderPreview(this.photosSignal(), this.borderPreviewSignal()),
-      this.shadowPreviewSignal(),
+    withAdjustPreview(
+      withShadowPreview(
+        withBorderPreview(this.photosSignal(), this.borderPreviewSignal()),
+        this.shadowPreviewSignal(),
+      ),
+      this.adjustPreviewSignal(),
     ),
   );
   /**
@@ -313,6 +331,26 @@ export class EditorStore {
       ),
     );
     this.commit();
+  }
+
+  /**
+   * Shows an adjustment on the canvas without committing it (slider moving, colour picker open);
+   * `null` = no adjustment. The next commit, undo/redo or selection change removes the preview.
+   */
+  previewPhotoAdjust(id: number, adjust: PhotoAdjust | null): void {
+    this.adjustPreviewSignal.set({ photoId: id, adjust });
+  }
+
+  /**
+   * Sets the adjustment of a placed photo; neutral values (see `isNeutralAdjust`) are stored as
+   * `null` (no adjustment). No change (and no undo step) if it equals the current adjustment.
+   */
+  setPhotoAdjust(id: number, adjust: PhotoAdjust | null): void {
+    this.adjustPreviewSignal.set(null);
+    const next = isNeutralAdjust(adjust) ? null : adjust;
+    this.editPlacedPhoto(id, (props) =>
+      sameOptionalAdjust(props.adjust ?? null, next) ? null : { ...props, adjust: next },
+    );
   }
 
   /** Puts a placed photo in front of all other elements. */
@@ -695,13 +733,14 @@ export class EditorStore {
   }
 
   /**
-   * Removes the settings, border, shadow and text previews (the canvas shows the committed state
-   * again).
+   * Removes the settings, border, shadow, adjustment and text previews (the canvas shows the
+   * committed state again).
    */
   private clearPreviews(): void {
     this.settingsPreviewSignal.set(null);
     this.borderPreviewSignal.set(null);
     this.shadowPreviewSignal.set(null);
+    this.adjustPreviewSignal.set(null);
     this.textPreviewSignal.set(null);
   }
 
@@ -761,14 +800,43 @@ function withShadowPreview(
   );
 }
 
+/** The photos with the adjustment of the preview photo replaced (same array without a preview). */
+function withAdjustPreview(
+  photos: readonly Photo[],
+  preview: AdjustPreview | null,
+): readonly Photo[] {
+  if (!preview) {
+    return photos;
+  }
+  return photos.map((photo) =>
+    photo.id === preview.photoId && isPlaced(photo.props)
+      ? { ...photo, props: { ...photo.props, adjust: preview.adjust } }
+      : photo,
+  );
+}
+
+/** True if both are `null` or both are adjustments with the same values. */
+function sameOptionalAdjust(a: PhotoAdjust | null, b: PhotoAdjust | null): boolean {
+  if (a === null || b === null) {
+    return a === b;
+  }
+  return (
+    a.brightness === b.brightness &&
+    a.contrast === b.contrast &&
+    a.tintColor === b.tintColor &&
+    a.tintStrength === b.tintStrength
+  );
+}
+
 /** True if both are `null` or both are shadows with the same values. */
 function sameOptionalShadow(a: Shadow | null, b: Shadow | null): boolean {
   return a === null || b === null ? a === b : sameShadow(a, b);
 }
 
 /**
- * The arrangement frames with the `border` and `shadow` of the photos that are placed already. A
- * missing `shadow` stays missing (collage default). Frames of not placed photos are unchanged.
+ * The arrangement frames with the `border`, `shadow` and `adjust` of the photos that are placed
+ * already. A missing `shadow` stays missing (collage default), a missing `adjust` stays missing (no
+ * adjustment). Frames of not placed photos are unchanged.
  */
 function keepLook(frames: FrameMap, photos: readonly Photo[]): FrameMap {
   const propsById = new Map(photos.map((photo) => [photo.id, photo.props]));
@@ -779,8 +847,15 @@ function keepLook(frames: FrameMap, photos: readonly Photo[]): FrameMap {
       kept.set(id, frame);
       continue;
     }
-    const { border, shadow } = props;
-    kept.set(id, shadow === undefined ? { ...frame, border } : { ...frame, border, shadow });
+    const { border, shadow, adjust } = props;
+    const look: PhotoProps = { ...frame, border };
+    if (shadow !== undefined) {
+      look.shadow = shadow;
+    }
+    if (adjust !== undefined) {
+      look.adjust = adjust;
+    }
+    kept.set(id, look);
   }
   return kept;
 }

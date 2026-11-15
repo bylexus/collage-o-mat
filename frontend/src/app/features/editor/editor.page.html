@@ -215,6 +215,8 @@
             (borderPreview)="store.previewPhotoBorder(photo.id, $event)"
             (shadowChange)="store.setPhotoShadow(photo.id, $event)"
             (shadowPreview)="store.previewPhotoShadow(photo.id, $event)"
+            (adjustChange)="store.setPhotoAdjust(photo.id, $event)"
+            (adjustPreview)="store.previewPhotoAdjust(photo.id, $event)"
             (bringToFront)="store.bringToFront(photo.id)"
             (sendToBack)="store.sendToBack(photo.id)"
             (useAsBackground)="store.useAsBackground(photo.id)"
