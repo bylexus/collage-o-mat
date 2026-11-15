@@ -5,14 +5,19 @@ package auth
 
 import "time"
 
-// User is a login account. Users are created with the CLI.
+// User is a login account. Users are created with the CLI or the admin API.
 type User struct {
 	ID           uint   `gorm:"primaryKey"`
 	Username     string `gorm:"size:64;uniqueIndex;not null"`
 	PasswordHash string `gorm:"not null"`
 	IsAdmin      bool   `gorm:"not null;default:false"`
-	CreatedAt    time.Time
-	UpdatedAt    time.Time
+	// IsActive is false for a deactivated user: no login, no valid session.
+	// The DB default true keeps the users of existing databases active.
+	// GORM skips a false zero value on Create because of the default: set it
+	// to true on Create and set false only with Update("is_active", false).
+	IsActive  bool `gorm:"not null;default:true"`
+	CreatedAt time.Time
+	UpdatedAt time.Time
 }
 
 // TableName sets the table name.

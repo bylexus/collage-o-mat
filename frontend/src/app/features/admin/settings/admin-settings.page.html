@@ -1,0 +1,48 @@
+@if (loading()) {
+  <mat-spinner class="page-spinner" diameter="40" />
+} @else if (loadError(); as message) {
+  <div class="page-message" role="alert">
+    <p>{{ message }}</p>
+    <button matButton="outlined" type="button" (click)="load()" i18n="@@admin.settings.retry">
+      Retry
+    </button>
+  </div>
+} @else {
+  <mat-card appearance="outlined">
+    <mat-card-header>
+      <mat-card-title i18n="@@admin.settings.storage.title">Photo storage</mat-card-title>
+    </mat-card-header>
+    <form [formGroup]="form" (ngSubmit)="save()">
+      <mat-card-content class="settings-fields">
+        <mat-form-field>
+          <mat-label i18n="@@admin.settings.storage.limit">Storage limit per user (GB)</mat-label>
+          <input
+            matInput
+            type="number"
+            formControlName="maxUserStorageGb"
+            min="0"
+            step="any"
+            required
+          />
+          <mat-hint i18n="@@admin.settings.storage.hint">0 = unlimited</mat-hint>
+          @if (form.controls.maxUserStorageGb.hasError('required')) {
+            <mat-error i18n="@@admin.settings.storage.required">Enter a value</mat-error>
+          } @else if (form.controls.maxUserStorageGb.hasError('min')) {
+            <mat-error i18n="@@admin.settings.storage.min">Enter 0 or more</mat-error>
+          }
+        </mat-form-field>
+        <p class="note" i18n="@@admin.settings.storage.notEnforced">
+          Not enforced yet: the limit is only stored for now.
+        </p>
+      </mat-card-content>
+      <mat-card-actions align="end">
+        <button matButton="filled" type="submit" [disabled]="saving()">
+          @if (saving()) {
+            <mat-spinner class="button-spinner" diameter="18" />
+          }
+          <span i18n="@@admin.settings.save">Save</span>
+        </button>
+      </mat-card-actions>
+    </form>
+  </mat-card>
+}

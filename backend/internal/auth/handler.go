@@ -17,7 +17,8 @@ import (
 
 const msgInvalidLogin = "invalid username or password"
 
-// Handler serves the auth API and provides the RequireAuth middleware.
+// Handler serves the auth API and provides the RequireAuth and RequireAdmin
+// middleware.
 type Handler struct {
 	db     *gorm.DB
 	cookie CookieOptions
@@ -45,7 +46,7 @@ type AvatarVersions interface {
 // changes share the counter. avatars gives the avatar version of the user
 // DTO.
 func NewHandler(db *gorm.DB, cookie CookieOptions, limiter *LoginLimiter, avatars AvatarVersions) (*Handler, error) {
-	dummy, err := hashPassword(rand.Text())
+	dummy, err := HashPassword(rand.Text())
 	if err != nil {
 		return nil, err
 	}
@@ -63,7 +64,7 @@ func (h *Handler) RegisterRoutes(mux *http.ServeMux, requireAuth httpapi.Middlew
 
 // RequireAuth loads the user and the session ID of the session cookie into
 // the request context (see UserFromContext, SessionID) and extends the session if needed. Without a valid
-// session it answers 401.
+// session, or if the user is inactive, it answers 401.
 func (h *Handler) RequireAuth(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		raw, sess, err := h.lookupSession(r)
@@ -85,6 +86,23 @@ func (h *Handler) RequireAuth(next http.Handler) http.Handler {
 		}
 		ctx := withSessionID(withUser(r.Context(), &sess.User), sess.ID)
 		next.ServeHTTP(w, r.WithContext(ctx))
+	})
+}
+
+// RequireAdmin answers 403 if the user of the request is not an admin. Use
+// it behind RequireAuth: requireAuth(h.RequireAdmin(next)).
+func (h *Handler) RequireAdmin(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		user := UserFromContext(r.Context())
+		if user == nil {
+			httpapi.WriteError(w, http.StatusUnauthorized, "unauthorized")
+			return
+		}
+		if !user.IsAdmin {
+			httpapi.WriteError(w, http.StatusForbidden, "forbidden")
+			return
+		}
+		next.ServeHTTP(w, r)
 	})
 }
 
@@ -154,7 +172,10 @@ func (h *Handler) login(w http.ResponseWriter, r *http.Request) {
 		httpapi.WriteError(w, http.StatusInternalServerError, "internal server error")
 		return
 	}
-	if !checkPassword(user.PasswordHash, req.Password) {
+	// An inactive user gets the same answer as a wrong password (no account
+	// enumeration); the password is checked first, so the timing is the
+	// same.
+	if !checkPassword(user.PasswordHash, req.Password) || !user.IsActive {
 		h.limiter.Fail(key)
 		httpapi.WriteError(w, http.StatusUnauthorized, msgInvalidLogin)
 		return

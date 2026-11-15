@@ -1,0 +1,15 @@
+:host {
+  display: block;
+  max-width: 1000px;
+  margin: 0 auto;
+  padding: 24px 16px;
+}
+
+.page-title {
+  margin: 0 0 8px;
+  font: var(--mat-sys-headline-small);
+}
+
+.admin-tabs {
+  margin-bottom: 16px;
+}

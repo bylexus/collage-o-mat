@@ -20,3 +20,11 @@ export const loginGuard: CanActivateFn = async () => {
   await auth.ensureLoaded();
   return auth.isLoggedIn() ? router.createUrlTree(['/']) : true;
 };
+
+/** Allows the route only for admins; other users are redirected to `/`. Use after `authGuard`. */
+export const adminGuard: CanActivateFn = async () => {
+  const auth = inject(AuthService);
+  const router = inject(Router);
+  await auth.ensureLoaded();
+  return auth.currentUser()?.isAdmin === true ? true : router.createUrlTree(['/']);
+};

@@ -119,6 +119,27 @@ func (s *GormStore) CountByCollages(ctx context.Context, collageIDs []uint) (map
 	return counts, nil
 }
 
+// CountAllByCollage returns the number of photos of every collage that has
+// photos (all users).
+func (s *GormStore) CountAllByCollage(ctx context.Context) (map[uint]int, error) {
+	var rows []struct {
+		CollageID uint
+		Count     int
+	}
+	err := db.Conn(ctx, s.db).Model(&Photo{}).
+		Select("collage_id, COUNT(*) AS count").
+		Group("collage_id").
+		Scan(&rows).Error
+	if err != nil {
+		return nil, fmt.Errorf("count photos of all collages: %w", err)
+	}
+	counts := make(map[uint]int, len(rows))
+	for _, r := range rows {
+		counts[r.CollageID] = r.Count
+	}
+	return counts, nil
+}
+
 // UpdatePropsInCollage sets the props (and UpdatedAt) of the photo id if
 // it belongs to the collage. It returns false if there is no such photo.
 func (s *GormStore) UpdatePropsInCollage(ctx context.Context, collageID, id uint, props jsoncol.JSON) (bool, error) {

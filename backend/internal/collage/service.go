@@ -20,6 +20,9 @@ const MaxTextIDLength = 64
 // Store is the persistence the service needs (implemented by GormStore).
 type Store interface {
 	ListByUser(ctx context.Context, userID uint) ([]Collage, error)
+	// OwnerByCollage returns the user id of every collage (collage id ->
+	// user id).
+	OwnerByCollage(ctx context.Context) (map[uint]uint, error)
 	// FindForUser returns apperr.ErrNotFound if the collage does not exist
 	// or belongs to another user.
 	FindForUser(ctx context.Context, userID, id uint) (*Collage, error)
@@ -47,6 +50,9 @@ type Photos interface {
 	// CountByCollages returns the number of photos per collage id. Collages
 	// without photos may be missing in the map (count 0).
 	CountByCollages(ctx context.Context, collageIDs []uint) (map[uint]int, error)
+	// CountAllByCollage returns the number of photos per collage id of all
+	// collages (all users). Collages without photos may be missing.
+	CountAllByCollage(ctx context.Context) (map[uint]int, error)
 	// ListForCollage returns the photos of a collage in import order (id
 	// ascending), never nil.
 	ListForCollage(ctx context.Context, collageID uint) ([]PhotoView, error)

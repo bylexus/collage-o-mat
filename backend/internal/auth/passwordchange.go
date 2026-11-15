@@ -63,7 +63,7 @@ func (c *PasswordChanger) ChangePassword(
 	if err := ValidatePassword(newPassword); err != nil {
 		return apperr.Validation("%s", err.Error())
 	}
-	hash, err := hashPassword(newPassword)
+	hash, err := HashPassword(newPassword)
 	if err != nil {
 		return err
 	}

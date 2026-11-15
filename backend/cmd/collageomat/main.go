@@ -15,6 +15,7 @@ import (
 
 	"gorm.io/gorm"
 
+	"collageomat/internal/admin"
 	"collageomat/internal/auth"
 	"collageomat/internal/collage"
 	"collageomat/internal/config"
@@ -26,6 +27,7 @@ import (
 	"collageomat/internal/photo"
 	"collageomat/internal/profile"
 	"collageomat/internal/secretbox"
+	"collageomat/internal/settings"
 	"collageomat/internal/web"
 )
 
@@ -111,7 +113,7 @@ func runServe(args []string) error {
 	}
 	defer photoFiles.Close()
 
-	domainModules, err := newDomainModules(cfg.Secret, gdb, photoFiles, decoder, profileSvc)
+	domainModules, err := newDomainModules(cfg.Secret, gdb, photoFiles, decoder, profileSvc, authHandler.RequireAdmin)
 	if err != nil {
 		return err
 	}
@@ -166,17 +168,19 @@ func models() []any {
 		&connector.Connector{},
 		&photo.Photo{},
 		&profile.Avatar{},
+		&settings.SystemSetting{},
 	}
 }
 
 // newDomainModules wires the services and handlers of the domain packages
-// (collages, connectors, Immich, photos, profile). Connector configs are
-// encrypted with a key derived from secret; photo files are stored in
-// photoFiles; decoder is the server-wide image decode limiter; profileSvc is
-// created earlier because the auth handler needs it too.
+// (collages, connectors, Immich, photos, profile, admin, settings).
+// Connector configs are encrypted with a key derived from secret; photo
+// files are stored in photoFiles; decoder is the server-wide image decode
+// limiter; profileSvc is created earlier because the auth handler needs it
+// too; requireAdmin protects the admin routes (behind requireAuth).
 func newDomainModules(
 	secret string, gdb *gorm.DB, photoFiles *photo.DiskStorage, decoder *imaging.DecodeLimiter,
-	profileSvc *profile.Service,
+	profileSvc *profile.Service, requireAdmin httpapi.Middleware,
 ) ([]httpapi.Module, error) {
 	immichKind := immich.NewKind(nil)
 	connectorSvc, err := newConnectorService(secret, gdb, immichKind)
@@ -185,13 +189,16 @@ func newDomainModules(
 	}
 	immichSvc := immich.NewService(connectorSvc, immichKind)
 
+	tx := db.NewTransactor(gdb)
 	photoStore := photo.NewGormStore(gdb)
-	collageSvc := collage.NewService(
-		collage.NewGormStore(gdb),
-		photo.NewCollagePhotos(photoStore, photoFiles),
-		db.NewTransactor(gdb),
-	)
+	collageStore := collage.NewGormStore(gdb)
+	collagePhotos := photo.NewCollagePhotos(photoStore, photoFiles)
+	collageSvc := collage.NewService(collageStore, collagePhotos, tx)
 	photoSvc := photo.NewService(photoStore, photoFiles, collageSvc, immichSvc, decoder)
+	adminSvc := admin.NewService(
+		admin.NewGormStore(gdb), collageSvc, collage.NewUserUsage(collageStore, collagePhotos), profileSvc, tx,
+	)
+	settingsSvc := settings.NewService(settings.NewGormStore(gdb))
 
 	return []httpapi.Module{
 		collage.NewHandler(collageSvc),
@@ -199,6 +206,8 @@ func newDomainModules(
 		connector.NewHandler(connectorSvc),
 		immich.NewHandler(immichSvc),
 		profile.NewHandler(profileSvc),
+		admin.NewHandler(adminSvc, requireAdmin),
+		settings.NewHandler(settingsSvc, requireAdmin),
 	}, nil
 }
 

@@ -46,7 +46,9 @@ func loginInputTooLong(username, password string) bool {
 		len(password) > maxPasswordLen
 }
 
-func hashPassword(password string) (string, error) {
+// HashPassword returns the bcrypt hash of password. The caller checks the
+// rules first (ValidatePassword).
+func HashPassword(password string) (string, error) {
 	h, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
 	if err != nil {
 		return "", fmt.Errorf("hash password: %w", err)

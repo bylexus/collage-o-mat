@@ -44,6 +44,9 @@ type Store interface {
 	// connector) with the source asset ID.
 	UploadExists(ctx context.Context, collageID uint, sourceAssetID string) (bool, error)
 	CountByCollages(ctx context.Context, collageIDs []uint) (map[uint]int, error)
+	// CountAllByCollage returns the number of photos of every collage that
+	// has photos (all users).
+	CountAllByCollage(ctx context.Context) (map[uint]int, error)
 	// UpdatePropsInCollage returns false if the photo does not exist or
 	// belongs to another collage.
 	UpdatePropsInCollage(ctx context.Context, collageID, id uint, props jsoncol.JSON) (bool, error)

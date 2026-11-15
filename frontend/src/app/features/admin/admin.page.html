@@ -1,0 +1,28 @@
+<h1 class="page-title" i18n="@@admin.title">Administration</h1>
+
+<nav mat-tab-nav-bar [tabPanel]="tabPanel" class="admin-tabs">
+  <a
+    mat-tab-link
+    routerLink="users"
+    routerLinkActive
+    #usersLink="routerLinkActive"
+    [active]="usersLink.isActive"
+    i18n="@@admin.tab.users"
+  >
+    Users
+  </a>
+  <a
+    mat-tab-link
+    routerLink="settings"
+    routerLinkActive
+    #settingsLink="routerLinkActive"
+    [active]="settingsLink.isActive"
+    i18n="@@admin.tab.settings"
+  >
+    Settings
+  </a>
+</nav>
+
+<mat-tab-nav-panel #tabPanel>
+  <router-outlet />
+</mat-tab-nav-panel>

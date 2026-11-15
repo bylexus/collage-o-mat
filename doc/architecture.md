@@ -7,7 +7,7 @@ Browser (Angular SPA, Konva canvas)
    │  JSON over /api/...  (session cookie)
    ▼
 collageomat (one Go binary)
-   ├─ /api/...   httpapi router → domain modules (auth, collage, photo, connector, immich, profile)
+   ├─ /api/...   httpapi router → domain modules (auth, collage, photo, connector, immich, profile, admin, settings)
    ├─ /*         embedded SPA (internal/web, go:embed, fallback to index.html)
    ├─ SQLite     <DATA_DIR>/collageomat.db   (WAL, foreign keys on)
    ├─ files      <DATA_DIR>/photos/<collageId>/<photoId>.<ext>
@@ -45,12 +45,14 @@ package-level mutable state.
 
 | Package | Responsibility |
 |---|---|
-| `auth` | Users, sessions (cookie token, SHA-256 hash in DB), login rate limit (`LoginLimiter`), `RequireAuth`, `auth.UserID(r)`, `auth.SessionID(r)`. `PasswordChanger` (implements `profile.Passwords`, uses the same `LoginLimiter` instance as the login). Declares `AvatarVersions` (implemented by `profile.Service`) for the user DTO. Older code, no store/service split |
+| `auth` | Users, sessions (cookie token, SHA-256 hash in DB), login rate limit (`LoginLimiter`), `RequireAuth` (rejects inactive users), `RequireAdmin` (403 for non-admins, used after `RequireAuth`), `auth.UserID(r)`, `auth.SessionID(r)`. `PasswordChanger` (implements `profile.Passwords`, uses the same `LoginLimiter` instance as the login). Declares `AvatarVersions` (implemented by `profile.Service`) for the user DTO. Older code, no store/service split |
 | `collage` | Collages, texts, layout save (one transaction) |
 | `photo` | Photo rows and files, Immich import (preview: stored as downloaded; original: `process.go` calls `imaging`, no scaling), local upload (`process.go`: calls `imaging`, long edge ≤ 2560 px), file serving |
 | `connector` | Connectors per user, `Kind` registry (strategy per connector type), config encrypted with `secretbox` |
 | `connector/immich` | Immich HTTP client, album/asset listing, thumbnail proxy |
 | `profile` | Profile of the session user: password change (through the `Passwords` interface), avatar (upload → `imaging` square ≤ 500×500 JPEG, store, serve, delete) |
+| `admin` | User management for admins (`/api/admin/users...`): list with usage counts, create, update (admin/active flags, new password), delete with all data. Rules: an admin cannot change, set the password of or delete the own account; at least one active admin always remains (checked in the same transaction). Deactivate and new password delete the user's sessions. Delete: each collage through `collage.Service.Delete` (rows + photo directory), then the `users` row (FK cascade). Interfaces: `Collages` (`*collage.Service`), `Usage` (`collage.UserUsage`), `Avatars` (`*profile.Service`) |
+| `settings` | System-wide settings (`/api/admin/settings`): typed `Settings` struct, one `system_settings` row per field (key = JSON name), defaults in `Defaults()`, rules in `validate()`. New setting = new field, no migration. `maxUserStorageBytes` (default 2·10⁹, 0 = unlimited) is stored but not enforced yet |
 
 Rules:
 
@@ -77,6 +79,8 @@ Rules:
 ### Security
 
 - All `/api` routes need a session, except `GET /api/health` and `POST /api/auth/login`.
+- `/api/admin/...` routes also need `users.is_admin` (`RequireAdmin`, else 403). Inactive users
+  (`users.is_active = false`) cannot log in (generic 401) and their sessions are rejected.
 - Mutating `/api` requests must have `Content-Type: application/json`. Exceptions (see
   `httpapi.RequireJSON`): `POST /api/collages/{id}/uploads` and `PUT /api/profile/avatar` also accept
   `image/jpeg|png|webp`. With the `SameSite=Lax` cookie this is the CSRF protection.
@@ -93,9 +97,9 @@ library. UI language English, all texts marked for i18n (build-time Angular i18n
 
 | Path | Content |
 |---|---|
-| `src/app/app.routes.ts` | Routes: `login` (own layout); `AppShell` with `authGuard` and the children `collages`, `collages/:id` (editor), `settings/connectors`, `profile`, `about` |
-| `src/app/layout/app-shell.*` | `AppShell`: base layout of all signed-in pages (main toolbar + page outlet). Toolbar: round profile button (`UserAvatar`) opens a `mat-menu` (username, Admin badge, Profile, Log out) |
-| `src/app/core/api/` | One API service per resource (`CollageApi`, `PhotoApi`, `ConnectorApi`, `ImmichApi`, `AuthApi`, `ProfileApi`) |
+| `src/app/app.routes.ts` | Routes: `login` (own layout); `AppShell` with `authGuard` and the children `collages`, `collages/:id` (editor), `settings/connectors`, `profile`, `about`, `admin` (`adminGuard`; tab children `users`, `settings`) |
+| `src/app/layout/app-shell.*` | `AppShell`: base layout of all signed-in pages (main toolbar + page outlet). Toolbar: round profile button (`UserAvatar`) opens a `mat-menu` (username, Admin badge, Profile, Log out); for admins an icon button `manage_accounts` (Administration) left of About |
+| `src/app/core/api/` | One API service per resource (`CollageApi`, `PhotoApi`, `ConnectorApi`, `ImmichApi`, `AuthApi`, `ProfileApi`, `AdminApi`) |
 | `src/app/core/models/` | Typed DTOs and JSON props models (`collage.ts`, `photo.ts`, `text.ts`, `shadow.ts`, `layout.ts`) |
 | `src/app/features/editor/` | Editor page and store (`editor.store.ts`), undo history, auto save |
 | `features/editor/canvas/` | Konva rendering, transformers, crop mode, viewport, export renderer, adjusted/blurred image copies |
@@ -107,6 +111,7 @@ library. UI language English, all texts marked for i18n (build-time Angular i18n
 | `features/editor/geometry/` | Pure math: crop, units (mm/pt/px), gradients, snap grid |
 | `features/editor/import/`, `upload/` | Immich import dialog, local file upload |
 | `features/editor/export/` | PNG/JPG export dialog |
+| `src/app/features/admin/` | Admin page (tab nav): Users tab (table with avatar, flags, counts; create, edit and type-username delete dialogs), Settings tab (storage limit in GB, 1 GB = 10⁹ bytes) |
 | `src/app/features/profile/` | Profile page: info (username, Admin badge, member since), avatar card (upload, remove), change password card |
 | `src/app/shared/` | `ConfirmDialog`, `NotificationService`, `errorMessage(err)`, `UserAvatar` (round avatar image or first letter of the username) |
 
@@ -119,7 +124,8 @@ All tables have `created_at`, `updated_at`. JSON columns are `TEXT`.
 
 | Table | Columns |
 |---|---|
-| `users` | `id`, `username` unique, `password_hash` (bcrypt), `is_admin` |
+| `users` | `id`, `username` unique, `password_hash` (bcrypt), `is_admin`, `is_active` (DB default `true`) |
+| `system_settings` | `key` PK, `value` JSON |
 | `sessions` | `id`, `token_hash` unique, `user_id` FK, `expires_at` |
 | `user_avatars` | `user_id` PK + FK (`ON DELETE CASCADE`), `data` BLOB (JPEG, square, ≤ 500×500 px), `mime_type`. Own table, because `RequireAuth` loads the `users` row on each request |
 | `collages` | `id`, `user_id` FK, `name`, `settings` JSON |
@@ -154,6 +160,10 @@ background image always shows the original photo.
 | PUT | `/api/profile/password` | Change the own password (`currentPassword`, `newPassword`) → 204 |
 | PUT, DELETE | `/api/profile/avatar` | Set the avatar (raw image body, max 10 MiB, max 60 MP), remove it → user DTO |
 | GET | `/api/profile/avatar?v=<avatarVersion>` | Own avatar JPEG (immutable cache), 404 if not set |
+| GET, POST | `/api/admin/users` | Admin: list users (`isActive`, `collageCount`, `photoCount` added to the user DTO), create (`username`, `password`, `isAdmin`) → 201 |
+| PATCH, DELETE | `/api/admin/users/{id}` | Admin: update (`isAdmin`, `isActive` required, `newPassword` optional), delete with all data → 204; rule violations → 409 |
+| GET | `/api/admin/users/{id}/avatar?v=<avatarVersion>` | Admin: avatar JPEG of any user |
+| GET, PUT | `/api/admin/settings` | Admin: system settings (`maxUserStorageBytes`) |
 | GET, POST | `/api/collages` | List, create |
 | GET, PATCH, DELETE | `/api/collages/{id}` | Load full collage, rename, delete (rows + photo dir) |
 | POST | `/api/collages/{id}/duplicate` | Copy the collage (settings with remapped photo ids, photo rows + files, texts with new ids) in one transaction; skips photos with a missing file (`skippedPhotos`) |

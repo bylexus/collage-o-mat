@@ -38,6 +38,23 @@ func (s *GormStore) ListByUser(ctx context.Context, userID uint) ([]Collage, err
 	return collages, nil
 }
 
+// OwnerByCollage returns the user id of every collage (collage id -> user
+// id).
+func (s *GormStore) OwnerByCollage(ctx context.Context) (map[uint]uint, error) {
+	var rows []struct {
+		ID     uint
+		UserID uint
+	}
+	if err := db.Conn(ctx, s.db).Model(&Collage{}).Select("id, user_id").Scan(&rows).Error; err != nil {
+		return nil, fmt.Errorf("list collage owners: %w", err)
+	}
+	owners := make(map[uint]uint, len(rows))
+	for _, r := range rows {
+		owners[r.ID] = r.UserID
+	}
+	return owners, nil
+}
+
 // FindForUser returns the collage with the given id if it belongs to the
 // user. Otherwise it returns apperr.ErrNotFound.
 func (s *GormStore) FindForUser(ctx context.Context, userID, id uint) (*Collage, error) {

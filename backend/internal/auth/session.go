@@ -60,8 +60,9 @@ func (h *Handler) createSession(w http.ResponseWriter, userID uint) error {
 }
 
 // lookupSession returns the raw token and the valid session (with its user)
-// of the request cookie. It returns a nil session if there is no cookie or
-// the session is unknown or expired. Expired sessions are deleted.
+// of the request cookie. It returns a nil session if there is no cookie, the
+// session is unknown or expired, or its user is inactive. Expired sessions
+// are deleted.
 func (h *Handler) lookupSession(r *http.Request) (string, *Session, error) {
 	c, err := r.Cookie(h.cookie.Name)
 	if err != nil || c.Value == "" {
@@ -82,6 +83,9 @@ func (h *Handler) lookupSession(r *http.Request) (string, *Session, error) {
 		if err := h.db.Delete(&sess).Error; err != nil {
 			return raw, nil, fmt.Errorf("delete expired session: %w", err)
 		}
+		return raw, nil, nil
+	}
+	if !sess.User.IsActive {
 		return raw, nil, nil
 	}
 	return raw, &sess, nil

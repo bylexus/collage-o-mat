@@ -33,6 +33,11 @@ func (c *CollagePhotos) CountByCollages(ctx context.Context, collageIDs []uint) 
 	return c.store.CountByCollages(ctx, collageIDs)
 }
 
+// CountAllByCollage implements collage.Photos.
+func (c *CollagePhotos) CountAllByCollage(ctx context.Context) (map[uint]int, error) {
+	return c.store.CountAllByCollage(ctx)
+}
+
 // ListForCollage implements collage.Photos.
 func (c *CollagePhotos) ListForCollage(ctx context.Context, collageID uint) ([]collage.PhotoView, error) {
 	photos, err := c.store.ListByCollage(ctx, collageID)

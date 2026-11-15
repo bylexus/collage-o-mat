@@ -1,0 +1,88 @@
+:host {
+  display: block;
+}
+
+.tab-header {
+  display: flex;
+  justify-content: flex-end;
+  margin-bottom: 16px;
+}
+
+.page-spinner {
+  margin: 48px auto;
+}
+
+.page-message {
+  padding: 48px 0;
+  text-align: center;
+  color: var(--mat-sys-on-surface-variant);
+}
+
+.user-table {
+  width: 100%;
+}
+
+.user-row {
+  cursor: pointer;
+
+  &:hover {
+    background-color: var(--mat-sys-surface-container-high);
+  }
+}
+
+.inactive-row .username,
+.inactive-row app-user-avatar {
+  opacity: 0.6;
+}
+
+.username {
+  font-weight: 500;
+  overflow-wrap: anywhere;
+}
+
+.self-label {
+  margin-left: 4px;
+  color: var(--mat-sys-on-surface-variant);
+}
+
+.badge {
+  padding: 2px 8px;
+  border-radius: 8px;
+  background-color: var(--mat-sys-secondary-container);
+  color: var(--mat-sys-on-secondary-container);
+  font: var(--mat-sys-label-medium);
+  white-space: nowrap;
+}
+
+.badge-inactive {
+  background-color: var(--mat-sys-error-container);
+  color: var(--mat-sys-on-error-container);
+}
+
+.avatar-cell {
+  width: 1%;
+  padding-right: 0;
+}
+
+app-user-avatar {
+  vertical-align: middle;
+}
+
+.number-cell {
+  text-align: right;
+}
+
+.actions-cell {
+  width: 1%;
+  white-space: nowrap;
+  text-align: right;
+}
+
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}

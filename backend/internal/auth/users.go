@@ -7,7 +7,7 @@ import (
 	"gorm.io/gorm"
 )
 
-// CreateUser creates a new user. It fails if the username exists.
+// CreateUser creates a new active user. It fails if the username exists.
 func CreateUser(db *gorm.DB, username, password string, isAdmin bool) (*User, error) {
 	username, err := NormalizeUsername(username)
 	if err != nil {
@@ -16,12 +16,12 @@ func CreateUser(db *gorm.DB, username, password string, isAdmin bool) (*User, er
 	if err := ValidatePassword(password); err != nil {
 		return nil, err
 	}
-	hash, err := hashPassword(password)
+	hash, err := HashPassword(password)
 	if err != nil {
 		return nil, err
 	}
 
-	user := &User{Username: username, PasswordHash: hash, IsAdmin: isAdmin}
+	user := &User{Username: username, PasswordHash: hash, IsAdmin: isAdmin, IsActive: true}
 	err = db.Transaction(func(tx *gorm.DB) error {
 		var count int64
 		if err := tx.Model(&User{}).Where("username = ?", username).Count(&count).Error; err != nil {
@@ -48,7 +48,7 @@ func SetPassword(db *gorm.DB, username, password string) error {
 	if err := ValidatePassword(password); err != nil {
 		return err
 	}
-	hash, err := hashPassword(password)
+	hash, err := HashPassword(password)
 	if err != nil {
 		return err
 	}

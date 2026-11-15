@@ -1,0 +1,50 @@
+@use '@angular/material' as mat;
+
+.dialog-fields {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.dialog-text {
+  margin: 0 0 8px;
+}
+
+.dialog-hint {
+  margin: 0 0 8px;
+  color: var(--mat-sys-on-surface-variant);
+  font: var(--mat-sys-body-medium);
+}
+
+.dialog-error {
+  margin: 0;
+  color: var(--mat-sys-error);
+  font: var(--mat-sys-body-medium);
+}
+
+.dialog-spinner {
+  display: inline-block;
+  margin-right: 8px;
+  vertical-align: middle;
+}
+
+.checkboxes {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px;
+  margin-bottom: 8px;
+}
+
+.actions-spacer {
+  flex: 1;
+}
+
+.destructive {
+  @include mat.button-overrides(
+    (
+      filled-container-color: var(--mat-sys-error),
+      filled-label-text-color: var(--mat-sys-on-error),
+      text-label-text-color: var(--mat-sys-error),
+    )
+  );
+}

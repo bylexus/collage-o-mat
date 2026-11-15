@@ -49,10 +49,18 @@ export class UserAvatar {
   readonly user = input.required<User>();
   /** Diameter in px. */
   readonly size = input(40);
+  /**
+   * Image URL for a user other than the logged-in user (e.g. the admin avatar URL). Used only if
+   * the user has an avatar (`avatarVersion` not `null`); default: the own profile avatar URL.
+   */
+  readonly imageUrl = input<string>();
 
   protected readonly src = computed(() => {
     const version = this.user().avatarVersion;
-    return version === null ? null : this.api.avatarUrl(version);
+    if (version === null) {
+      return null;
+    }
+    return this.imageUrl() ?? this.api.avatarUrl(version);
   });
   protected readonly initial = computed(() => {
     const first = Array.from(this.user().username)[0] ?? '?';

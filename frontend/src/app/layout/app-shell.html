@@ -15,6 +15,19 @@
       </a>
     </nav>
     <span class="toolbar-spacer"></span>
+    @if (user.isAdmin) {
+      <a
+        matIconButton
+        routerLink="/admin"
+        routerLinkActive="active-link"
+        i18n-aria-label="@@toolbar.admin"
+        aria-label="Administration"
+        i18n-matTooltip="@@toolbar.admin"
+        matTooltip="Administration"
+      >
+        <mat-icon>manage_accounts</mat-icon>
+      </a>
+    }
     <a
       matIconButton
       routerLink="/about"
