@@ -1,0 +1,53 @@
+// Shared dialog styles are in import-dialog.scss (also used by this component).
+
+.source-tabs {
+  margin-bottom: 8px;
+}
+
+.folder-trail {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 2px;
+  margin: 4px 0 8px;
+  font: var(--mat-sys-body-medium);
+}
+
+.trail-link {
+  padding: 2px 4px;
+  border: 0;
+  border-radius: 4px;
+  background: none;
+  color: var(--mat-sys-primary);
+  font: inherit;
+  cursor: pointer;
+
+  &:hover:not(:disabled) {
+    text-decoration: underline;
+  }
+
+  &:focus-visible {
+    outline: 2px solid var(--mat-sys-primary);
+  }
+
+  &:disabled {
+    color: var(--mat-sys-on-surface-variant);
+    cursor: default;
+  }
+}
+
+.trail-current {
+  padding: 2px 4px;
+  font-weight: 500;
+}
+
+.trail-separator {
+  width: 18px;
+  height: 18px;
+  color: var(--mat-sys-on-surface-variant);
+  font-size: 18px;
+}
+
+.folder-list {
+  margin-bottom: 8px;
+}

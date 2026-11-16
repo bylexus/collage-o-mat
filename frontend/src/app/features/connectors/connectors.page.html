@@ -1,9 +1,14 @@
 <header class="page-header">
   <h1 class="page-title" i18n="@@connectors.title">Connectors</h1>
-  <button matButton="filled" type="button" (click)="add()">
+  <button matButton="filled" type="button" [matMenuTriggerFor]="addMenu">
     <mat-icon>add</mat-icon>
     <span i18n="@@connectors.add">Add connector</span>
   </button>
+  <mat-menu #addMenu="matMenu">
+    @for (type of connectorTypes; track type) {
+      <button mat-menu-item type="button" (click)="add(type)">{{ typeLabel(type) }}</button>
+    }
+  </mat-menu>
 </header>
 
 @if (loading()) {
@@ -69,7 +74,7 @@
     </mat-card>
   } @empty {
     <p class="page-message" i18n="@@connectors.empty">
-      No connectors yet. Add an Immich connector to import photos.
+      No connectors yet. Add an Immich or Synology connector to import photos.
     </p>
   }
 }

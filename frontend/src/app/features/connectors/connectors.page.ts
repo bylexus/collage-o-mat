@@ -3,15 +3,16 @@ import { MatButtonModule } from '@angular/material/button';
 import { MatCardModule } from '@angular/material/card';
 import { MatDialog } from '@angular/material/dialog';
 import { MatIconModule } from '@angular/material/icon';
+import { MatMenuModule } from '@angular/material/menu';
 import { MatProgressSpinnerModule } from '@angular/material/progress-spinner';
 import { firstValueFrom } from 'rxjs';
 import { ConnectorApi } from '../../core/api/connector.api';
-import { ConnectorSummary, ConnectorTestResult } from '../../core/models/connector';
+import { ConnectorSummary, ConnectorTestResult, ConnectorType } from '../../core/models/connector';
 import { ConfirmService } from '../../shared/confirm-dialog/confirm.service';
 import { errorMessage } from '../../shared/error-message';
 import { NotificationService } from '../../shared/notification.service';
 import { ConnectorDialog, ConnectorDialogData, ConnectorDialogValue } from './connector-dialog';
-import { connectorTypeLabel } from './connector-types';
+import { CONNECTOR_TYPES, connectorTypeLabel } from './connector-types';
 
 /** State of the connection test of one connector. */
 type TestState = { running: true } | { running: false; result: ConnectorTestResult };
@@ -19,7 +20,7 @@ type TestState = { running: true } | { running: false; result: ConnectorTestResu
 /** Settings page: list, add, edit, delete and test the connectors of the user. */
 @Component({
   selector: 'app-connectors-page',
-  imports: [MatButtonModule, MatCardModule, MatIconModule, MatProgressSpinnerModule],
+  imports: [MatButtonModule, MatCardModule, MatIconModule, MatMenuModule, MatProgressSpinnerModule],
   templateUrl: './connectors.page.html',
   styleUrl: './connectors.page.scss',
 })
@@ -34,6 +35,7 @@ export class ConnectorsPage {
   protected readonly loadError = signal<string | null>(null);
   protected readonly tests = signal<ReadonlyMap<number, TestState>>(new Map());
   protected readonly typeLabel = connectorTypeLabel;
+  protected readonly connectorTypes = CONNECTOR_TYPES;
 
   constructor() {
     void this.load();
@@ -53,12 +55,12 @@ export class ConnectorsPage {
     }
   }
 
-  protected add(): void {
-    this.openDialog(null, (value) => firstValueFrom(this.api.create(value)));
+  protected add(type: ConnectorType): void {
+    this.openDialog(null, type, (value) => firstValueFrom(this.api.create(value)));
   }
 
   protected edit(connector: ConnectorSummary): void {
-    this.openDialog(connector, ({ name, config }) =>
+    this.openDialog(connector, connector.type, ({ name, config }) =>
       firstValueFrom(this.api.update(connector.id, { name, config })),
     );
   }
@@ -96,9 +98,10 @@ export class ConnectorsPage {
 
   private openDialog(
     connector: ConnectorSummary | null,
+    type: ConnectorType,
     persist: (value: ConnectorDialogValue) => Promise<unknown>,
   ): void {
-    const data: ConnectorDialogData = { connector, save: persist };
+    const data: ConnectorDialogData = { connector, type, save: persist };
     const ref = this.dialog.open<ConnectorDialog, ConnectorDialogData, boolean>(ConnectorDialog, {
       data,
       width: '480px',

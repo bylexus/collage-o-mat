@@ -1,11 +1,12 @@
 import { Component, input, output } from '@angular/core';
 import { MatIconModule } from '@angular/material/icon';
-import { ImmichAsset, immichThumbnailUrl } from '../../../core/models/immich';
+import { SourceAsset } from '../../../core/models/source';
 
 /**
  * Thumbnail grid of the step "choose photos" (presentational). A click toggles the selection of
  * an asset; assets that are already imported or that are not available in the chosen size are
- * marked and cannot be selected.
+ * marked and cannot be selected. Shared by the import dialogs of all connector types; `T` is the
+ * type-specific asset.
  */
 @Component({
   selector: 'app-asset-grid',
@@ -23,10 +24,10 @@ import { ImmichAsset, immichThumbnailUrl } from '../../../core/models/immich';
         [class.unavailable]="unavailable"
         [disabled]="imported || unavailable || disabled()"
         [attr.aria-pressed]="selected"
-        [title]="unavailable ? asset.fileName + ' – ' + unavailableReason : asset.fileName"
+        [title]="unavailable ? asset.fileName + ' – ' + unavailableReason() : asset.fileName"
         (click)="toggled.emit(asset.id)"
       >
-        <img [src]="thumbnailUrl(asset.id)" [alt]="asset.fileName" loading="lazy" />
+        <img [src]="thumbnailUrl()(asset)" [alt]="asset.fileName" loading="lazy" />
         @if (imported) {
           <span class="asset-badge" i18n="@@import.assets.imported">Imported</span>
         } @else if (unavailable) {
@@ -112,22 +113,21 @@ import { ImmichAsset, immichThumbnailUrl } from '../../../core/models/immich';
     }
   `,
 })
-export class AssetGrid {
-  readonly connectorId = input.required<number>();
-  readonly assets = input.required<readonly ImmichAsset[]>();
+export class AssetGrid<T extends SourceAsset> {
+  readonly assets = input.required<readonly T[]>();
+  /** URL of the thumbnail of an asset (usable as `<img src>`). */
+  readonly thumbnailUrl = input.required<(asset: T) => string>();
   readonly selectedIds = input.required<ReadonlySet<string>>();
   /** Assets that are already in the collage. */
   readonly importedIds = input.required<ReadonlySet<string>>();
   /** Assets that cannot be imported in the chosen size (greyed out, not selectable). */
   readonly unavailableIds = input<ReadonlySet<string>>(new Set());
+  /** Tooltip reason of unavailable assets; the default lists the rules of the Immich import. */
+  readonly unavailableReason = input(
+    $localize`:@@import.assets.originalUnavailableReason:Not available in original size: AVIF, GIF and BMP files and images over 60 megapixels are not supported. Use the preview size.`,
+  );
   /** Disables all tiles (e.g. while the import runs). */
   readonly disabled = input(false);
   /** Emits the id of the clicked asset. */
   readonly toggled = output<string>();
-
-  protected readonly unavailableReason = $localize`:@@import.assets.originalUnavailableReason:Not available in original size: AVIF, GIF and BMP files and images over 60 megapixels are not supported. Use the preview size.`;
-
-  protected thumbnailUrl(assetId: string): string {
-    return immichThumbnailUrl(this.connectorId(), assetId);
-  }
 }

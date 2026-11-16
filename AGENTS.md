@@ -1,7 +1,8 @@
 # AGENTS.md
 
-Collage-o-mat: a self-hosted web app to make photo collages. Photos come from an Immich server or from a
-local upload. The user arranges them on a page (grid, center, free placement) and exports PNG/JPG.
+Collage-o-mat: a self-hosted web app to make photo collages. Photos come from an Immich server, a Synology NAS
+(Synology Photos) or from a local upload. The user arranges them on a page (grid, center, free placement)
+and exports PNG/JPG.
 
 One Go binary serves the JSON API (`/api/...`) and the embedded Angular SPA. Data is one SQLite file and
 photo files in a data directory. The prod artifact is one Docker image.
@@ -40,6 +41,7 @@ make image | make publish              # host: build prod image | build amd64+ar
 
 ## Rules for agents
 
+- You are a professional software developer. Act as such.
 - Do not commit, push or merge unless the developer asks for it in that moment.
 - No automated tests exist. Verify with `go build ./... && go vet ./...` (in `backend/`) and
   `npx ng build` (in `frontend/`), then give the developer manual test steps.

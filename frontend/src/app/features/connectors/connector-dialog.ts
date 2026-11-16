@@ -8,7 +8,12 @@ import { MatProgressSpinnerModule } from '@angular/material/progress-spinner';
 import { ConnectorConfigInput, ConnectorSummary, ConnectorType } from '../../core/models/connector';
 import { errorMessage } from '../../shared/error-message';
 import { connectorTypeLabel } from './connector-types';
-import { createImmichConfigGroup, ImmichConfigForm } from './immich-config-form';
+import { createImmichConfigGroup, ImmichConfigForm, ImmichConfigGroup } from './immich-config-form';
+import {
+  createSynologyConfigGroup,
+  SynologyConfigForm,
+  SynologyConfigGroup,
+} from './synology-config-form';
 
 /** Maximum length of a connector name (same as the backend). */
 const MAX_NAME_LENGTH = 100;
@@ -22,8 +27,10 @@ export interface ConnectorDialogValue {
 
 /** Input of the connector dialog. */
 export interface ConnectorDialogData {
-  /** Connector to edit; `null` creates a new Immich connector. */
+  /** Connector to edit; `null` creates a new connector of `type`. */
   connector: ConnectorSummary | null;
+  /** Type of the new connector; ignored on edit (the type cannot change). */
+  type: ConnectorType;
   /**
    * Saves the values (done by the page). A rejected promise keeps the dialog open and shows the
    * error; on success the dialog closes with `true`.
@@ -33,7 +40,7 @@ export interface ConnectorDialogData {
 
 /**
  * Create/edit dialog of a connector: common fields (name) plus the form of the connector type.
- * A new type adds its config form component and one `@case`.
+ * A new type adds its config form component, its group field and one `@case`.
  */
 @Component({
   selector: 'app-connector-dialog',
@@ -45,6 +52,7 @@ export interface ConnectorDialogData {
     MatInputModule,
     MatProgressSpinnerModule,
     ImmichConfigForm,
+    SynologyConfigForm,
   ],
   template: `
     <h2 mat-dialog-title>
@@ -74,10 +82,14 @@ export interface ConnectorDialogData {
 
         @switch (type) {
           @case ('immich') {
-            <app-immich-config-form
-              [group]="form.controls.config"
-              [apiKeySet]="data.connector?.config?.apiKeySet ?? false"
-            />
+            @if (immichConfig; as group) {
+              <app-immich-config-form [group]="group" [apiKeySet]="apiKeySet" />
+            }
+          }
+          @case ('synology') {
+            @if (synologyConfig; as group) {
+              <app-synology-config-form [group]="group" [passwordSet]="passwordSet" />
+            }
           }
         }
 
@@ -129,14 +141,41 @@ export class ConnectorDialog {
   private readonly ref = inject<MatDialogRef<ConnectorDialog, boolean>>(MatDialogRef);
   private readonly fb = inject(NonNullableFormBuilder);
 
-  protected readonly isEdit = this.data.connector !== null;
-  protected readonly type: ConnectorType = this.data.connector?.type ?? 'immich';
+  private readonly connector = this.data.connector;
+  protected readonly isEdit = this.connector !== null;
+  protected readonly type: ConnectorType = this.connector?.type ?? this.data.type;
   protected readonly typeLabel = connectorTypeLabel(this.type);
   protected readonly maxNameLength = MAX_NAME_LENGTH;
 
+  /** Config group of the Immich form; `null` for other types. */
+  protected readonly immichConfig =
+    this.type === 'immich'
+      ? createImmichConfigGroup(
+          this.fb,
+          this.connector?.type === 'immich' ? this.connector.config : undefined,
+        )
+      : null;
+  protected readonly apiKeySet =
+    this.connector?.type === 'immich' && this.connector.config.apiKeySet;
+
+  /** Config group of the Synology form; `null` for other types. */
+  protected readonly synologyConfig =
+    this.type === 'synology'
+      ? createSynologyConfigGroup(
+          this.fb,
+          this.connector?.type === 'synology' ? this.connector.config : undefined,
+        )
+      : null;
+  protected readonly passwordSet =
+    this.connector?.type === 'synology' && this.connector.config.passwordSet;
+
+  /** Config group of the dialog's type (exactly one of the groups above is set). */
+  private readonly config: ImmichConfigGroup | SynologyConfigGroup = (this.immichConfig ??
+    this.synologyConfig)!;
+
   protected readonly form = this.fb.group({
-    name: [this.data.connector?.name ?? '', Validators.required],
-    config: createImmichConfigGroup(this.fb, this.data.connector?.config),
+    name: [this.connector?.name ?? '', Validators.required],
+    config: this.config,
   });
   protected readonly saving = signal(false);
   protected readonly error = signal<string | null>(null);
@@ -146,7 +185,8 @@ export class ConnectorDialog {
       this.form.markAllAsTouched();
       return;
     }
-    const { name, config } = this.form.getRawValue();
+    const name = this.form.controls.name.getRawValue();
+    const config: ConnectorConfigInput = this.config.getRawValue();
     this.setSaving(true);
     this.error.set(null);
     try {

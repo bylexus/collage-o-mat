@@ -3,9 +3,12 @@ import { MatFormFieldModule } from '@angular/material/form-field';
 import { MatIconModule } from '@angular/material/icon';
 import { MatInputModule } from '@angular/material/input';
 import { MatListModule } from '@angular/material/list';
-import { ImmichAlbum, immichThumbnailUrl } from '../../../core/models/immich';
+import { SourceAlbum } from '../../../core/models/source';
 
-/** Step "choose album" of the import dialog, with a name filter (presentational). */
+/**
+ * Step "choose album" of an import dialog, with a name filter (presentational). Shared by the
+ * import dialogs of all connector types; `T` is the type-specific album.
+ */
 @Component({
   selector: 'app-album-list',
   imports: [MatFormFieldModule, MatIconModule, MatInputModule, MatListModule],
@@ -21,10 +24,11 @@ import { ImmichAlbum, immichThumbnailUrl } from '../../../core/models/immich';
       <mat-action-list>
         @for (album of filteredAlbums(); track album.id) {
           <button mat-list-item type="button" (click)="selected.emit(album)">
-            @if (album.thumbnailAssetId) {
+            @let cover = coverUrl()(album);
+            @if (cover) {
               <img
                 matListItemAvatar
-                [src]="thumbnailUrl(album.thumbnailAssetId)"
+                [src]="cover"
                 alt=""
                 loading="lazy"
               />
@@ -57,10 +61,11 @@ import { ImmichAlbum, immichThumbnailUrl } from '../../../core/models/immich';
     }
   `,
 })
-export class AlbumList {
-  readonly connectorId = input.required<number>();
-  readonly albums = input.required<readonly ImmichAlbum[]>();
-  readonly selected = output<ImmichAlbum>();
+export class AlbumList<T extends SourceAlbum> {
+  readonly albums = input.required<readonly T[]>();
+  /** URL of the album cover image (usable as `<img src>`); `null` shows the album icon. */
+  readonly coverUrl = input.required<(album: T) => string | null>();
+  readonly selected = output<T>();
 
   protected readonly filter = signal('');
   protected readonly filteredAlbums = computed(() => {
@@ -69,8 +74,4 @@ export class AlbumList {
       ? this.albums()
       : this.albums().filter((album) => album.name.toLocaleLowerCase().includes(text));
   });
-
-  protected thumbnailUrl(assetId: string): string {
-    return immichThumbnailUrl(this.connectorId(), assetId);
-  }
 }

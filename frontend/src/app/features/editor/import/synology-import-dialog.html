@@ -1,0 +1,213 @@
+<h2 mat-dialog-title>
+  <ng-container i18n="@@import.synology.title">Import from Synology</ng-container>
+  <span class="import-path">
+    {{ connector.name }}
+    @if (album(); as album) {
+      › {{ album.name }}
+    }
+  </span>
+</h2>
+
+<mat-dialog-content class="import-content">
+  @if (!album()) {
+    <nav
+      mat-tab-nav-bar
+      class="source-tabs"
+      [tabPanel]="tabPanel"
+      i18n-aria-label="@@import.synology.tabs.ariaLabel"
+      aria-label="Photo source"
+    >
+      <a
+        mat-tab-link
+        [active]="tab() === 'albums'"
+        [disabled]="importing()"
+        (click)="chooseTab('albums')"
+        i18n="@@import.synology.tabs.albums"
+      >
+        Albums
+      </a>
+      <a
+        mat-tab-link
+        [active]="tab() === 'folders'"
+        [disabled]="importing()"
+        (click)="chooseTab('folders')"
+        i18n="@@import.synology.tabs.folders"
+      >
+        Folders
+      </a>
+    </nav>
+  }
+  <mat-tab-nav-panel #tabPanel>
+    @if (!album() && tab() === 'folders') {
+      <nav
+        class="folder-trail"
+        i18n-aria-label="@@import.synology.folders.trailAriaLabel"
+        aria-label="Folder path"
+      >
+        @for (entry of trail(); track $index; let last = $last) {
+          @if (!$first) {
+            <mat-icon class="trail-separator" aria-hidden="true">chevron_right</mat-icon>
+          }
+          @if (last) {
+            <span class="trail-current" aria-current="page">
+              {{ $first ? rootFolderName : entry.name }}
+            </span>
+          } @else {
+            <button
+              type="button"
+              class="trail-link"
+              [disabled]="importing()"
+              (click)="openTrailFolder($index)"
+            >
+              {{ $first ? rootFolderName : entry.name }}
+            </button>
+          }
+        }
+      </nav>
+      @if (folder(); as folder) {
+        @if (folder.folders.length > 0) {
+          <mat-action-list class="folder-list">
+            @for (sub of folder.folders; track sub.id) {
+              <button
+                mat-list-item
+                type="button"
+                [disabled]="importing()"
+                (click)="openSubfolder(sub)"
+              >
+                <mat-icon matListItemIcon>folder</mat-icon>
+                <span matListItemTitle>{{ sub.name }}</span>
+              </button>
+            }
+          </mat-action-list>
+        }
+      }
+    }
+
+    @if (showPhotos()) {
+      <div class="selection-bar">
+        <span class="selection-count" i18n="@@import.assets.selectedCount">
+          {selectedCount(), plural,
+            =0 {No photos selected}
+            =1 {1 photo selected}
+            other {{{ selectedCount() }} photos selected}
+          }
+        </span>
+        <button
+          matButton
+          type="button"
+          [disabled]="importing() || assets().length === 0"
+          (click)="selectAll()"
+          i18n="@@import.assets.selectAll"
+        >
+          Select all
+        </button>
+        <button
+          matButton
+          type="button"
+          [disabled]="importing() || selectedCount() === 0"
+          (click)="selectNone()"
+          i18n="@@import.assets.selectNone"
+        >
+          Select none
+        </button>
+        <span class="size-choice">
+          <span class="size-label" i18n="@@import.size.label">Size</span>
+          <mat-button-toggle-group
+            hideSingleSelectionIndicator
+            [value]="size()"
+            [disabled]="importing()"
+            (change)="setSize($event.value)"
+            i18n-aria-label="@@import.size.ariaLabel"
+            aria-label="Image size"
+          >
+            <mat-button-toggle value="preview" i18n="@@import.size.preview">
+              Preview
+            </mat-button-toggle>
+            <mat-button-toggle value="original" i18n="@@import.size.original">
+              Original
+            </mat-button-toggle>
+          </mat-button-toggle-group>
+        </span>
+      </div>
+      @if (!loading() && !loadError() && assets().length === 0) {
+        @if (album()) {
+          <p class="import-message" i18n="@@import.assets.empty">This album has no photos.</p>
+        } @else {
+          <p class="import-message" i18n="@@import.synology.folders.noPhotos">
+            This folder has no photos.
+          </p>
+        }
+      }
+      <app-asset-grid
+        [thumbnailUrl]="assetThumbnailUrl"
+        [assets]="assets()"
+        [selectedIds]="selectedIds()"
+        [importedIds]="importedIds"
+        [unavailableIds]="unavailableIds()"
+        [unavailableReason]="unavailableReason"
+        [disabled]="importing()"
+        (toggled)="toggle($event)"
+      />
+      @if (nextPage() !== null && !loading() && !loadError()) {
+        <div class="load-more">
+          <button
+            matButton="outlined"
+            type="button"
+            [disabled]="importing()"
+            (click)="loadMore()"
+            i18n="@@import.assets.loadMore"
+          >
+            Load more
+          </button>
+        </div>
+      }
+    } @else if (tab() === 'albums' && albums(); as albums) {
+      <app-album-list
+        [coverUrl]="albumCoverUrl"
+        [albums]="albums"
+        (selected)="chooseAlbum($event)"
+      />
+    }
+  </mat-tab-nav-panel>
+
+  @if (loading()) {
+    <mat-spinner class="import-spinner" diameter="40" />
+  }
+  @if (loadError(); as message) {
+    <div class="import-error" role="alert">
+      <p>{{ message }}</p>
+      <button matButton="outlined" type="button" (click)="retry()" i18n="@@import.retry">
+        Retry
+      </button>
+    </div>
+  }
+  @if (importError(); as message) {
+    <p class="import-error" role="alert">{{ message }}</p>
+  }
+</mat-dialog-content>
+
+<mat-dialog-actions class="import-actions">
+  @if (canGoBack()) {
+    <button matButton type="button" [disabled]="importing()" (click)="back()">
+      <mat-icon>arrow_back</mat-icon>
+      <ng-container i18n="@@import.back">Back</ng-container>
+    </button>
+  }
+  <span class="actions-spacer"></span>
+  <button matButton type="button" mat-dialog-close [disabled]="importing()">
+    <ng-container i18n="@@import.cancel">Cancel</ng-container>
+  </button>
+  @if (showPhotos()) {
+    <button
+      matButton="filled"
+      type="button"
+      [disabled]="importing() || selectedCount() === 0"
+      (click)="import()"
+    >
+      @if (importing()) {
+        <mat-spinner class="button-spinner" diameter="18" />
+      }
+      <ng-container i18n="@@import.submit">Import ({{ selectedCount() }})</ng-container>
+    </button>
+  }
+</mat-dialog-actions>

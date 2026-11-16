@@ -74,7 +74,8 @@ type Collages interface {
 }
 
 // Sources gives access to the photo source behind a connector (implemented
-// by the Immich connector, immich.Service).
+// per connector type by immich.Service and synology.Service, and for all
+// types by SourcesByType).
 type Sources interface {
 	// Source returns the source of a connector of the user. It returns
 	// apperr.ErrNotFound if the connector does not exist or belongs to
@@ -107,7 +108,8 @@ type ImageSize string
 
 // Image sizes of an import.
 const (
-	// SizePreview is the big preview of the source (Immich: about 1440 px).
+	// SizePreview is the big preview of the source (Immich: about 1440 px,
+	// Synology: short side 1280 px).
 	SizePreview ImageSize = "preview"
 	// SizeOriginal is the original size of the image.
 	SizeOriginal ImageSize = "original"

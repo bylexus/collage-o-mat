@@ -4,24 +4,21 @@ import { MatButtonToggleModule } from '@angular/material/button-toggle';
 import { MAT_DIALOG_DATA, MatDialogModule, MatDialogRef } from '@angular/material/dialog';
 import { MatIconModule } from '@angular/material/icon';
 import { MatProgressSpinnerModule } from '@angular/material/progress-spinner';
-import { RouterLink } from '@angular/router';
 import { firstValueFrom, Observable } from 'rxjs';
-import { ConnectorApi } from '../../../core/api/connector.api';
 import { ImmichApi } from '../../../core/api/immich.api';
 import { ConnectorSummary } from '../../../core/models/connector';
-import { ImmichAlbum, ImmichAsset } from '../../../core/models/immich';
+import { ImmichAlbum, ImmichAsset, immichThumbnailUrl } from '../../../core/models/immich';
 import { ImportRequest, ImportResult, ImportSize, Photo } from '../../../core/models/photo';
 import { errorMessage } from '../../../shared/error-message';
 import { AlbumList } from './album-list';
 import { AssetGrid } from './asset-grid';
-import { ConnectorList } from './connector-list';
+import { readStoredSize, storeSize } from './import-size';
 import { supportsOriginalSize } from './original-size';
-
-/** localStorage key of the last chosen import size (per browser). */
-const IMPORT_SIZE_STORAGE_KEY = 'collageomat.importSize';
 
 /** Input of the import dialog. */
 export interface ImportDialogData {
+  /** Connector to import from (chosen in the editor's "Import" menu); its type fits the dialog. */
+  connector: ConnectorSummary;
   /** Photos already in the collage; their assets are marked "Imported" and cannot be selected. */
   photos: readonly Photo[];
   /**
@@ -32,15 +29,14 @@ export interface ImportDialogData {
 }
 
 /**
- * Import from Immich in three steps: choose a connector (skipped if there is only one), choose an
- * album, select photos. The step follows from what is chosen. Loads connectors, albums and assets
- * itself; the import is done by the caller (`ImportDialogData.importPhotos`). Closes with the
- * `ImportResult`, or `undefined`.
+ * Import from the Immich connector of `ImportDialogData.connector` in two steps: choose an album,
+ * select photos. The step follows from what is chosen. Loads albums and assets itself; the import
+ * is done by the caller (`ImportDialogData.importPhotos`). Closes with the `ImportResult`, or
+ * `undefined`.
  */
 @Component({
   selector: 'app-import-dialog',
   imports: [
-    RouterLink,
     MatButtonModule,
     MatButtonToggleModule,
     MatDialogModule,
@@ -48,7 +44,6 @@ export interface ImportDialogData {
     MatProgressSpinnerModule,
     AlbumList,
     AssetGrid,
-    ConnectorList,
   ],
   templateUrl: './import-dialog.html',
   styleUrl: './import-dialog.scss',
@@ -56,13 +51,10 @@ export interface ImportDialogData {
 export class ImportDialog {
   private readonly data = inject<ImportDialogData>(MAT_DIALOG_DATA);
   private readonly ref = inject<MatDialogRef<ImportDialog, ImportResult>>(MatDialogRef);
-  private readonly connectorApi = inject(ConnectorApi);
   private readonly immichApi = inject(ImmichApi);
 
-  /** Immich connectors of the user; `null` while loading. */
-  protected readonly connectors = signal<readonly ConnectorSummary[] | null>(null);
-  protected readonly connector = signal<ConnectorSummary | null>(null);
-  /** Albums of the chosen connector; `null` while loading. */
+  protected readonly connector: ConnectorSummary = this.data.connector;
+  /** Albums of the connector; `null` while loading. */
   protected readonly albums = signal<readonly ImmichAlbum[] | null>(null);
   protected readonly album = signal<ImmichAlbum | null>(null);
   protected readonly assets = signal<readonly ImmichAsset[]>([]);
@@ -76,18 +68,12 @@ export class ImportDialog {
   protected readonly importing = signal(false);
   protected readonly importError = signal<string | null>(null);
 
-  /** Back from the photos to the albums, or from the albums to the connectors (if more than one). */
-  protected readonly canGoBack = computed(
-    () =>
-      this.album() !== null || (this.connector() !== null && (this.connectors()?.length ?? 0) > 1),
+  /** Back from the photos to the albums. */
+  protected readonly canGoBack = computed(() => this.album() !== null);
+  /** Source asset ids of the photos in the collage that came from the connector. */
+  protected readonly importedIds: ReadonlySet<string> = new Set(
+    this.data.photos.filter((p) => p.connectorId === this.connector.id).map((p) => p.sourceAssetId),
   );
-  /** Source asset ids of the photos in the collage that came from the chosen connector. */
-  protected readonly importedIds = computed<ReadonlySet<string>>(() => {
-    const connectorId = this.connector()?.id;
-    return new Set(
-      this.data.photos.filter((p) => p.connectorId === connectorId).map((p) => p.sourceAssetId),
-    );
-  });
   /** Loaded assets that cannot be imported in the chosen size (only in original mode). */
   protected readonly unavailableIds = computed<ReadonlySet<string>>(() =>
     this.size() === 'original'
@@ -95,25 +81,19 @@ export class ImportDialog {
       : new Set(),
   );
   protected readonly selectedCount = computed(() => this.selectedIds().size);
+  /** Thumbnail URL function of the asset grid (for the connector). */
+  protected readonly assetThumbnailUrl = (asset: ImmichAsset): string =>
+    immichThumbnailUrl(this.connector.id, asset.id);
+  /** Cover URL function of the album list (for the connector); `null` if no cover. */
+  protected readonly albumCoverUrl = (album: ImmichAlbum): string | null =>
+    album.thumbnailAssetId ? immichThumbnailUrl(this.connector.id, album.thumbnailAssetId) : null;
 
   /** Increased by each new request and by back navigation; older responses are ignored. */
   private requestId = 0;
   private retryLastLoad: (() => void) | null = null;
 
   constructor() {
-    void this.load(this.connectorApi.list(), (list) => {
-      const immich = list.filter((c) => c.type === 'immich');
-      this.connectors.set(immich);
-      if (immich.length === 1) {
-        this.chooseConnector(immich[0]);
-      }
-    });
-  }
-
-  protected chooseConnector(connector: ConnectorSummary): void {
-    this.connector.set(connector);
-    this.albums.set(null);
-    void this.load(this.immichApi.albums(connector.id), (albums) => this.albums.set(albums));
+    void this.load(this.immichApi.albums(this.connector.id), (albums) => this.albums.set(albums));
   }
 
   protected chooseAlbum(album: ImmichAlbum): void {
@@ -137,9 +117,6 @@ export class ImportDialog {
       this.album.set(null);
       this.assets.set([]);
       this.selectedIds.set(new Set());
-    } else {
-      this.connector.set(null);
-      this.albums.set(null);
     }
   }
 
@@ -159,7 +136,7 @@ export class ImportDialog {
 
   /** Selects all loaded assets that are not imported yet and are available in the chosen size. */
   protected selectAll(): void {
-    const imported = this.importedIds();
+    const imported = this.importedIds;
     const unavailable = this.unavailableIds();
     this.selectedIds.set(
       new Set(
@@ -185,9 +162,9 @@ export class ImportDialog {
   }
 
   protected async import(): Promise<void> {
-    const connector = this.connector();
+    const connector = this.connector;
     const selected = this.selectedIds();
-    if (!connector || selected.size === 0 || this.importing()) {
+    if (selected.size === 0 || this.importing()) {
       return;
     }
     // Album order, so that the photos keep the order of the album.
@@ -207,12 +184,11 @@ export class ImportDialog {
   }
 
   private loadAssetPage(page: number): void {
-    const connector = this.connector();
     const album = this.album();
-    if (!connector || !album) {
+    if (!album) {
       return;
     }
-    void this.load(this.immichApi.assets(connector.id, album.id, page), (result) => {
+    void this.load(this.immichApi.assets(this.connector.id, album.id, page), (result) => {
       this.assets.update((current) => [...current, ...result.items]);
       this.nextPage.set(result.nextPage);
     });
@@ -253,24 +229,5 @@ export class ImportDialog {
   private setImporting(importing: boolean): void {
     this.importing.set(importing);
     this.ref.disableClose = importing;
-  }
-}
-
-/** Last chosen import size from localStorage; `preview` if none, invalid or not readable. */
-function readStoredSize(): ImportSize {
-  try {
-    const value = localStorage.getItem(IMPORT_SIZE_STORAGE_KEY);
-    return value === 'original' ? 'original' : 'preview';
-  } catch {
-    return 'preview';
-  }
-}
-
-/** Remembers the import size; ignores storage errors (e.g. blocked site data). */
-function storeSize(size: ImportSize): void {
-  try {
-    localStorage.setItem(IMPORT_SIZE_STORAGE_KEY, size);
-  } catch {
-    // Not remembered; the choice still applies to this dialog.
   }
 }

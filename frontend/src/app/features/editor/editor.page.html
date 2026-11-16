@@ -131,12 +131,37 @@
       matIconButton
       class="toolbar-primary"
       type="button"
-      (click)="openImport()"
+      [matMenuTriggerFor]="importMenu"
+      (menuOpened)="loadImportConnectors()"
       [attr.aria-label]="importLabel"
       [matTooltip]="importLabel"
     >
       <mat-icon>add_photo_alternate</mat-icon>
     </button>
+    <mat-menu #importMenu="matMenu" xPosition="before">
+      @if (importConnectorsError(); as message) {
+        <button mat-menu-item type="button" disabled>
+          <mat-icon>error</mat-icon>
+          <span>{{ message }}</span>
+        </button>
+      } @else if (importConnectors(); as connectors) {
+        @for (connector of connectors; track connector.id) {
+          <button mat-menu-item type="button" (click)="openImport(connector)">
+            {{ connector.name }}
+            <span class="import-menu-type">{{ connectorTypeLabel(connector.type) }}</span>
+          </button>
+        } @empty {
+          <button mat-menu-item type="button" (click)="openConnectorSettings()">
+            <mat-icon>add</mat-icon>
+            <span i18n="@@editor.importMenu.addConnector">Add a connector</span>
+          </button>
+        }
+      } @else {
+        <button mat-menu-item type="button" disabled i18n="@@editor.importMenu.loading">
+          Loading connectors…
+        </button>
+      }
+    </mat-menu>
   </header>
 
   @if (store.settings(); as settings) {
@@ -211,7 +236,7 @@
         }
         @if (store.photos().length === 0) {
           <p class="editor-hint" i18n="@@editor.noPhotos">
-            This collage has no photos yet. Import photos from Immich.
+            This collage has no photos yet. Import photos from Immich or Synology.
           </p>
         }
       </div>

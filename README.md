@@ -6,7 +6,7 @@ A Photo collage web app inspired by CollageIt! Pro, in Go / Angular.
 
 ## Features
 
-* Import Photos from [an **Immich Server**](https://immich.app/), local files
+* Import Photos from [an **Immich Server**](https://immich.app/), [**Synology Photos**](https://www.synology.com/dsm/feature/photos) (DSM 7 or newer), local files
 * Page presets (A5, A4, A3, Letter, 30 × 30 cm) or custom size, DPI setting
 * **Arrange photos automatically** in several modes (grid, center mode, random heap, masonry, free placement)
 * Settings dialog per arrangement mode, quick re-roll with the same settings
@@ -33,6 +33,18 @@ provide the Immich server URL and an API key.
 The API Key needs the following permissions:
 
 `asset.read`, `asset.download`, `asset.view`, `album.read`
+
+## Connect a Synology Photos NAS
+
+Collageomat can import photos from **Synology Photos on DSM 7 or newer** (Photo Station / DSM 6 is not
+supported). You define a Synology Connector in Collageomat and provide the NAS URL (e.g.
+`https://nas.example.com:5001`), an account and its password. Collageomat shows the albums and folders of
+the account's **Personal Space** (no Shared Space, no albums shared with the account).
+
+* DSM has no API keys: the connector logs in with account + password. 2-factor authentication is not
+  supported.
+* Use a **dedicated, read-only NAS account** without 2FA that has access to Synology Photos only.
+* For a self-signed certificate, the connector has the option "Skip TLS certificate verification".
 
 ## Development
 
@@ -88,7 +100,7 @@ docker exec -it collageomat /app/collageomat user add --username alex --admin
 
 | Variable | Default | Meaning |
 |---|---|---|
-| `COLLAGEOMAT_SECRET` | — (required) | Key for the encrypted connector API keys. Do not change it later. |
+| `COLLAGEOMAT_SECRET` | — (required) | Key for the encrypted connector API keys and passwords. Do not change it later. |
 | `COLLAGEOMAT_DATA_DIR` | `/data` | SQLite database and photos |
 | `COLLAGEOMAT_LISTEN` | `:8080` | Listen address |
 | `COLLAGEOMAT_COOKIE_SECURE` | `true` | Set `false` only without HTTPS |

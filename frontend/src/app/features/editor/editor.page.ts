@@ -1,5 +1,10 @@
 import { CdkTrapFocus } from '@angular/cdk/a11y';
-import { CdkConnectedOverlay, CdkOverlayOrigin, ConnectedPosition } from '@angular/cdk/overlay';
+import {
+  CdkConnectedOverlay,
+  CdkOverlayOrigin,
+  ComponentType,
+  ConnectedPosition,
+} from '@angular/cdk/overlay';
 import {
   Component,
   computed,
@@ -12,10 +17,12 @@ import {
 import { MatButtonModule } from '@angular/material/button';
 import { MatDialog } from '@angular/material/dialog';
 import { MatIconModule } from '@angular/material/icon';
+import { MatMenuModule } from '@angular/material/menu';
 import { MatProgressSpinnerModule } from '@angular/material/progress-spinner';
 import { MatTooltipModule } from '@angular/material/tooltip';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { firstValueFrom, Subscription } from 'rxjs';
+import { ConnectorApi } from '../../core/api/connector.api';
 import { PhotoApi } from '../../core/api/photo.api';
 import {
   ArrangementMode,
@@ -23,8 +30,11 @@ import {
   pageLabel,
   SnapGridSettings,
 } from '../../core/models/collage';
+import { ConnectorSummary } from '../../core/models/connector';
 import { ImportResult, isPlaced, photoFileUrl } from '../../core/models/photo';
+import { errorMessage } from '../../shared/error-message';
 import { NotificationService } from '../../shared/notification.service';
+import { connectorTypeLabel } from '../connectors/connector-types';
 import { resolveCentrePhotoId } from './arrange/arrange';
 import { EditorCanvas } from './canvas/editor-canvas';
 import type { Point } from './canvas/viewport';
@@ -34,6 +44,7 @@ import { LengthUnit } from './geometry/length-unit';
 import { downloadBlob, exportFileName } from './export/download';
 import { ExportDialog, ExportDialogData } from './export/export-dialog';
 import { ImportDialog, ImportDialogData } from './import/import-dialog';
+import { SynologyImportDialog } from './import/synology-import-dialog';
 import { importResultMessage } from './import/import-result-message';
 import { SaveStatusIndicator } from './save-status-indicator';
 import { ArrangementSettingsDialogService } from './settings-panel/arrangement-settings-dialog.service';
@@ -55,6 +66,7 @@ import { uploadFailureMessage } from './upload/upload-failure-message';
     RouterLink,
     MatButtonModule,
     MatIconModule,
+    MatMenuModule,
     MatProgressSpinnerModule,
     MatTooltipModule,
     CdkOverlayOrigin,
@@ -78,6 +90,7 @@ import { uploadFailureMessage } from './upload/upload-failure-message';
 export class EditorPage {
   protected readonly store = inject(EditorStore);
   private readonly photoApi = inject(PhotoApi);
+  private readonly connectorApi = inject(ConnectorApi);
   private readonly route = inject(ActivatedRoute);
   private readonly router = inject(Router);
   private readonly dialog = inject(MatDialog);
@@ -127,11 +140,18 @@ export class EditorPage {
   protected readonly redoLabel = $localize`:@@editor.redo:Redo (${this.shortcuts.redo}:shortcut:)`;
   protected readonly exportLabel = $localize`:@@editor.export.button:Export`;
   protected readonly addTextLabel = $localize`:@@editor.text.addButton:Add text`;
-  protected readonly importLabel = $localize`:@@editor.importButton:Import from Immich`;
+  protected readonly importLabel = $localize`:@@editor.importMenu.button:Import`;
   protected readonly snapGridLabel = $localize`:@@editor.snapGrid.button:Snap grid`;
   protected readonly uploadLabel = $localize`:@@editor.uploadButton:Upload from computer`;
   /** `accept` of the hidden file input. */
   protected readonly uploadAccept = UPLOAD_MIME_TYPES.join(',');
+
+  /** Connectors of the user in the "Import" menu (reloaded on each open); `null` while loading. */
+  protected readonly importConnectors = signal<readonly ConnectorSummary[] | null>(null);
+  /** Error of the last connector load of the "Import" menu; `null` if none. */
+  protected readonly importConnectorsError = signal<string | null>(null);
+  protected readonly connectorTypeLabel = connectorTypeLabel;
+  private importConnectorsLoad: Subscription | null = null;
 
   /** Progress of the running upload batch; `null` when no upload runs. */
   protected readonly uploadProgress = signal<Pick<UploadBatchState, 'done' | 'total'> | null>(null);
@@ -244,16 +264,66 @@ export class EditorPage {
     void this.load(Number(this.route.snapshot.paramMap.get('id')));
   }
 
-  protected openImport(): void {
+  /**
+   * Loads the connectors of the "Import" menu each time it opens, so that changes in the connector
+   * settings show without reload. A load that still runs is cancelled.
+   */
+  protected loadImportConnectors(): void {
+    this.importConnectorsLoad?.unsubscribe();
+    this.importConnectors.set(null);
+    this.importConnectorsError.set(null);
+    const subscription = this.connectorApi.list().subscribe({
+      next: (connectors) => this.importConnectors.set(connectors),
+      error: (err: unknown) => {
+        const message = errorMessage(err);
+        this.importConnectorsError.set(
+          $localize`:@@editor.importMenu.loadError:Connectors could not be loaded: ${message}:error:`,
+        );
+      },
+    });
+    const removeDestroyHook = this.destroyRef.onDestroy(() => subscription.unsubscribe());
+    subscription.add(removeDestroyHook);
+    this.importConnectorsLoad = subscription;
+  }
+
+  /** Opens the import dialog of the connector's type for this connector. */
+  protected openImport(connector: ConnectorSummary): void {
+    switch (connector.type) {
+      case 'immich':
+        this.openImportDialog(ImportDialog, connector);
+        break;
+      case 'synology':
+        this.openImportDialog(SynologyImportDialog, connector);
+        break;
+    }
+  }
+
+  protected openConnectorSettings(): void {
+    void this.router.navigate(['/settings/connectors']);
+  }
+
+  /**
+   * Opens an import dialog for `connector` (all take `ImportDialogData` and close with the
+   * `ImportResult`); on success shows the result message and applies the new photos.
+   */
+  private openImportDialog(
+    component: ComponentType<ImportDialog | SynologyImportDialog>,
+    connector: ConnectorSummary,
+  ): void {
     const collage = this.store.collage();
     if (!collage) {
       return;
     }
     const data: ImportDialogData = {
+      connector,
       photos: this.store.photos(),
       importPhotos: (request) => firstValueFrom(this.photoApi.import(collage.id, request)),
     };
-    const ref = this.dialog.open<ImportDialog, ImportDialogData, ImportResult>(ImportDialog, {
+    const ref = this.dialog.open<
+      ImportDialog | SynologyImportDialog,
+      ImportDialogData,
+      ImportResult
+    >(component, {
       data,
       width: '960px',
       maxWidth: 'calc(100vw - 32px)',

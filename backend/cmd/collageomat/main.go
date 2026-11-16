@@ -21,6 +21,7 @@ import (
 	"collageomat/internal/config"
 	"collageomat/internal/connector"
 	"collageomat/internal/connector/immich"
+	"collageomat/internal/connector/synology"
 	"collageomat/internal/db"
 	"collageomat/internal/httpapi"
 	"collageomat/internal/imaging"
@@ -173,7 +174,7 @@ func models() []any {
 }
 
 // newDomainModules wires the services and handlers of the domain packages
-// (collages, connectors, Immich, photos, profile, admin, settings).
+// (collages, connectors, Immich, Synology, photos, profile, admin, settings).
 // Connector configs are encrypted with a key derived from secret; photo
 // files are stored in photoFiles; decoder is the server-wide image decode
 // limiter; profileSvc is created earlier because the auth handler needs it
@@ -183,18 +184,24 @@ func newDomainModules(
 	profileSvc *profile.Service, requireAdmin httpapi.Middleware,
 ) ([]httpapi.Module, error) {
 	immichKind := immich.NewKind(nil)
-	connectorSvc, err := newConnectorService(secret, gdb, immichKind)
+	synologyKind := synology.NewKind()
+	connectorSvc, err := newConnectorService(secret, gdb, immichKind, synologyKind)
 	if err != nil {
 		return nil, err
 	}
 	immichSvc := immich.NewService(connectorSvc, immichKind)
+	synologySvc := synology.NewService(connectorSvc, synologyKind)
 
 	tx := db.NewTransactor(gdb)
 	photoStore := photo.NewGormStore(gdb)
 	collageStore := collage.NewGormStore(gdb)
 	collagePhotos := photo.NewCollagePhotos(photoStore, photoFiles)
 	collageSvc := collage.NewService(collageStore, collagePhotos, tx)
-	photoSvc := photo.NewService(photoStore, photoFiles, collageSvc, immichSvc, decoder)
+	photoSources := photo.NewSourcesByType(connectorSvc, map[string]photo.Sources{
+		immich.Type:   immichSvc,
+		synology.Type: synologySvc,
+	})
+	photoSvc := photo.NewService(photoStore, photoFiles, collageSvc, photoSources, decoder)
 	adminSvc := admin.NewService(
 		admin.NewGormStore(gdb), collageSvc, collage.NewUserUsage(collageStore, collagePhotos), profileSvc, tx,
 	)
@@ -205,6 +212,7 @@ func newDomainModules(
 		photo.NewHandler(photoSvc),
 		connector.NewHandler(connectorSvc),
 		immich.NewHandler(immichSvc),
+		synology.NewHandler(synologySvc),
 		profile.NewHandler(profileSvc),
 		admin.NewHandler(adminSvc, requireAdmin),
 		settings.NewHandler(settingsSvc, requireAdmin),

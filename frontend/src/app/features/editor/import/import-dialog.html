@@ -1,105 +1,87 @@
 <h2 mat-dialog-title>
   <ng-container i18n="@@import.title">Import from Immich</ng-container>
-  @if (connector(); as connector) {
-    <span class="import-path">
-      {{ connector.name }}
-      @if (album(); as album) {
-        › {{ album.name }}
-      }
-    </span>
-  }
+  <span class="import-path">
+    {{ connector.name }}
+    @if (album(); as album) {
+      › {{ album.name }}
+    }
+  </span>
 </h2>
 
 <mat-dialog-content class="import-content">
-  @if (connector(); as connector) {
-    @if (album()) {
-      <div class="selection-bar">
-        <span class="selection-count" i18n="@@import.assets.selectedCount">
-          {selectedCount(), plural,
-            =0 {No photos selected}
-            =1 {1 photo selected}
-            other {{{ selectedCount() }} photos selected}
-          }
-        </span>
-        <button
-          matButton
-          type="button"
-          [disabled]="importing() || assets().length === 0"
-          (click)="selectAll()"
-          i18n="@@import.assets.selectAll"
+  @if (album()) {
+    <div class="selection-bar">
+      <span class="selection-count" i18n="@@import.assets.selectedCount">
+        {selectedCount(), plural,
+          =0 {No photos selected}
+          =1 {1 photo selected}
+          other {{{ selectedCount() }} photos selected}
+        }
+      </span>
+      <button
+        matButton
+        type="button"
+        [disabled]="importing() || assets().length === 0"
+        (click)="selectAll()"
+        i18n="@@import.assets.selectAll"
+      >
+        Select all
+      </button>
+      <button
+        matButton
+        type="button"
+        [disabled]="importing() || selectedCount() === 0"
+        (click)="selectNone()"
+        i18n="@@import.assets.selectNone"
+      >
+        Select none
+      </button>
+      <span class="size-choice">
+        <span class="size-label" i18n="@@import.size.label">Size</span>
+        <mat-button-toggle-group
+          hideSingleSelectionIndicator
+          [value]="size()"
+          [disabled]="importing()"
+          (change)="setSize($event.value)"
+          i18n-aria-label="@@import.size.ariaLabel"
+          aria-label="Image size"
         >
-          Select all
-        </button>
+          <mat-button-toggle value="preview" i18n="@@import.size.preview">
+            Preview
+          </mat-button-toggle>
+          <mat-button-toggle value="original" i18n="@@import.size.original">
+            Original
+          </mat-button-toggle>
+        </mat-button-toggle-group>
+      </span>
+    </div>
+    @if (!loading() && !loadError() && assets().length === 0) {
+      <p class="import-message" i18n="@@import.assets.empty">This album has no photos.</p>
+    }
+    <app-asset-grid
+      [thumbnailUrl]="assetThumbnailUrl"
+      [assets]="assets()"
+      [selectedIds]="selectedIds()"
+      [importedIds]="importedIds"
+      [unavailableIds]="unavailableIds()"
+      [disabled]="importing()"
+      (toggled)="toggle($event)"
+    />
+    @if (nextPage() !== null && !loading() && !loadError()) {
+      <div class="load-more">
         <button
-          matButton
+          matButton="outlined"
           type="button"
-          [disabled]="importing() || selectedCount() === 0"
-          (click)="selectNone()"
-          i18n="@@import.assets.selectNone"
+          [disabled]="importing()"
+          (click)="loadMore()"
+          i18n="@@import.assets.loadMore"
         >
-          Select none
+          Load more
         </button>
-        <span class="size-choice">
-          <span class="size-label" i18n="@@import.size.label">Size</span>
-          <mat-button-toggle-group
-            hideSingleSelectionIndicator
-            [value]="size()"
-            [disabled]="importing()"
-            (change)="setSize($event.value)"
-            i18n-aria-label="@@import.size.ariaLabel"
-            aria-label="Image size"
-          >
-            <mat-button-toggle value="preview" i18n="@@import.size.preview">
-              Preview
-            </mat-button-toggle>
-            <mat-button-toggle value="original" i18n="@@import.size.original">
-              Original
-            </mat-button-toggle>
-          </mat-button-toggle-group>
-        </span>
       </div>
-      @if (!loading() && !loadError() && assets().length === 0) {
-        <p class="import-message" i18n="@@import.assets.empty">This album has no photos.</p>
-      }
-      <app-asset-grid
-        [connectorId]="connector.id"
-        [assets]="assets()"
-        [selectedIds]="selectedIds()"
-        [importedIds]="importedIds()"
-        [unavailableIds]="unavailableIds()"
-        [disabled]="importing()"
-        (toggled)="toggle($event)"
-      />
-      @if (nextPage() !== null && !loading() && !loadError()) {
-        <div class="load-more">
-          <button
-            matButton="outlined"
-            type="button"
-            [disabled]="importing()"
-            (click)="loadMore()"
-            i18n="@@import.assets.loadMore"
-          >
-            Load more
-          </button>
-        </div>
-      }
-    } @else if (albums(); as albums) {
-      <app-album-list
-        [connectorId]="connector.id"
-        [albums]="albums"
-        (selected)="chooseAlbum($event)"
-      />
     }
-  } @else if (connectors(); as connectors) {
-    @if (connectors.length === 0) {
-      <p class="import-message" i18n="@@import.connectors.none">
-        You have no Immich connector yet. Add one in the
-        <a routerLink="/settings/connectors" mat-dialog-close>connector settings</a>.
-      </p>
-    } @else {
-      <p class="import-message" i18n="@@import.connectors.choose">Choose a connector:</p>
-      <app-connector-list [connectors]="connectors" (selected)="chooseConnector($event)" />
-    }
+  } @else if (albums(); as albums) {
+    <app-album-list [coverUrl]="albumCoverUrl" [albums]="albums" (selected)="chooseAlbum($event)" />
   }
 
   @if (loading()) {

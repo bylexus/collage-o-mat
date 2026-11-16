@@ -66,6 +66,16 @@ cd frontend && npx ng build
 
 Then give the developer concrete manual test steps (URLs, clicks, expected results).
 
+### Synology connector
+
+Manual tests need a NAS with Synology Photos (DSM 7 or newer) and an account without 2FA. The developer
+enters URL, account and password in the connector form; never write NAS credentials to files in the repo.
+
+To probe the Synology Web API by hand (e.g. after a DSM update, see the note in
+[architecture.md](architecture.md#synology-connector)): use only read-only calls, send the password with
+`curl --data-urlencode "passwd@<file>"` (never on the command line), keep the `_sid` out of logs and log
+out after probing. Repeated failed logins make DSM block the IP address (auto-block).
+
 ## Conventions
 
 See [architecture.md](architecture.md) for the backend layering and frontend structure. Also:
@@ -74,6 +84,7 @@ See [architecture.md](architecture.md) for the backend layering and frontend str
 - Angular: standalone components, signals, `inject()`, `@if`/`@for`, Angular Material.
 - i18n: every UI text has an `i18n="@@<feature>.<key>"` attribute or uses `$localize`.
 - Keep dependencies small. New libraries need the developer's approval.
+- Use common clean code conventions (DRY, separation of concern), but don't over-use it: we need a clean architecture, which is maintainable, but small deviations for simpler readability is ok.
 
 ## Feature plans
 
