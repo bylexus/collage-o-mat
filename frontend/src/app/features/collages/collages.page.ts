@@ -79,8 +79,8 @@ export class CollagesPage {
     }
     try {
       const created = await firstValueFrom(this.api.create(request));
-      this.putFirst(created);
       this.notification.success($localize`:@@collages.created:Collage created`);
+      this.open(created);
     } catch (err) {
       this.notification.error(errorMessage(err));
     }

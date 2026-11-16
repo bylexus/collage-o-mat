@@ -19,6 +19,14 @@
   color: var(--mat-sys-on-secondary-container);
 }
 
+// The icon button is sized for a 24px icon; the 32px avatar needs its own padding to stay centered.
+.avatar-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+}
+
 .profile-menu-header {
   display: flex;
   align-items: center;

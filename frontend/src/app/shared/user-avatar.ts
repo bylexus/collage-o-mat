@@ -31,7 +31,13 @@ import { User } from '../core/models/user';
       user-select: none;
     }
 
+    span {
+      // Trims the font's ascender/descender space so the capital letter is optically centered.
+      text-box: trim-both cap alphabetic;
+    }
+
     img {
+      display: block;
       width: 100%;
       height: 100%;
       object-fit: cover;
