@@ -49,8 +49,13 @@ export interface FrameTransform {
  * clipped) with
  * 1. a rect of frame size that only casts the drop shadow (a clip would cut the shadow off; the
  *    rect itself is hidden under the photo and does not listen to events), and
- * 2. an inner group clipped to the frame with the image (source crop) and the border (stroke
- *    inside the frame).
+ * 2. an inner group clipped to the frame with the border (a rect of frame size filled with the
+ *    border colour) and, on top of it, a group clipped to the area inside the border with the image
+ *    (source crop, frame size: the border covers its edges).
+ *
+ * The image is clipped to the inner area and not only drawn under a border stroke: with a stroke on
+ * top, the anti-aliased pixels at the outer frame edge mix image and border, and a thin line of the
+ * image shows around the border.
  *
  * Shadow blur and offset are world mm: Konva multiplies them by the absolute scale and the pixel
  * ratio when it draws, so they keep their mm size at every zoom and in the export. The offset is
@@ -67,6 +72,8 @@ export class PhotoView {
   readonly group: Konva.Group;
   /** Inner group clipped to the frame. */
   private readonly content: Konva.Group;
+  /** Group of the image, clipped to the area inside the border. */
+  private readonly picture: Konva.Group;
   private readonly shadowCaster: KonvaRect;
   private readonly image: KonvaImage;
   private readonly border: KonvaRect;
@@ -95,15 +102,19 @@ export class PhotoView {
       fill: PLACEHOLDER_FILL,
       perfectDrawEnabled: false,
     });
-    this.border = new KonvaRect({ listening: false, perfectDrawEnabled: false });
+    // Listens: the image is clipped to the area inside the border, so the border must take the
+    // clicks on its part of the frame.
+    this.border = new KonvaRect({ perfectDrawEnabled: false });
     this.shadowCaster = new KonvaRect({
       fill: SHADOW_CASTER_FILL,
       listening: false,
       perfectDrawEnabled: false,
       visible: false,
     });
+    this.picture = new Konva.Group();
+    this.picture.add(this.image);
     this.content = new Konva.Group();
-    this.content.add(this.image, this.border);
+    this.content.add(this.border, this.picture);
     this.group.add(this.shadowCaster, this.content);
     if (events) {
       this.group.on('dragstart', () => events.onDragStart(this));
@@ -224,7 +235,7 @@ export class PhotoView {
     this.group.destroy();
   }
 
-  /** Border inside the frame: the stroke is centred on its path, so it is inset by half its width. */
+  /** Border inside the frame: a filled rect of frame size; the image is clipped to the area inside it. */
   private drawBorder(props: PhotoProps): void {
     const defaults = this.defaultBorder;
     const width = Math.min(
@@ -233,14 +244,16 @@ export class PhotoView {
       props.heightMm / 2,
     );
     this.border.setAttrs({
-      x: width / 2,
-      y: width / 2,
-      width: props.widthMm - width,
-      height: props.heightMm - width,
-      stroke: props.border.color ?? defaults?.color,
-      strokeWidth: width,
+      width: props.widthMm,
+      height: props.heightMm,
+      fill: props.border.color ?? defaults?.color,
       visible: width > 0,
     });
+    const innerWidth = props.widthMm - 2 * width;
+    const innerHeight = props.heightMm - 2 * width;
+    this.picture.clip({ x: width, y: width, width: innerWidth, height: innerHeight });
+    // Konva ignores a clip of zero size and would draw the whole image: hide it instead.
+    this.picture.visible(innerWidth > 0 && innerHeight > 0);
   }
 
   /** Drop shadow of the effective shadow (own or collage default), cast by a rect of frame size. */
