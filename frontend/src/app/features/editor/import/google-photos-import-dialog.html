@@ -1,0 +1,164 @@
+<h2 mat-dialog-title>
+  <ng-container i18n="@@editor.googlePhotosImport.title">Import from Google Photos</ng-container>
+  <span class="import-path">{{ connector.name }}</span>
+</h2>
+
+<mat-dialog-content class="import-content">
+  @switch (phase()) {
+    @case ('start') {
+      <div class="pick-panel">
+        <p i18n="@@editor.googlePhotosImport.explanation">
+          Select the photos in Google Photos. A popup window opens; sign in to Google if necessary,
+          select photos and click Done. The photos then show here.
+        </p>
+        <button matButton="filled" type="button" (click)="startPick()">
+          <mat-icon>open_in_new</mat-icon>
+          <ng-container i18n="@@editor.googlePhotosImport.open">Open Google Photos</ng-container>
+        </button>
+      </div>
+    }
+    @case ('waiting') {
+      <div class="pick-panel" role="status">
+        <mat-spinner diameter="40" />
+        <p i18n="@@editor.googlePhotosImport.waiting">
+          Select photos in the Google Photos window and click Done.
+        </p>
+        <p i18n="@@editor.googlePhotosImport.waitingClosedHint">
+          If you closed the Google window, click Cancel.
+        </p>
+        <button
+          matButton="outlined"
+          type="button"
+          (click)="cancelPick()"
+          i18n="@@editor.googlePhotosImport.cancelPick"
+        >
+          Cancel
+        </button>
+      </div>
+    }
+    @case ('error') {
+      <div class="pick-panel pick-error" role="alert">
+        <p>{{ pickError() }}</p>
+        <div class="pick-actions">
+          <button
+            matButton="outlined"
+            type="button"
+            (click)="startPick()"
+            i18n="@@editor.googlePhotosImport.tryAgain"
+          >
+            Try again
+          </button>
+          @if (assets().length > 0) {
+            <button
+              matButton
+              type="button"
+              (click)="showPicked()"
+              i18n="@@editor.googlePhotosImport.showPicked"
+            >
+              Show picked photos
+            </button>
+          }
+        </div>
+      </div>
+    }
+    @case ('grid') {
+      <div class="selection-bar">
+        <span class="selection-count" i18n="@@import.assets.selectedCount">
+          {selectedCount(), plural,
+            =0 {No photos selected}
+            =1 {1 photo selected}
+            other {{{ selectedCount() }} photos selected}
+          }
+        </span>
+        <button
+          matButton
+          type="button"
+          [disabled]="importing() || assets().length === 0"
+          (click)="selectAll()"
+          i18n="@@import.assets.selectAll"
+        >
+          Select all
+        </button>
+        <button
+          matButton
+          type="button"
+          [disabled]="importing() || selectedCount() === 0"
+          (click)="selectNone()"
+          i18n="@@import.assets.selectNone"
+        >
+          Select none
+        </button>
+        <span class="size-choice">
+          <span class="size-label" i18n="@@import.size.label">Size</span>
+          <mat-button-toggle-group
+            hideSingleSelectionIndicator
+            [value]="size()"
+            [disabled]="importing()"
+            (change)="setSize($event.value)"
+            i18n-aria-label="@@import.size.ariaLabel"
+            aria-label="Image size"
+          >
+            <mat-button-toggle value="preview" i18n="@@import.size.preview">
+              Preview
+            </mat-button-toggle>
+            <mat-button-toggle value="original" i18n="@@import.size.original">
+              Original
+            </mat-button-toggle>
+          </mat-button-toggle-group>
+        </span>
+      </div>
+      @if (skippedVideos() > 0) {
+        <p class="import-message" i18n="@@editor.googlePhotosImport.skippedVideos">
+          {skippedVideos(), plural,
+            =1 {1 video was skipped.}
+            other {{{ skippedVideos() }} videos were skipped.}
+          }
+        </p>
+      }
+      @if (assets().length === 0) {
+        <p class="import-message" i18n="@@editor.googlePhotosImport.noPhotos">
+          No photos were picked.
+        </p>
+      }
+      <app-asset-grid
+        [thumbnailUrl]="assetThumbnailUrl"
+        [assets]="assets()"
+        [selectedIds]="selectedIds()"
+        [importedIds]="importedIds"
+        [unavailableIds]="unavailableIds()"
+        [unavailableReason]="unavailableReason"
+        [disabled]="importing()"
+        (toggled)="toggle($event)"
+      />
+      <div class="pick-more">
+        <button matButton="outlined" type="button" [disabled]="importing()" (click)="startPick()">
+          <mat-icon>add_photo_alternate</mat-icon>
+          <ng-container i18n="@@editor.googlePhotosImport.pickMore">Pick more photos</ng-container>
+        </button>
+      </div>
+      @if (importError(); as message) {
+        <p class="import-error" role="alert">{{ message }}</p>
+      }
+    }
+  }
+</mat-dialog-content>
+
+<mat-dialog-actions class="import-actions">
+  <span class="actions-spacer"></span>
+  <button matButton type="button" mat-dialog-close [disabled]="importing()">
+    <ng-container i18n="@@import.cancel">Cancel</ng-container>
+  </button>
+  @if (phase() === 'grid') {
+    <button
+      matButton="filled"
+      type="button"
+      [disabled]="importing() || selectedCount() === 0"
+      (click)="import()"
+    >
+      @if (importing()) {
+        <mat-spinner class="button-spinner" diameter="18" />
+      }
+      <ng-container i18n="@@import.submit">Import ({{ selectedCount() }})</ng-container>
+    </button>
+  }
+</mat-dialog-actions>

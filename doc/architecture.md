@@ -7,11 +7,12 @@ Browser (Angular SPA, Konva canvas)
    │  JSON over /api/...  (session cookie)
    ▼
 collageomat (one Go binary)
-   ├─ /api/...   httpapi router → domain modules (auth, collage, photo, connector, immich, synology, profile, admin, settings)
+   ├─ /api/...   httpapi router → domain modules (auth, collage, photo, connector, immich, synology, googlephotos, profile, admin, settings)
    ├─ /*         embedded SPA (internal/web, go:embed, fallback to index.html)
    ├─ SQLite     <DATA_DIR>/collageomat.db   (WAL, foreign keys on)
    ├─ files      <DATA_DIR>/photos/<collageId>/<photoId>.<ext>
-   └─ Immich, Synology Photos   server-side proxy (the browser never talks to Immich or the NAS directly)
+   └─ Immich, Synology Photos, Google Photos   server-side proxy (the browser never talks to Immich, the NAS
+                 or the Google APIs directly; only Google's sign-in and picker pages open in a popup)
 ```
 
 Main principles:
@@ -51,6 +52,7 @@ package-level mutable state.
 | `connector` | Connectors per user, `Kind` registry (strategy per connector type), config encrypted with `secretbox` |
 | `connector/immich` | Immich HTTP client, album/asset listing, thumbnail proxy |
 | `connector/synology` | Synology Photos (DSM 7) Web API client with session cache, album/folder/item listing (Personal Space, shared albums, Shared Space), thumbnail proxy, import source. See [Synology connector](#synology-connector) |
+| `connector/googlephotos` | Google Photos Picker API: OAuth sign-in per import (`golang.org/x/oauth2`), in-memory token cache and picks (selections), picker session client, thumbnail proxy, import source. See [Google Photos connector](#google-photos-connector) |
 | `profile` | Profile of the session user: password change (through the `Passwords` interface), avatar (upload → `imaging` square ≤ 500×500 JPEG, store, serve, delete) |
 | `admin` | User management for admins (`/api/admin/users...`): list with usage counts, create, update (admin/active flags, new password), delete with all data. Rules: an admin cannot change, set the password of or delete the own account; at least one active admin always remains (checked in the same transaction). Deactivate and new password delete the user's sessions. Delete: each collage through `collage.Service.Delete` (rows + photo directory), then the `users` row (FK cascade). Interfaces: `Collages` (`*collage.Service`), `Usage` (`collage.UserUsage`), `Avatars` (`*profile.Service`) |
 | `settings` | System-wide settings (`/api/admin/settings`): typed `Settings` struct, one `system_settings` row per field (key = JSON name), defaults in `Defaults()`, rules in `validate()`. New setting = new field, no migration. `maxUserStorageBytes` (default 2·10⁹, 0 = unlimited) is stored but not enforced yet |
@@ -89,21 +91,28 @@ Rules:
   in the login rate limit (same `LoginLimiter`, same key username + client IP; blocked → 429). A wrong
   current password gives 400, not 401, because the frontend logs out on 401. Success deletes all other
   sessions of the user; the current session stays.
-- Connector secrets (Immich API key, Synology password) are stored encrypted and are never returned by the
-  API (`apiKeySet: true` / `passwordSet: true` only).
+- Connector secrets (Immich API key, Synology password, Google OAuth client secret) are stored encrypted
+  and are never returned by the API (`apiKeySet: true` / `passwordSet: true` / `clientSecretSet: true`
+  only).
+- The Google OAuth callback (`GET /api/googlephotos/oauth/callback`) needs the session cookie (the
+  `SameSite=Lax` cookie is sent on the top-level redirect from Google) and a valid, unexpired `state` that
+  belongs to the session user (single use). Google access tokens stay in server memory only; they are never
+  sent to the browser and never part of error messages or logs.
 
 ### Connectors and import sources
 
 - A connector type is a `connector.Kind` (`Type`, `BuildConfig`, `PublicConfig`, `Test`), registered in
   `newConnectorService` in `main.go`. Types: `immich` (`connector/immich`), `synology`
-  (`connector/synology`). `connector.Service` does not know the concrete types.
+  (`connector/synology`), `googlephotos` (`connector/googlephotos`). `connector.Service` does not know the
+  concrete types.
 - Each type has its own service + handler with type-specific browse routes
-  (`/api/connectors/{id}/<type>/...`); the service checks ownership (`connector.Service.LoadConfig`) and the
+  (`/api/connectors/{id}/<type>/...`; Google Photos also has the connector-independent OAuth callback
+  `/api/googlephotos/oauth/callback`); the service checks ownership (`connector.Service.LoadConfig`) and the
   connector type (wrong type → validation error).
 - Import: `photo.Service` takes one `photo.Sources`. In `main.go` this is `photo.SourcesByType`
   (`internal/photo/sources.go`) with a map connector type → `Sources` (`immich.Service`,
-  `synology.Service`). It loads the connector, picks the `Sources` of its type (unknown type → validation
-  error) and delegates. It is in `photo` because `connector` cannot import `photo` (import cycle).
+  `synology.Service`, `googlephotos.Service`). It loads the connector, picks the `Sources` of its type
+  (unknown type → validation error) and delegates. It is in `photo` because `connector` cannot import `photo` (import cycle).
 
 ### Synology connector
 
@@ -201,6 +210,101 @@ Shared Space (Team Space):
   `/synofoto/api/v2/t/Thumbnail/get` (reported for newer DSM). Sources and open questions:
   [agent-plans/done/synology-shared-space.md](agent-plans/done/synology-shared-space.md).
 
+### Google Photos connector
+
+> **Note for future agents:** verified live (2026-11-17, with a fake OAuth client): the token endpoint
+> answers an unknown client with HTTP 401 `invalid_client`; `sessions.get` uses the host
+> `photospicker.googleapis.com` (`photoslibrary.googleapis.com` gives 404, although the sessions guide
+> shows it in an example). **Not verified live yet** (needs the developer's real OAuth client): the
+> `invalid_grant` and `redirect_uri_mismatch` answers of the connection test, the full flow (sign-in →
+> picker → items → import), whether `=d` returns HEIC originals as HEIC. **Never use `popup.closed`** in the
+> import dialog: `photos.google.com` sends `Cross-Origin-Opener-Policy: same-origin-allow-popups`, the
+> browser severs the popup reference and `popup.closed` reads `true` while the picker is open (a cancel
+> then deletes the Google session and "Done" fails in Google). Details and open questions:
+> [agent-plans/done/google-photos-connector.md](agent-plans/done/google-photos-connector.md).
+
+Why the Picker API: since 2025-03-31 the Google Photos Library API gives third-party apps read access only
+to media that the app created. To read existing photos, the user selects them in Google's own picker page
+(Google Photos **Picker API**, scope `photospicker.mediaitems.readonly`). There is no album or library
+browsing in Collage-o-mat. Videos (all items with `type != PHOTO`) are dropped and counted
+(`skippedVideos`).
+
+OAuth client per connector: each connector has the OAuth client ("Web application") of the user's own
+Google Cloud project. Setup for users: README section "Connect Google Photos".
+
+- Config `{clientId, clientSecret, redirectUri}`; public config `{clientId, clientSecretSet, redirectUri}`.
+- Client ID required. Client secret required on create; an empty secret on update keeps the stored one.
+- Redirect URI: the config form shows `window.location.origin + "/api/googlephotos/oauth/callback"`
+  read-only (copy button) and sends it; the backend stores it (no env var, no trust in `Host` /
+  `X-Forwarded-*`). Rules: absolute URL, path exactly `/api/googlephotos/oauth/callback`, no user info,
+  query or fragment, scheme `https` (`http` only for host `localhost` / `127.0.0.1`).
+- OAuth endpoint: `golang.org/x/oauth2/endpoints.Google` with `AuthStyleInParams` (not
+  `golang.org/x/oauth2/google`: it pulls in an extra module). No `prompt` and no `login_hint`.
+
+In-memory state (one `state` per `Service`, one mutex, lazy `sweep()` at each service call). **All of it
+is lost on a server restart** (the user signs in and picks again):
+
+- **Token cache:** connector id → access token + SHA-256 of the stored config. Valid until
+  min(sign-in + 30 min, token expiry − 1 min). Used only for the same config (a config change needs a new
+  sign-in). No refresh token, nothing in the DB. A 401 from Google on `sessions.create` drops the token
+  (new sign-in).
+- **OAuth states:** random `state` → {user, connector, pick}, 10 min, single use. An expired state sets
+  its pick to `error` ("not finished in time").
+- **Picks:** random `pickId` → {user, connector, Google session id, status, items, `skippedVideos`}. TTL
+  1 h after creation, 55 min after the items are listed (`baseUrl` is valid 60 min). Max 20 open picks
+  per user (→ 429). Status: `signin` (waits for the callback), `picking` (Google session exists),
+  `done` (items listed), `error` (user-safe message). Expired picks with a still cached token get a
+  best-effort Google `sessions.delete`.
+
+Flow of one import:
+
+1. The dialog opens an empty popup synchronously on the click (popup blockers), then
+   `POST .../googlephotos/picks` → `{pickId, openUrl}` and sets the popup location.
+2. Cached token → the server creates the picker session at once, `openUrl` = `<pickerUri>/autoclose`. No
+   token → `openUrl` = Google sign-in URL with a new `state`; Google redirects the popup to
+   `GET /api/googlephotos/oauth/callback?code&state` → the server exchanges the code, caches the token,
+   creates the picker session and answers 302 to `<pickerUri>/autoclose`. A failure gives an HTML page
+   (HTTP 400) "Sign-in failed: <reason>. Close this window." and the pick status `error`.
+3. The user picks photos in Google's page and clicks "Done"; the popup closes itself (`/autoclose`).
+4. The dialog polls `GET .../picks/{pickId}` with `pollIntervalMs` (Google's interval, clamped 1–10 s,
+   default 3 s). The server calls `sessions.get` (one poll per pick at a time) until `mediaItemsSet`, then
+   `mediaItems.list` (all pages, page size 100, max 50 pages) and keeps the photos with `baseUrl` in
+   memory. Poll errors: 401 → `error` (sign-in expired), 404 → `error` (session expired), network / 5xx →
+   stays `picking`.
+5. The grid shows the photos (thumbnails through the proxy). Import with the normal
+   `POST /api/collages/{id}/import`: the `googlephotos` Source finds the media item in the `done`, unexpired
+   picks of user + connector (latest listed wins) and downloads it with the cached token. Not found → "The
+   Google Photos selection expired. Pick the photos again."; no token → "The Google sign-in expired. Pick
+   the photos again."
+6. Closing the dialog → `DELETE .../picks/{pickId}` for each pick (memory + Google `sessions.delete` if a
+   token is cached).
+
+Package `backend/internal/connector/googlephotos/`:
+
+| File | Content |
+|---|---|
+| `kind.go` | `Kind` (`Type = "googlephotos"`): config validation (see above), public config, `Test`; exports `CallbackPath`, `Scope`, `ParseConfig`, `OAuthConfig(cfg)` |
+| `client.go` | Picker API client (`https://photospicker.googleapis.com/v1`): `sessions.create/get/delete`, `mediaItems.list`, `baseUrl` download with `Authorization: Bearer`. 30 s timeout, max 5 redirects, JSON limit 8 MiB, `pickerUri`/`baseUrl` must be https. `APIError` messages are user-safe (never contain the token or a `baseUrl`) |
+| `state.go` | In-memory state: token cache, OAuth states, picks, TTLs, `sweep` |
+| `service.go` | `Service`: `CreatePick`, `Callback` (code exchange, picker session), `Pick` (poll, list items, drop videos), `DeletePick`, `Thumbnail`, `Source` (implements `photo.Sources`) |
+| `handler.go` | Routes `/api/connectors/{id}/googlephotos/...` and the OAuth callback (see [API](#api)); HTML failure page (`html/template`) |
+| `types.go` | Picker API response types (`PickingSession`, `PickedMediaItem`, error body) |
+
+Image sizes (`baseUrl` suffix): grid thumbnail = `=w400-h400`; preview import = `=w2048-h2048` (fits in
+2048×2048 px); original import = `=d`. If the item `mimeType` or the response Content-Type of `=d` is not
+JPEG, PNG or WebP (e.g. HEIC), the preview is used instead (`SourceImage.Fallback`). A response that is not
+`image/*` is rejected.
+
+Asset ids (`photos.source_asset_id`): the Google media item id (persistent: the same photo always has the
+same id).
+
+Connection test: a real test needs a sign-in, so `Test` exchanges the dummy code
+`collageomat-connection-test` at Google's token endpoint (15 s timeout). Google checks the client and the
+redirect URI before the code: `invalid_grant` → OK; `invalid_client` / `unauthorized_client` → "Client ID
+or client secret is wrong"; `redirect_uri_mismatch` → "Redirect URI is not registered in Google Cloud";
+other code → "Google answered: <code>"; no code → "Google answered with HTTP status N"; network error →
+"Google cannot be reached: …".
+
 ## Frontend (`frontend/`)
 
 Angular 22 standalone components, signals, `inject()`, new control flow, OnPush, Angular Material. No state
@@ -210,8 +314,8 @@ library. UI language English, all texts marked for i18n (build-time Angular i18n
 |---|---|
 | `src/app/app.routes.ts` | Routes: `login` (own layout); `AppShell` with `authGuard` and the children `collages`, `collages/:id` (editor), `settings/connectors`, `profile`, `about`, `admin` (`adminGuard`; tab children `users`, `settings`) |
 | `src/app/layout/app-shell.*` | `AppShell`: base layout of all signed-in pages (main toolbar + page outlet). Toolbar: round profile button (`UserAvatar`) opens a `mat-menu` (username, Admin badge, Profile, Log out); for admins an icon button `manage_accounts` (Administration) left of About |
-| `src/app/core/api/` | One API service per resource (`CollageApi`, `PhotoApi`, `ConnectorApi`, `ImmichApi`, `SynologyApi`, `AuthApi`, `ProfileApi`, `AdminApi`) |
-| `src/app/core/models/` | Typed DTOs and JSON props models (`collage.ts`, `photo.ts`, `text.ts`, `shadow.ts`, `layout.ts`); connector DTOs (`connector.ts`, `immich.ts`, `synology.ts`) and the neutral import types `SourceAlbum`, `SourceAsset`, `SourceAssetPage` (`source.ts`) |
+| `src/app/core/api/` | One API service per resource (`CollageApi`, `PhotoApi`, `ConnectorApi`, `ImmichApi`, `SynologyApi`, `GooglePhotosApi`, `AuthApi`, `ProfileApi`, `AdminApi`) |
+| `src/app/core/models/` | Typed DTOs and JSON props models (`collage.ts`, `photo.ts`, `text.ts`, `shadow.ts`, `layout.ts`); connector DTOs (`connector.ts`, `immich.ts`, `synology.ts`, `google-photos.ts`) and the neutral import types `SourceAlbum`, `SourceAsset`, `SourceAssetPage` (`source.ts`) |
 | `src/app/features/editor/` | Editor page and store (`editor.store.ts`), undo history, auto save |
 | `features/editor/canvas/` | Konva rendering, transformers, crop mode, viewport, export renderer, adjusted/blurred image copies |
 | `features/editor/arrange/` | Pure arrangement functions (grid, center, random heap, masonry, lanes, justified lines) |
@@ -220,8 +324,14 @@ library. UI language English, all texts marked for i18n (build-time Angular i18n
 | `features/editor/settings-panel/` | Collage settings in the right panel (the only content of the right panel) |
 | `features/editor/fields/` | Shared form fields (colour, number, `BorderFields`, `ShadowFields` + `SHADOW_LIMITS`) |
 | `features/editor/geometry/` | Pure math: crop, units (mm/pt/px), gradients, snap grid |
-| `features/editor/import/`, `upload/` | Connector import dialogs, local file upload. The editor toolbar "Import" button opens a `mat-menu` that lists the user's connectors (name + type; loaded with `ConnectorApi.list()` each time the menu opens; "Add a connector" links to the connector settings if there is none). An entry opens the dialog of the connector's type with that connector (`ImportDialogData.connector`): Immich (`import-dialog.*`: albums) or Synology (`synology-import-dialog.*`: tabs "Albums" / "Folders" / "Shared with me" / "Shared Space"; "Shared Space" is shown only if `SynologyApi.sharedSpace` returns `available: true` (checked when the dialog opens; on an error the tab is shown); folder navigation with breadcrumb, one trail per space (Personal Space, Shared Space)). Both dialogs share the generic presentational components `AssetGrid<T extends SourceAsset>` (`asset-grid.ts`, thumbnail URL as function input) and `AlbumList<T extends SourceAlbum>` (`album-list.ts`), `import-size.ts` (preview/original choice in localStorage) and `original-size.ts` |
-| `src/app/features/connectors/` | Connector settings page ("Add connector" menu per type), connector dialog, one config form per type (`immich-config-form.ts`, `synology-config-form.ts`), `connector-types.ts` |
+| `features/editor/import/`, `upload/` | Connector import dialogs, local file upload. The editor toolbar "Import" button opens a `mat-menu` that lists the user's connectors (name + type; loaded with `ConnectorApi.list()` each time the menu opens; "Add a connector" links to the connector settings if there is none). An entry opens the dialog of the connector's type with that connector (`ImportDialogData.connector`): Immich (`import-dialog.*`: albums) or Synology (`synology-import-dialog.*`: tabs "Albums" / "Folders" / "Shared with me" / "Shared Space"; "Shared Space" is shown only if `SynologyApi.sharedSpace` returns `available: true` (checked when the dialog opens; on an error the tab is shown); folder navigation with breadcrumb, one trail per space (Personal Space, Shared Space)) or Google Photos (`google-photos-import-dialog.*`:
+phases `start` ("Open Google Photos"), `waiting` (spinner, Cancel; popup opened synchronously on the
+click, polls the pick with `pollIntervalMs` until `done`/`error`/Cancel; the popup is not touched after its
+location is set (COOP, see Google Photos connector)), `grid`
+(picked photos, all pre-selected, hint for skipped videos, "Pick more photos" appends without
+duplicates), `error` (message, "Try again", "Show picked photos" if photos are picked); closing the dialog
+deletes all its picks). All dialogs share the generic presentational components `AssetGrid<T extends SourceAsset>` (`asset-grid.ts`, thumbnail URL as function input) and (Immich, Synology) `AlbumList<T extends SourceAlbum>` (`album-list.ts`), `import-size.ts` (preview/original choice in localStorage) and `original-size.ts` |
+| `src/app/features/connectors/` | Connector settings page ("Add connector" menu per type), connector dialog, one config form per type (`immich-config-form.ts`, `synology-config-form.ts`, `google-photos-config-form.ts`: client ID, client secret, read-only redirect URI of the current origin with copy button), `connector-types.ts`; the connector card shows the URL (Immich, Synology) or the client ID (Google Photos) |
 | `features/editor/export/` | PNG/JPG export dialog |
 | `src/app/features/admin/` | Admin page (tab nav): Users tab (table with avatar, flags, counts; create, edit and type-username delete dialogs), Settings tab (storage limit in GB, 1 GB = 10⁹ bytes) |
 | `src/app/features/profile/` | Profile page: info (username, Admin badge, member since), avatar card (upload, remove), change password card |
@@ -242,8 +352,8 @@ All tables have `created_at`, `updated_at`. JSON columns are `TEXT`.
 | `user_avatars` | `user_id` PK + FK (`ON DELETE CASCADE`), `data` BLOB (JPEG, square, ≤ 500×500 px), `mime_type`. Own table, because `RequireAuth` loads the `users` row on each request |
 | `collages` | `id`, `user_id` FK, `name`, `settings` JSON |
 | `collage_texts` | `id` (UUID from frontend), `collage_id` FK, `props` JSON |
-| `connectors` | `id`, `user_id` FK, `type` (`immich`, `synology`), `name`, `config` (encrypted JSON) |
-| `photos` | `id`, `collage_id` FK, `connector_id` (NULL for uploads), `source_asset_id` (Immich id, Synology item id, `s:<albumId>:<itemId>` for a Synology shared album photo, `t:<itemId>` for a Synology Shared Space photo, or `sha256:<hex>`), `file_name`, `mime_type`, `width_px`, `height_px`, `props` JSON |
+| `connectors` | `id`, `user_id` FK, `type` (`immich`, `synology`, `googlephotos`), `name`, `config` (encrypted JSON) |
+| `photos` | `id`, `collage_id` FK, `connector_id` (NULL for uploads), `source_asset_id` (Immich id, Synology item id, `s:<albumId>:<itemId>` for a Synology shared album photo, `t:<itemId>` for a Synology Shared Space photo, Google media item id, or `sha256:<hex>`), `file_name`, `mime_type`, `width_px`, `height_px`, `props` JSON |
 
 Units: page and element geometry in mm (frame centre `cxMm/cyMm`, rotation around the centre), font size
 in pt, crop as normalized rectangle (0..1) of the source image. `z` is shared between photos and texts.
@@ -280,7 +390,7 @@ background image always shows the original photo.
 | GET, PATCH, DELETE | `/api/collages/{id}` | Load full collage, rename, delete (rows + photo dir) |
 | POST | `/api/collages/{id}/duplicate` | Copy the collage (settings with remapped photo ids, photo rows + files, texts with new ids) in one transaction; skips photos with a missing file (`skippedPhotos`) |
 | PUT | `/api/collages/{id}/layout` | Save settings + photo props + texts in one transaction |
-| POST | `/api/collages/{id}/import` | Import connector assets (Immich or Synology; `connectorId`, `assetIds`, `size` = `"preview"` (default) or `"original"`) → `photos`, `skipped`, `previewFallbacks` (original requests that were answered with the preview) |
+| POST | `/api/collages/{id}/import` | Import connector assets (Immich, Synology or Google Photos; `connectorId`, `assetIds`, `size` = `"preview"` (default) or `"original"`) → `photos`, `skipped`, `previewFallbacks` (original requests that were answered with the preview) |
 | POST | `/api/collages/{id}/uploads` | Upload one local image (raw body) |
 | GET | `/api/collages/{id}/photos/{photoId}/file` | Image bytes (immutable cache) |
 | DELETE | `/api/collages/{id}/photos/{photoId}` | Delete photo row and file |
@@ -300,6 +410,11 @@ background image always shows the original photo.
 | GET | `/api/connectors/{id}/synology/shared-space/folders/{folderId}` | Shared Space folder (same shape as `folders/{folderId}`) |
 | GET | `/api/connectors/{id}/synology/shared-space/folders/{folderId}/assets?page=N` | Direct photos of the Shared Space folder (paged, same shape as album photos; `id` = `t:<itemId>`) |
 | GET | `/api/connectors/{id}/synology/assets/{assetId}/thumbnail?key=<thumbnailKey>` | Proxied thumbnail (`m`); `assetId` = `<itemId>`, `s:<albumId>:<itemId>` or `t:<itemId>` (URL-encoded) |
+| POST | `/api/connectors/{id}/googlephotos/picks` | Start a pick → 201 `{pickId, openUrl}` (`openUrl` = Google sign-in URL, or `<pickerUri>/autoclose` with a cached token); more than 20 open picks → 429 |
+| GET | `/api/connectors/{id}/googlephotos/picks/{pickId}` | Pick state; polls Google while `picking` → `{status: "signin"\|"picking"\|"done"\|"error", pollIntervalMs, error?, items: [{id, fileName, width, height, mimeType}], skippedVideos}` (`items` empty unless `done`; `mimeType` = original MIME type); unknown, expired or foreign pick → 404 |
+| DELETE | `/api/connectors/{id}/googlephotos/picks/{pickId}` | Remove the pick and its Google picker session → 204 |
+| GET | `/api/connectors/{id}/googlephotos/picks/{pickId}/items/{itemId}/thumbnail` | Proxied thumbnail (`=w400-h400`) |
+| GET | `/api/googlephotos/oauth/callback?code&state[&error]` | OAuth redirect target (popup, needs the session): 302 to `<pickerUri>/autoclose`, or HTML failure page (400) |
 
 Unknown `/api/...` paths always return a JSON 404, never the SPA.
 
@@ -310,13 +425,20 @@ Unknown `/api/...` paths always return a JSON 404, never the SPA.
 - **Cover:** crop with the frame aspect, as large as possible (frame filled, image cut).
 - **Arrangement / mode:** algorithm that sets all frames at once (`grid`, `center`, `heap` = random heap,
   `masonry` = justified rows or columns, free placement).
-- **Connector:** a configured external photo source of a user (`immich` or `synology`).
+- **Connector:** a configured external photo source of a user (`immich`, `synology` or `googlephotos`).
 - **Personal Space (Synology):** the own photos (folder tree) and own albums of the account in Synology
   Photos.
 - **Shared Space / Team Space (Synology):** a folder tree of Synology Photos that the NAS admin shares
   with several users (`SYNO.FotoTeam.*`). Read access is a permission of the account (no passphrase).
 - **Shared with me album (Synology):** an album of another NAS user that is shared with the connector
   account. Read with its **passphrase** (share token), which never leaves the server.
+- **Picker session (Google):** a Google `PickingSession` (`id`, `pickerUri`): one selection round in
+  Google's picker page.
+- **Pick (Google):** the in-memory record of one picker session (`pickId`, user, connector, Google session
+  id, status, picked photos). One import dialog can have several picks ("Pick more photos").
+- **Media item / baseUrl (Google):** a picked Google photo (`PickedMediaItem`); its `id` is the asset id
+  (`photos.source_asset_id`). `baseUrl` is its short-lived (60 min) download URL; it needs the access token
+  and a size suffix (`=w…-h…`, `=d`).
 - **Layout:** collage settings + all photo props + all texts, saved together.
 - **Drop shadow (photo):** drawn by an unclipped rect under the clipped photo content
   (`canvas/photo-view.ts`); offset is not rotated with the photo (same light direction for all).

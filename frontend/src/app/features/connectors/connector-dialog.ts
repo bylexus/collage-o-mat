@@ -8,12 +8,20 @@ import { MatProgressSpinnerModule } from '@angular/material/progress-spinner';
 import { ConnectorConfigInput, ConnectorSummary, ConnectorType } from '../../core/models/connector';
 import { errorMessage } from '../../shared/error-message';
 import { connectorTypeLabel } from './connector-types';
+import {
+  createGooglePhotosConfigGroup,
+  GooglePhotosConfigForm,
+  GooglePhotosConfigGroup,
+} from './google-photos-config-form';
 import { createImmichConfigGroup, ImmichConfigForm, ImmichConfigGroup } from './immich-config-form';
 import {
   createSynologyConfigGroup,
   SynologyConfigForm,
   SynologyConfigGroup,
 } from './synology-config-form';
+
+/** Config form group of any connector type. */
+type ConfigGroup = ImmichConfigGroup | SynologyConfigGroup | GooglePhotosConfigGroup;
 
 /** Maximum length of a connector name (same as the backend). */
 const MAX_NAME_LENGTH = 100;
@@ -53,6 +61,7 @@ export interface ConnectorDialogData {
     MatProgressSpinnerModule,
     ImmichConfigForm,
     SynologyConfigForm,
+    GooglePhotosConfigForm,
   ],
   template: `
     <h2 mat-dialog-title>
@@ -89,6 +98,11 @@ export interface ConnectorDialogData {
           @case ('synology') {
             @if (synologyConfig; as group) {
               <app-synology-config-form [group]="group" [passwordSet]="passwordSet" />
+            }
+          }
+          @case ('googlephotos') {
+            @if (googlePhotosConfig; as group) {
+              <app-google-photos-config-form [group]="group" [clientSecretSet]="clientSecretSet" />
             }
           }
         }
@@ -169,9 +183,21 @@ export class ConnectorDialog {
   protected readonly passwordSet =
     this.connector?.type === 'synology' && this.connector.config.passwordSet;
 
+  /** Config group of the Google Photos form; `null` for other types. */
+  protected readonly googlePhotosConfig =
+    this.type === 'googlephotos'
+      ? createGooglePhotosConfigGroup(
+          this.fb,
+          this.connector?.type === 'googlephotos' ? this.connector.config : undefined,
+        )
+      : null;
+  protected readonly clientSecretSet =
+    this.connector?.type === 'googlephotos' && this.connector.config.clientSecretSet;
+
   /** Config group of the dialog's type (exactly one of the groups above is set). */
-  private readonly config: ImmichConfigGroup | SynologyConfigGroup = (this.immichConfig ??
-    this.synologyConfig)!;
+  private readonly config: ConfigGroup = (this.immichConfig ??
+    this.synologyConfig ??
+    this.googlePhotosConfig)!;
 
   protected readonly form = this.fb.group({
     name: [this.connector?.name ?? '', Validators.required],

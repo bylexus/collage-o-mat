@@ -44,6 +44,7 @@ import { LengthUnit } from './geometry/length-unit';
 import { downloadBlob, exportFileName } from './export/download';
 import { ExportDialog, ExportDialogData } from './export/export-dialog';
 import { ImportDialog, ImportDialogData } from './import/import-dialog';
+import { GooglePhotosImportDialog } from './import/google-photos-import-dialog';
 import { SynologyImportDialog } from './import/synology-import-dialog';
 import { importResultMessage } from './import/import-result-message';
 import { SaveStatusIndicator } from './save-status-indicator';
@@ -295,6 +296,9 @@ export class EditorPage {
       case 'synology':
         this.openImportDialog(SynologyImportDialog, connector);
         break;
+      case 'googlephotos':
+        this.openImportDialog(GooglePhotosImportDialog, connector);
+        break;
     }
   }
 
@@ -307,7 +311,7 @@ export class EditorPage {
    * `ImportResult`); on success shows the result message and applies the new photos.
    */
   private openImportDialog(
-    component: ComponentType<ImportDialog | SynologyImportDialog>,
+    component: ComponentType<ImportDialog | SynologyImportDialog | GooglePhotosImportDialog>,
     connector: ConnectorSummary,
   ): void {
     const collage = this.store.collage();
@@ -320,7 +324,7 @@ export class EditorPage {
       importPhotos: (request) => firstValueFrom(this.photoApi.import(collage.id, request)),
     };
     const ref = this.dialog.open<
-      ImportDialog | SynologyImportDialog,
+      ImportDialog | SynologyImportDialog | GooglePhotosImportDialog,
       ImportDialogData,
       ImportResult
     >(component, {

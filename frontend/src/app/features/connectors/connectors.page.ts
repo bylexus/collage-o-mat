@@ -55,6 +55,17 @@ export class ConnectorsPage {
     }
   }
 
+  /** Short detail of a connector for its card: the server URL, or the OAuth client ID. */
+  protected connectorDetail(connector: ConnectorSummary): string {
+    switch (connector.type) {
+      case 'immich':
+      case 'synology':
+        return connector.config.url;
+      case 'googlephotos':
+        return connector.config.clientId;
+    }
+  }
+
   protected add(type: ConnectorType): void {
     this.openDialog(null, type, (value) => firstValueFrom(this.api.create(value)));
   }

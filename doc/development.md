@@ -76,6 +76,15 @@ To probe the Synology Web API by hand (e.g. after a DSM update, see the note in
 `curl --data-urlencode "passwd@<file>"` (never on the command line), keep the `_sid` out of logs and log
 out after probing. Repeated failed logins make DSM block the IP address (auto-block).
 
+### Google Photos connector
+
+Manual tests need an own Google Cloud project with the Google Photos Picker API and a "Web application"
+OAuth client (setup: README section "Connect Google Photos"). For the dev setup (`ng serve` on `:4200`,
+`/api` proxied to `:8080`), register the redirect URI `http://localhost:4200/api/googlephotos/oauth/callback`
+in the OAuth client. Enter client ID and secret only in the connector form; never write them to files in
+the repo. Tokens, sign-ins and picks are in server memory only: a backend restart (e.g. `make backend-run`
+again) needs a new sign-in and a new pick. See [architecture.md](architecture.md#google-photos-connector).
+
 ## Conventions
 
 See [architecture.md](architecture.md) for the backend layering and frontend structure. Also:

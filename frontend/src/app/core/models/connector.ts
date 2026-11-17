@@ -1,5 +1,5 @@
 /** Connector types known to the frontend (the backend registry has the same names). */
-export type ConnectorType = 'immich' | 'synology';
+export type ConnectorType = 'immich' | 'synology' | 'googlephotos';
 
 /** Public config of an Immich connector as returned by the API (never contains the API key). */
 export interface ImmichPublicConfig {
@@ -35,11 +35,33 @@ export interface SynologyConfigInput {
   skipTlsVerify: boolean;
 }
 
+/**
+ * Public config of a Google Photos connector as returned by the API (never contains the client
+ * secret). `redirectUri` is the OAuth redirect URI registered in the Google OAuth client.
+ */
+export interface GooglePhotosPublicConfig {
+  clientId: string;
+  clientSecretSet: boolean;
+  redirectUri: string;
+}
+
+/**
+ * Google Photos config sent to the API. On update, an empty `clientSecret` keeps the stored
+ * secret. `redirectUri` is `window.location.origin` + the callback path.
+ */
+export interface GooglePhotosConfigInput {
+  clientId: string;
+  clientSecret: string;
+  redirectUri: string;
+}
+
 /** Public config of any connector type. */
-export type ConnectorPublicConfig = ImmichPublicConfig | SynologyPublicConfig;
+export type ConnectorPublicConfig =
+  ImmichPublicConfig | SynologyPublicConfig | GooglePhotosPublicConfig;
 
 /** Config input of any connector type. */
-export type ConnectorConfigInput = ImmichConfigInput | SynologyConfigInput;
+export type ConnectorConfigInput =
+  ImmichConfigInput | SynologyConfigInput | GooglePhotosConfigInput;
 
 /** Fields of `ConnectorSummary` that are the same for all types. */
 interface ConnectorSummaryBase {
@@ -59,8 +81,15 @@ export interface SynologyConnectorSummary extends ConnectorSummaryBase {
   config: SynologyPublicConfig;
 }
 
+/** Google Photos connector as returned by `GET /api/connectors`. */
+export interface GooglePhotosConnectorSummary extends ConnectorSummaryBase {
+  type: 'googlephotos';
+  config: GooglePhotosPublicConfig;
+}
+
 /** Connector as returned by `GET /api/connectors` (discriminated by `type`). */
-export type ConnectorSummary = ImmichConnectorSummary | SynologyConnectorSummary;
+export type ConnectorSummary =
+  ImmichConnectorSummary | SynologyConnectorSummary | GooglePhotosConnectorSummary;
 
 /** Body of `POST /api/connectors`. */
 export interface CreateConnectorRequest {

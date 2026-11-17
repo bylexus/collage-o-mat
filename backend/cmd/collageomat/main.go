@@ -20,6 +20,7 @@ import (
 	"collageomat/internal/collage"
 	"collageomat/internal/config"
 	"collageomat/internal/connector"
+	"collageomat/internal/connector/googlephotos"
 	"collageomat/internal/connector/immich"
 	"collageomat/internal/connector/synology"
 	"collageomat/internal/db"
@@ -174,7 +175,8 @@ func models() []any {
 }
 
 // newDomainModules wires the services and handlers of the domain packages
-// (collages, connectors, Immich, Synology, photos, profile, admin, settings).
+// (collages, connectors, Immich, Synology, Google Photos, photos, profile,
+// admin, settings).
 // Connector configs are encrypted with a key derived from secret; photo
 // files are stored in photoFiles; decoder is the server-wide image decode
 // limiter; profileSvc is created earlier because the auth handler needs it
@@ -185,12 +187,14 @@ func newDomainModules(
 ) ([]httpapi.Module, error) {
 	immichKind := immich.NewKind(nil)
 	synologyKind := synology.NewKind()
-	connectorSvc, err := newConnectorService(secret, gdb, immichKind, synologyKind)
+	googlePhotosKind := googlephotos.NewKind()
+	connectorSvc, err := newConnectorService(secret, gdb, immichKind, synologyKind, googlePhotosKind)
 	if err != nil {
 		return nil, err
 	}
 	immichSvc := immich.NewService(connectorSvc, immichKind)
 	synologySvc := synology.NewService(connectorSvc, synologyKind)
+	googlePhotosSvc := googlephotos.NewService(connectorSvc)
 
 	tx := db.NewTransactor(gdb)
 	photoStore := photo.NewGormStore(gdb)
@@ -198,8 +202,9 @@ func newDomainModules(
 	collagePhotos := photo.NewCollagePhotos(photoStore, photoFiles)
 	collageSvc := collage.NewService(collageStore, collagePhotos, tx)
 	photoSources := photo.NewSourcesByType(connectorSvc, map[string]photo.Sources{
-		immich.Type:   immichSvc,
-		synology.Type: synologySvc,
+		immich.Type:       immichSvc,
+		synology.Type:     synologySvc,
+		googlephotos.Type: googlePhotosSvc,
 	})
 	photoSvc := photo.NewService(photoStore, photoFiles, collageSvc, photoSources, decoder)
 	adminSvc := admin.NewService(
@@ -213,6 +218,7 @@ func newDomainModules(
 		connector.NewHandler(connectorSvc),
 		immich.NewHandler(immichSvc),
 		synology.NewHandler(synologySvc),
+		googlephotos.NewHandler(googlePhotosSvc),
 		profile.NewHandler(profileSvc),
 		admin.NewHandler(adminSvc, requireAdmin),
 		settings.NewHandler(settingsSvc, requireAdmin),
