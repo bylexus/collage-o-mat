@@ -6,6 +6,11 @@ export interface AdminUser extends User {
   isActive: boolean;
   collageCount: number;
   photoCount: number;
+  /**
+   * Time of the last login or authenticated request (RFC 3339), precision 1 hour.
+   * `null` if no activity is recorded.
+   */
+  lastActiveAt: string | null;
 }
 
 /** Body of `POST /api/admin/users`. New users are active. */

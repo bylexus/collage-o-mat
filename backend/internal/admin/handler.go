@@ -62,8 +62,11 @@ type userResponse struct {
 	// AvatarVersion is the unix milliseconds of the last avatar change, or
 	// null if the user has no avatar.
 	AvatarVersion *int64 `json:"avatarVersion"`
-	CollageCount  int    `json:"collageCount"`
-	PhotoCount    int    `json:"photoCount"`
+	// LastActiveAt is the time of the last login or authenticated request
+	// (precision: 1 hour), or null if no activity is recorded.
+	LastActiveAt *time.Time `json:"lastActiveAt"`
+	CollageCount int        `json:"collageCount"`
+	PhotoCount   int        `json:"photoCount"`
 }
 
 func newUserResponse(u *UserSummary) userResponse {
@@ -74,6 +77,7 @@ func newUserResponse(u *UserSummary) userResponse {
 		IsActive:      u.IsActive,
 		CreatedAt:     u.CreatedAt,
 		AvatarVersion: u.AvatarVersion,
+		LastActiveAt:  u.LastActiveAt,
 		CollageCount:  u.CollageCount,
 		PhotoCount:    u.PhotoCount,
 	}

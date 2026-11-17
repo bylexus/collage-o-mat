@@ -1,3 +1,4 @@
+import { DatePipe } from '@angular/common';
 import { Component, inject, signal } from '@angular/core';
 import { MatButtonModule } from '@angular/material/button';
 import { MatIconModule } from '@angular/material/icon';
@@ -17,6 +18,7 @@ import { AdminDialogs } from './admin-dialogs.service';
 @Component({
   selector: 'app-admin-users-page',
   imports: [
+    DatePipe,
     MatButtonModule,
     MatIconModule,
     MatProgressSpinnerModule,
@@ -41,6 +43,7 @@ export class AdminUsersPage {
     'username',
     'admin',
     'active',
+    'lastActive',
     'collageCount',
     'photoCount',
     'actions',

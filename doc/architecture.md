@@ -46,7 +46,7 @@ package-level mutable state.
 
 | Package | Responsibility |
 |---|---|
-| `auth` | Users, sessions (cookie token, SHA-256 hash in DB), login rate limit (`LoginLimiter`), `RequireAuth` (rejects inactive users), `RequireAdmin` (403 for non-admins, used after `RequireAuth`), `auth.UserID(r)`, `auth.SessionID(r)`. `PasswordChanger` (implements `profile.Passwords`, uses the same `LoginLimiter` instance as the login). Declares `AvatarVersions` (implemented by `profile.Service`) for the user DTO. Older code, no store/service split |
+| `auth` | Users, sessions (cookie token, SHA-256 hash in DB), login rate limit (`LoginLimiter`), `RequireAuth` (rejects inactive users; updates `users.last_active_at` max. once per hour), `RequireAdmin` (403 for non-admins, used after `RequireAuth`), `auth.UserID(r)`, `auth.SessionID(r)`. `PasswordChanger` (implements `profile.Passwords`, uses the same `LoginLimiter` instance as the login). Declares `AvatarVersions` (implemented by `profile.Service`) for the user DTO. Older code, no store/service split |
 | `collage` | Collages, texts, layout save (one transaction) |
 | `photo` | Photo rows and files, connector import (preview: stored as downloaded; original: `process.go` calls `imaging`, no scaling; `SourcesByType` in `sources.go` picks the `Sources` of the connector type), local upload (`process.go`: calls `imaging`, long edge ≤ 2560 px), file serving |
 | `connector` | Connectors per user, `Kind` registry (strategy per connector type), config encrypted with `secretbox` |
@@ -333,7 +333,7 @@ duplicates), `error` (message, "Try again", "Show picked photos" if photos are p
 deletes all its picks). All dialogs share the generic presentational components `AssetGrid<T extends SourceAsset>` (`asset-grid.ts`, thumbnail URL as function input) and (Immich, Synology) `AlbumList<T extends SourceAlbum>` (`album-list.ts`), `import-size.ts` (preview/original choice in localStorage) and `original-size.ts` |
 | `src/app/features/connectors/` | Connector settings page ("Add connector" menu per type), connector dialog, one config form per type (`immich-config-form.ts`, `synology-config-form.ts`, `google-photos-config-form.ts`: client ID, client secret, read-only redirect URI of the current origin with copy button), `connector-types.ts`; the connector card shows the URL (Immich, Synology) or the client ID (Google Photos) |
 | `features/editor/export/` | PNG/JPG export dialog |
-| `src/app/features/admin/` | Admin page (tab nav): Users tab (table with avatar, flags, counts; create, edit and type-username delete dialogs), Settings tab (storage limit in GB, 1 GB = 10⁹ bytes) |
+| `src/app/features/admin/` | Admin page (tab nav): Users tab (table with avatar, flags, last activity date (`DatePipe 'mediumDate'`, `—` if none), counts; create, edit and type-username delete dialogs), Settings tab (storage limit in GB, 1 GB = 10⁹ bytes) |
 | `src/app/features/profile/` | Profile page: info (username, Admin badge, member since), avatar card (upload, remove), change password card |
 | `src/app/shared/` | `ConfirmDialog`, `NotificationService`, `errorMessage(err)`, `UserAvatar` (round avatar image or first letter of the username) |
 
@@ -346,7 +346,7 @@ All tables have `created_at`, `updated_at`. JSON columns are `TEXT`.
 
 | Table | Columns |
 |---|---|
-| `users` | `id`, `username` unique, `password_hash` (bcrypt), `is_admin`, `is_active` (DB default `true`) |
+| `users` | `id`, `username` unique, `password_hash` (bcrypt), `is_admin`, `is_active` (DB default `true`), `last_active_at` (nullable; set on login and max. once per hour on authenticated requests by `RequireAuth`, without a change of `updated_at`) |
 | `system_settings` | `key` PK, `value` JSON |
 | `sessions` | `id`, `token_hash` unique, `user_id` FK, `expires_at` |
 | `user_avatars` | `user_id` PK + FK (`ON DELETE CASCADE`), `data` BLOB (JPEG, square, ≤ 500×500 px), `mime_type`. Own table, because `RequireAuth` loads the `users` row on each request |

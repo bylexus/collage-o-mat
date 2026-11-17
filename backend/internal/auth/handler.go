@@ -84,6 +84,15 @@ func (h *Handler) RequireAuth(next http.Handler) http.Handler {
 			// The session is still valid; log and continue.
 			slog.Error("session extend", "err", err)
 		}
+		if last := sess.User.LastActiveAt; last == nil || time.Since(*last) >= activityInterval {
+			now := time.Now().UTC()
+			if err := h.touchActivity(sess.User.ID, now); err != nil {
+				// Only the activity date is not up to date; log and continue.
+				slog.Warn("session activity", "err", err)
+			} else {
+				sess.User.LastActiveAt = &now
+			}
+		}
 		ctx := withSessionID(withUser(r.Context(), &sess.User), sess.ID)
 		next.ServeHTTP(w, r.WithContext(ctx))
 	})
@@ -197,6 +206,12 @@ func (h *Handler) login(w http.ResponseWriter, r *http.Request) {
 		httpapi.WriteError(w, http.StatusInternalServerError, "internal server error")
 		return
 	}
+	// A login is activity. An error here does not block the login.
+	now := time.Now().UTC()
+	if err := h.touchActivity(user.ID, now); err != nil {
+		slog.Warn("login: update last activity", "err", err)
+	}
+	user.LastActiveAt = &now
 	h.limiter.Reset(key)
 	resp, err := NewUserResponse(r.Context(), &user, h.avatars)
 	if err != nil {

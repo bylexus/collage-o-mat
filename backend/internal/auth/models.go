@@ -15,9 +15,13 @@ type User struct {
 	// The DB default true keeps the users of existing databases active.
 	// GORM skips a false zero value on Create because of the default: set it
 	// to true on Create and set false only with Update("is_active", false).
-	IsActive  bool `gorm:"not null;default:true"`
-	CreatedAt time.Time
-	UpdatedAt time.Time
+	IsActive bool `gorm:"not null;default:true"`
+	// LastActiveAt is the time of the last login or authenticated request
+	// (column last_active_at, nullable). RequireAuth updates it at most once
+	// per activityInterval. NULL: no activity recorded yet.
+	LastActiveAt *time.Time
+	CreatedAt    time.Time
+	UpdatedAt    time.Time
 }
 
 // TableName sets the table name.

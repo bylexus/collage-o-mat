@@ -26,7 +26,10 @@ const (
 	sessionLifetime = 30 * 24 * time.Hour
 	// extendBelow: a session with less time left is extended (sliding expiry).
 	extendBelow = 15 * 24 * time.Hour
-	tokenBytes  = 32
+	// activityInterval: RequireAuth writes users.last_active_at only if the
+	// stored value is NULL or older than this (max. one UPDATE per hour).
+	activityInterval = time.Hour
+	tokenBytes       = 32
 )
 
 // newToken returns a random token (base64url, for the cookie) and its hash
@@ -102,6 +105,15 @@ func (h *Handler) extendSession(w http.ResponseWriter, raw string, sess *Session
 		return fmt.Errorf("extend session: %w", err)
 	}
 	h.setCookie(w, raw, expires)
+	return nil
+}
+
+// touchActivity sets users.last_active_at of userID to now. It uses
+// UpdateColumn, so that users.updated_at does not change.
+func (h *Handler) touchActivity(userID uint, now time.Time) error {
+	if err := h.db.Model(&User{}).Where("id = ?", userID).UpdateColumn("last_active_at", now).Error; err != nil {
+		return fmt.Errorf("update last activity of user %d: %w", userID, err)
+	}
 	return nil
 }
 
