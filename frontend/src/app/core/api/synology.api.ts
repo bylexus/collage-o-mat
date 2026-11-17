@@ -1,7 +1,12 @@
 import { HttpClient } from '@angular/common/http';
 import { inject, Injectable } from '@angular/core';
 import { Observable } from 'rxjs';
-import { SynologyAlbum, SynologyAssetPage, SynologyFolder } from '../models/synology';
+import {
+  SynologyAlbum,
+  SynologyAssetPage,
+  SynologyFolder,
+  SynologySharedSpace,
+} from '../models/synology';
 
 /** HTTP calls of the Synology proxy routes `/api/connectors/{id}/synology`. Holds no state. */
 @Injectable({ providedIn: 'root' })
@@ -55,6 +60,38 @@ export class SynologyApi {
   folderAssets(connectorId: number, folderId: string, page: number): Observable<SynologyAssetPage> {
     return this.http.get<SynologyAssetPage>(
       `/api/connectors/${connectorId}/synology/folders/${encodeURIComponent(folderId)}/assets`,
+      { params: { page } },
+    );
+  }
+
+  /** Whether the account has access to the Shared Space (Team Space) of Synology Photos. */
+  sharedSpace(connectorId: number): Observable<SynologySharedSpace> {
+    return this.http.get<SynologySharedSpace>(
+      `/api/connectors/${connectorId}/synology/shared-space`,
+    );
+  }
+
+  /**
+   * A Shared Space folder with its direct subfolders; `folderId` is a folder id or
+   * `SYNOLOGY_ROOT_FOLDER`.
+   */
+  sharedSpaceFolder(connectorId: number, folderId: string): Observable<SynologyFolder> {
+    return this.http.get<SynologyFolder>(
+      `/api/connectors/${connectorId}/synology/shared-space/folders/${encodeURIComponent(folderId)}`,
+    );
+  }
+
+  /**
+   * One page of the direct photos of a Shared Space folder; `folderId` is a folder id or
+   * `SYNOLOGY_ROOT_FOLDER`; `page` starts at 1. The asset ids have the form `t:<itemId>`.
+   */
+  sharedSpaceFolderAssets(
+    connectorId: number,
+    folderId: string,
+    page: number,
+  ): Observable<SynologyAssetPage> {
+    return this.http.get<SynologyAssetPage>(
+      `/api/connectors/${connectorId}/synology/shared-space/folders/${encodeURIComponent(folderId)}/assets`,
       { params: { page } },
     );
   }

@@ -1,4 +1,5 @@
 import { Component, computed, inject, signal } from '@angular/core';
+import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { MatButtonModule } from '@angular/material/button';
 import { MatButtonToggleModule } from '@angular/material/button-toggle';
 import { MAT_DIALOG_DATA, MatDialogModule, MatDialogRef } from '@angular/material/dialog';
@@ -14,6 +15,7 @@ import {
   SYNOLOGY_ROOT_FOLDER,
   SynologyAlbum,
   SynologyAsset,
+  SynologyAssetPage,
   SynologyFolder,
   SynologyFolderRef,
   synologyThumbnailUrl,
@@ -26,7 +28,16 @@ import { readStoredSize, storeSize } from './import-size';
 import { withinOriginalPixelLimit } from './original-size';
 
 /** Tab of the Synology import dialog. */
-type SynologyTab = 'albums' | 'shared' | 'folders';
+type SynologyTab = 'albums' | 'shared' | 'folders' | 'sharedSpace';
+
+/** Folder tree of Synology Photos: Personal Space (tab "Folders") or Shared Space. */
+type FolderSpace = 'personal' | 'sharedSpace';
+
+/** Folder tree that a tab shows; tabs without folder navigation are missing. */
+const FOLDER_SPACE_OF_TAB: Readonly<Partial<Record<SynologyTab, FolderSpace>>> = {
+  folders: 'personal',
+  sharedSpace: 'sharedSpace',
+};
 
 /** One step of the folder path from the root folder to the current folder. */
 interface FolderTrailEntry {
@@ -40,10 +51,11 @@ interface FolderTrailEntry {
 const ROOT_TRAIL: readonly FolderTrailEntry[] = [{ key: SYNOLOGY_ROOT_FOLDER, name: '' }];
 
 /**
- * Import from Synology Photos (Personal Space) of the connector `ImportDialogData.connector`: in the
- * tab "Albums" choose an own album, in the tab "Shared with me" an album that another user shared
- * with the account, or in the tab "Folders" navigate the folder tree (subfolders and the photos of
- * the current folder), and select photos. Loads albums, folders and photos itself; the
+ * Import from Synology Photos of the connector `ImportDialogData.connector`: in the tab "Albums"
+ * choose an own album, in the tab "Shared with me" an album that another user shared with the
+ * account, or in the tabs "Folders" (Personal Space) and "Shared Space" navigate the folder tree
+ * (subfolders and the photos of the current folder), and select photos. The tab "Shared Space" is
+ * shown only if the account has access to it (checked when the dialog opens). Loads albums, folders and photos itself; the
  * import is done by the caller (`ImportDialogData.importPhotos`). Closes with the `ImportResult`,
  * or `undefined`.
  */
@@ -76,8 +88,22 @@ export class SynologyImportDialog {
   protected readonly sharedAlbums = signal<readonly SynologyAlbum[] | null>(null);
   /** Open album; it is from the list of the current tab ("Albums" or "Shared with me"). */
   protected readonly album = signal<SynologyAlbum | null>(null);
-  /** Path from the root folder to the current folder (tab "Folders"). */
-  protected readonly trail = signal<readonly FolderTrailEntry[]>(ROOT_TRAIL);
+  /** Whether the account has access to the Shared Space; `null` while the check is pending. */
+  protected readonly sharedSpaceAvailable = signal<boolean | null>(null);
+  /** Folder tree of the current tab; `null` for a tab without folder navigation. */
+  protected readonly space = computed<FolderSpace | null>(
+    () => FOLDER_SPACE_OF_TAB[this.tab()] ?? null,
+  );
+  /** Path from the root folder to the last opened folder, per folder tree. */
+  private readonly trails = signal<Readonly<Record<FolderSpace, readonly FolderTrailEntry[]>>>({
+    personal: ROOT_TRAIL,
+    sharedSpace: ROOT_TRAIL,
+  });
+  /** Path from the root folder to the current folder of the current tab's folder tree. */
+  protected readonly trail = computed<readonly FolderTrailEntry[]>(() => {
+    const space = this.space();
+    return space ? this.trails()[space] : ROOT_TRAIL;
+  });
   /** Current folder with its subfolders; `null` while loading. */
   protected readonly folder = signal<SynologyFolder | null>(null);
   /** Photos of the open album or of the current folder. */
@@ -92,13 +118,13 @@ export class SynologyImportDialog {
   protected readonly importing = signal(false);
   protected readonly importError = signal<string | null>(null);
 
-  /** True if photos are shown: an open album, or the current folder in the tab "Folders". */
+  /** True if photos are shown: an open album, or the current folder in a folder tab. */
   protected readonly showPhotos = computed(
-    () => this.album() !== null || (this.tab() === 'folders' && this.folder() !== null),
+    () => this.album() !== null || (this.space() !== null && this.folder() !== null),
   );
   /** Back from the album to the albums, or to the parent folder. */
   protected readonly canGoBack = computed(
-    () => this.album() !== null || (this.tab() === 'folders' && this.trail().length > 1),
+    () => this.album() !== null || (this.space() !== null && this.trail().length > 1),
   );
   /** Source asset ids of the photos in the collage that came from the connector. */
   protected readonly importedIds: ReadonlySet<string> = new Set(
@@ -120,7 +146,12 @@ export class SynologyImportDialog {
   /** Cover URL function of the album list: Synology albums have no cover (album icon). */
   protected readonly albumCoverUrl = (_album: SynologyAlbum): string | null => null;
   protected readonly unavailableReason = $localize`:@@import.synology.originalUnavailableReason:Not available in original size: images over 60 megapixels are not supported. Use the preview size.`;
-  protected readonly rootFolderName = $localize`:@@import.synology.folders.root:Personal Space`;
+  private readonly personalRootName = $localize`:@@import.synology.folders.root:Personal Space`;
+  private readonly sharedSpaceRootName = $localize`:@@import.synology.sharedSpace.root:Shared Space`;
+  /** Breadcrumb label of the root folder of the current tab's folder tree. */
+  protected readonly rootFolderName = computed(() =>
+    this.space() === 'sharedSpace' ? this.sharedSpaceRootName : this.personalRootName,
+  );
 
   /** Increased by each new request and by navigation; older responses are ignored. */
   private requestId = 0;
@@ -128,6 +159,7 @@ export class SynologyImportDialog {
 
   constructor() {
     this.showTab(this.tab());
+    this.checkSharedSpace();
   }
 
   /** Switches the tab; the photos and the selection of the other tab are cleared. */
@@ -144,12 +176,18 @@ export class SynologyImportDialog {
   }
 
   protected openSubfolder(ref: SynologyFolderRef): void {
-    this.openFolder([...this.trail(), { key: ref.id, name: ref.name }]);
+    const space = this.space();
+    if (space) {
+      this.openFolder(space, [...this.trail(), { key: ref.id, name: ref.name }]);
+    }
   }
 
   /** Opens the folder at `index` of the folder path (breadcrumb). */
   protected openTrailFolder(index: number): void {
-    this.openFolder(this.trail().slice(0, index + 1));
+    const space = this.space();
+    if (space) {
+      this.openFolder(space, this.trail().slice(0, index + 1));
+    }
   }
 
   protected loadMore(): void {
@@ -161,11 +199,12 @@ export class SynologyImportDialog {
 
   protected back(): void {
     this.cancelLoad();
+    const space = this.space();
     if (this.album()) {
       this.album.set(null);
       this.clearPhotos();
-    } else if (this.tab() === 'folders' && this.trail().length > 1) {
-      this.openFolder(this.trail().slice(0, -1));
+    } else if (space && this.trail().length > 1) {
+      this.openFolder(space, this.trail().slice(0, -1));
     }
   }
 
@@ -239,8 +278,9 @@ export class SynologyImportDialog {
     this.tab.set(tab);
     this.album.set(null);
     this.clearPhotos();
-    if (tab === 'folders') {
-      this.openFolder(this.trail());
+    const space = this.space();
+    if (space) {
+      this.openFolder(space, this.trail());
     } else if (tab === 'shared') {
       if (this.sharedAlbums() === null) {
         void this.load(this.synologyApi.sharedAlbums(connector.id), (albums) =>
@@ -252,19 +292,36 @@ export class SynologyImportDialog {
     }
   }
 
-  /** Opens the last folder of `trail` (folder with subfolders and the first page of photos). */
-  private openFolder(trail: readonly FolderTrailEntry[]): void {
-    const connector = this.connector;
+  /**
+   * Checks once whether the account has access to the Shared Space. Independent of the shared
+   * loading/error state of the tabs; the result is ignored after the dialog is closed. On an error
+   * the tab is shown, so that the error appears when the tab is opened.
+   */
+  private checkSharedSpace(): void {
+    this.synologyApi
+      .sharedSpace(this.connector.id)
+      .pipe(takeUntilDestroyed())
+      .subscribe({
+        next: ({ available }) => this.sharedSpaceAvailable.set(available),
+        error: () => this.sharedSpaceAvailable.set(true),
+      });
+  }
+
+  /**
+   * Opens the last folder of `trail` in the folder tree `space` (folder with subfolders and the
+   * first page of photos).
+   */
+  private openFolder(space: FolderSpace, trail: readonly FolderTrailEntry[]): void {
     const key = trail.at(-1)?.key;
     if (key === undefined) {
       return;
     }
-    this.trail.set(trail);
+    this.trails.update((current) => ({ ...current, [space]: trail }));
     this.folder.set(null);
     this.clearPhotos();
     const request = forkJoin({
-      folder: this.synologyApi.folder(connector.id, key),
-      page: this.synologyApi.folderAssets(connector.id, key, 1),
+      folder: this.folderRequest(space, key),
+      page: this.folderAssetsRequest(space, key, 1),
     });
     void this.load(request, ({ folder, page }) => {
       this.folder.set(folder);
@@ -276,16 +333,41 @@ export class SynologyImportDialog {
   private loadAssetPage(page: number): void {
     const connector = this.connector;
     const album = this.album();
+    const space = this.space();
     const folderKey = this.trail().at(-1)?.key ?? SYNOLOGY_ROOT_FOLDER;
-    const request = !album
-      ? this.synologyApi.folderAssets(connector.id, folderKey, page)
-      : this.tab() === 'shared'
-        ? this.synologyApi.sharedAlbumAssets(connector.id, album.id, page)
-        : this.synologyApi.albumAssets(connector.id, album.id, page);
+    let request: Observable<SynologyAssetPage>;
+    if (album) {
+      request =
+        this.tab() === 'shared'
+          ? this.synologyApi.sharedAlbumAssets(connector.id, album.id, page)
+          : this.synologyApi.albumAssets(connector.id, album.id, page);
+    } else if (space) {
+      request = this.folderAssetsRequest(space, folderKey, page);
+    } else {
+      return;
+    }
     void this.load(request, (result) => {
       this.assets.update((current) => [...current, ...result.items]);
       this.nextPage.set(result.nextPage);
     });
+  }
+
+  private folderRequest(space: FolderSpace, folderKey: string): Observable<SynologyFolder> {
+    const connectorId = this.connector.id;
+    return space === 'sharedSpace'
+      ? this.synologyApi.sharedSpaceFolder(connectorId, folderKey)
+      : this.synologyApi.folder(connectorId, folderKey);
+  }
+
+  private folderAssetsRequest(
+    space: FolderSpace,
+    folderKey: string,
+    page: number,
+  ): Observable<SynologyAssetPage> {
+    const connectorId = this.connector.id;
+    return space === 'sharedSpace'
+      ? this.synologyApi.sharedSpaceFolderAssets(connectorId, folderKey, page)
+      : this.synologyApi.folderAssets(connectorId, folderKey, page);
   }
 
   private clearPhotos(): void {

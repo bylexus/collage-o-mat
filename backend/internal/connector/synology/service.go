@@ -52,8 +52,12 @@ const (
 // "s:<albumId>:<itemId>".
 const sharedAssetPrefix = "s:"
 
+// sharedSpaceAssetPrefix starts the asset id of a photo of the Shared
+// Space: "t:<itemId>".
+const sharedSpaceAssetPrefix = "t:"
+
 // RootFolderID is the folder id for the root folder of the Personal Space
-// (0 is no valid Synology folder id).
+// and of the Shared Space (0 is no valid Synology folder id).
 const RootFolderID int64 = 0
 
 // Connectors loads connectors of a user (implemented by
@@ -65,7 +69,8 @@ type Connectors interface {
 }
 
 // Service contains the Synology-specific use cases of a connector: browse
-// the albums and folders of the Personal Space, proxy thumbnails, and
+// the albums and folders of the Personal Space, the albums shared with the
+// account and the folders of the Shared Space, proxy thumbnails, and
 // download images for the photo import (it implements photo.Sources). All
 // NAS failures are returned as apperr upstream errors (HTTP 502).
 type Service struct {
@@ -110,7 +115,7 @@ func (s *Service) AlbumItems(ctx context.Context, userID, connectorID uint, albu
 	if err != nil {
 		return ItemPage{}, err
 	}
-	return itemPage(ctx, client, filterAlbum, formatID(albumID), page)
+	return itemPage(ctx, client, personalSpace, filterAlbum, formatID(albumID), page)
 }
 
 // SharedAlbums returns all albums that other users shared with the account,
@@ -151,28 +156,74 @@ func (s *Service) SharedAlbumItems(ctx context.Context, userID, connectorID uint
 	if err != nil {
 		return ItemPage{}, err
 	}
-	return itemPage(ctx, client, filterPassphrase, passphrase, page)
+	return itemPage(ctx, client, personalSpace, filterPassphrase, passphrase, page)
 }
 
-// Folder returns the folder folderID (RootFolderID for the root folder)
-// with its direct subfolders, sorted by name (case-insensitive).
+// Folder returns the folder folderID of the Personal Space (RootFolderID
+// for the root folder) with its direct subfolders, sorted by name
+// (case-insensitive).
 func (s *Service) Folder(ctx context.Context, userID, connectorID uint, folderID int64) (FolderContent, error) {
+	return s.folder(ctx, personalSpace, userID, connectorID, folderID)
+}
+
+// FolderItems returns one page (1-based) of the direct photos of the folder
+// folderID of the Personal Space (RootFolderID for the root folder).
+func (s *Service) FolderItems(ctx context.Context, userID, connectorID uint, folderID int64, page int) (ItemPage, error) {
+	return s.folderItems(ctx, personalSpace, userID, connectorID, folderID, page)
+}
+
+// SharedSpaceAvailable reports whether the account has access to the
+// Shared Space: it reads the Shared Space root folder. The error
+// codeNoSharedSpace gives false; other errors are returned.
+func (s *Service) SharedSpaceAvailable(ctx context.Context, userID, connectorID uint) (bool, error) {
+	client, err := s.client(ctx, userID, connectorID)
+	if err != nil {
+		return false, err
+	}
+	_, err = client.getFolder(ctx, sharedSpace, RootFolderID)
+	var ae *APIError
+	switch {
+	case err == nil:
+		return true, nil
+	case errors.As(err, &ae) && !ae.Login && ae.Code == codeNoSharedSpace:
+		return false, nil
+	}
+	return false, upstream(err)
+}
+
+// SharedSpaceFolder returns the folder folderID of the Shared Space
+// (RootFolderID for the root folder) with its direct subfolders, sorted by
+// name (case-insensitive).
+func (s *Service) SharedSpaceFolder(ctx context.Context, userID, connectorID uint, folderID int64) (FolderContent, error) {
+	return s.folder(ctx, sharedSpace, userID, connectorID, folderID)
+}
+
+// SharedSpaceFolderItems returns one page (1-based) of the direct photos of
+// the folder folderID of the Shared Space (RootFolderID for the root
+// folder).
+func (s *Service) SharedSpaceFolderItems(ctx context.Context, userID, connectorID uint, folderID int64, page int) (ItemPage, error) {
+	return s.folderItems(ctx, sharedSpace, userID, connectorID, folderID, page)
+}
+
+// folder returns the folder folderID of the space sp with its direct
+// subfolders (see Folder).
+func (s *Service) folder(ctx context.Context, sp space, userID, connectorID uint, folderID int64) (FolderContent, error) {
 	client, err := s.client(ctx, userID, connectorID)
 	if err != nil {
 		return FolderContent{}, err
 	}
-	folder, err := client.getFolder(ctx, folderID)
+	folder, err := client.getFolder(ctx, sp, folderID)
 	if err != nil {
 		return FolderContent{}, upstream(err)
 	}
 	// The children of the root are listed without id (verified on the
-	// NAS); other folders with their id.
+	// NAS for the Personal Space); other folders with their id.
 	listID := folder.ID
 	if folderID == RootFolderID {
 		listID = RootFolderID
 	}
 	subfolders, err := listAll(ctx, func(ctx context.Context, offset, limit int) ([]Folder, error) {
-		return client.listFolders(ctx, listID, offset, limit)
+		return client.listFolders(ctx, sp, listID, offset, limit)
 	})
 	if err != nil {
 		return FolderContent{}, upstream(err)
@@ -186,9 +237,9 @@ func (s *Service) Folder(ctx context.Context, userID, connectorID uint, folderID
 	return FolderContent{Folder: folder, Subfolders: subfolders}, nil
 }
 
-// FolderItems returns one page (1-based) of the direct photos of the folder
-// folderID (RootFolderID for the root folder).
-func (s *Service) FolderItems(ctx context.Context, userID, connectorID uint, folderID int64, page int) (ItemPage, error) {
+// folderItems returns one page (1-based) of the direct photos of the folder
+// folderID of the space sp (see FolderItems).
+func (s *Service) folderItems(ctx context.Context, sp space, userID, connectorID uint, folderID int64, page int) (ItemPage, error) {
 	if err := checkPage(page); err != nil {
 		return ItemPage{}, err
 	}
@@ -197,13 +248,13 @@ func (s *Service) FolderItems(ctx context.Context, userID, connectorID uint, fol
 		return ItemPage{}, err
 	}
 	if folderID == RootFolderID {
-		root, err := client.getFolder(ctx, RootFolderID)
+		root, err := client.getFolder(ctx, sp, RootFolderID)
 		if err != nil {
 			return ItemPage{}, upstream(err)
 		}
 		folderID = root.ID
 	}
-	return itemPage(ctx, client, filterFolder, formatID(folderID), page)
+	return itemPage(ctx, client, sp, filterFolder, formatID(folderID), page)
 }
 
 // Thumbnail returns the grid thumbnail (size "m") of an item and its
@@ -228,7 +279,7 @@ func (s *Service) Thumbnail(ctx context.Context, userID, connectorID uint, asset
 	if err != nil {
 		return nil, "", err
 	}
-	body, contentType, err := client.thumbnail(ctx, ref.ItemID, cacheKey, gridThumbnailSize, passphrase)
+	body, contentType, err := client.thumbnail(ctx, ref.space(), ref.ItemID, cacheKey, gridThumbnailSize, passphrase)
 	if err != nil {
 		return nil, "", upstream(err)
 	}
@@ -293,7 +344,7 @@ func (p imageSource) Image(ctx context.Context, assetID string, size photo.Image
 		return photo.SourceImage{}, err
 	}
 	if size == photo.SizeOriginal {
-		body, contentType, err := p.client.original(ctx, ref.ItemID, passphrase)
+		body, contentType, err := p.client.original(ctx, ref.space(), ref.ItemID, passphrase)
 		switch {
 		case err != nil && (!ref.shared() || !isRefusal(err)):
 			return photo.SourceImage{}, upstream(err)
@@ -303,20 +354,20 @@ func (p imageSource) Image(ctx context.Context, assetID string, size photo.Image
 			}
 			body.Close()
 		}
-		img, err := p.preview(ctx, ref.ItemID, passphrase)
+		img, err := p.preview(ctx, ref, passphrase)
 		img.Fallback = true
 		return img, err
 	}
-	return p.preview(ctx, ref.ItemID, passphrase)
+	return p.preview(ctx, ref, passphrase)
 }
 
-// preview returns the "xl" thumbnail of the item id (passphrase is the
-// share token for an item of a shared album, "" for an own item). The
+// preview returns the "xl" thumbnail of the asset ref (passphrase is the
+// share token for an item of a shared album, "" otherwise). The
 // thumbnail API does not check the cache key (verified on the NAS; it only
 // busts caches), so a key derived from the id is sent instead of loading
 // the item for its real key.
-func (p imageSource) preview(ctx context.Context, id int64, passphrase string) (photo.SourceImage, error) {
-	body, contentType, err := p.client.thumbnail(ctx, id, strconv.FormatInt(id, 10)+"_0", previewThumbnailSize, passphrase)
+func (p imageSource) preview(ctx context.Context, ref assetRef, passphrase string) (photo.SourceImage, error) {
+	body, contentType, err := p.client.thumbnail(ctx, ref.space(), ref.ItemID, formatID(ref.ItemID)+"_0", previewThumbnailSize, passphrase)
 	if err != nil {
 		return photo.SourceImage{}, upstream(err)
 	}
@@ -334,8 +385,11 @@ func isRefusal(err error) bool {
 // assetRef is a parsed asset id of the import.
 type assetRef struct {
 	// AlbumID is the id of the shared album of the photo, 0 for a photo of
-	// the account's own library.
+	// the account's own library or of the Shared Space.
 	AlbumID int64
+	// SharedSpace is true for a photo of the Shared Space (never together
+	// with AlbumID).
+	SharedSpace bool
 	// ItemID is the Synology item id.
 	ItemID int64
 }
@@ -343,11 +397,25 @@ type assetRef struct {
 // shared reports whether the asset is a photo of a shared album.
 func (r assetRef) shared() bool { return r.AlbumID != 0 }
 
+// space returns the space of the asset's APIs: the Shared Space for a
+// Shared Space photo, else the Personal Space (also for a photo of a
+// shared album, which is read with its passphrase).
+func (r assetRef) space() space {
+	if r.SharedSpace {
+		return sharedSpace
+	}
+	return personalSpace
+}
+
 // String returns the asset id: "<itemId>" for an own photo,
-// "s:<albumId>:<itemId>" for a photo of a shared album.
+// "s:<albumId>:<itemId>" for a photo of a shared album, "t:<itemId>" for
+// a photo of the Shared Space.
 func (r assetRef) String() string {
-	if r.shared() {
+	switch {
+	case r.shared():
 		return sharedAssetPrefix + formatID(r.AlbumID) + ":" + formatID(r.ItemID)
+	case r.SharedSpace:
+		return sharedSpaceAssetPrefix + formatID(r.ItemID)
 	}
 	return formatID(r.ItemID)
 }
@@ -362,12 +430,19 @@ func (r assetRef) passphrase(ctx context.Context, client *Client) (string, error
 }
 
 // parseAssetRef parses an asset id of the import: "<itemId>" for a photo of
-// the account's own library or "s:<albumId>:<itemId>" for a photo of a
-// shared album. Ids are positive decimals in canonical form (no sign, no
-// leading zeros), so that the same photo always has the same source asset
-// id.
+// the account's own library, "s:<albumId>:<itemId>" for a photo of a
+// shared album or "t:<itemId>" for a photo of the Shared Space. Ids are
+// positive decimals in canonical form (no sign, no leading zeros), so that
+// the same photo always has the same source asset id.
 func parseAssetRef(assetID string) (assetRef, error) {
 	invalid := apperr.Validation("invalid Synology asset id %q", assetID)
+	if itemPart, ok := strings.CutPrefix(assetID, sharedSpaceAssetPrefix); ok {
+		id, ok := parseCanonicalID(itemPart)
+		if !ok {
+			return assetRef{}, invalid
+		}
+		return assetRef{SharedSpace: true, ItemID: id}, nil
+	}
 	rest, shared := strings.CutPrefix(assetID, sharedAssetPrefix)
 	if !shared {
 		id, ok := parseCanonicalID(assetID)
@@ -426,12 +501,13 @@ func sharedPassphrase(ctx context.Context, client *Client, albumID int64) (strin
 }
 
 // itemPage loads one page of the items of an album, a folder or a shared
-// album (see Client.listItems for filterParam and filterValue). It requests
+// album of the space sp (see Client.listItems for filterParam and
+// filterValue). It requests
 // itemPageSize+1 items: the extra item only shows that a next page exists.
 // Only photos and Live Photos are returned, so a page can have fewer items
 // than itemPageSize even if more pages follow.
-func itemPage(ctx context.Context, client *Client, filterParam, filterValue string, page int) (ItemPage, error) {
-	items, err := client.listItems(ctx, filterParam, filterValue, (page-1)*itemPageSize, itemPageSize+1)
+func itemPage(ctx context.Context, client *Client, sp space, filterParam, filterValue string, page int) (ItemPage, error) {
+	items, err := client.listItems(ctx, sp, filterParam, filterValue, (page-1)*itemPageSize, itemPageSize+1)
 	if err != nil {
 		return ItemPage{}, upstream(err)
 	}

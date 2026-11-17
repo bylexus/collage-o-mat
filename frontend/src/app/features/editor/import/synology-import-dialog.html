@@ -44,10 +44,21 @@
       >
         Shared with me
       </a>
+      @if (sharedSpaceAvailable()) {
+        <a
+          mat-tab-link
+          [active]="tab() === 'sharedSpace'"
+          [disabled]="importing()"
+          (click)="chooseTab('sharedSpace')"
+          i18n="@@import.synology.tabs.sharedSpace"
+        >
+          Shared Space
+        </a>
+      }
     </nav>
   }
   <mat-tab-nav-panel #tabPanel>
-    @if (!album() && tab() === 'folders') {
+    @if (!album() && space() !== null) {
       <nav
         class="folder-trail"
         i18n-aria-label="@@import.synology.folders.trailAriaLabel"
@@ -59,7 +70,7 @@
           }
           @if (last) {
             <span class="trail-current" aria-current="page">
-              {{ $first ? rootFolderName : entry.name }}
+              {{ $first ? rootFolderName() : entry.name }}
             </span>
           } @else {
             <button
@@ -68,7 +79,7 @@
               [disabled]="importing()"
               (click)="openTrailFolder($index)"
             >
-              {{ $first ? rootFolderName : entry.name }}
+              {{ $first ? rootFolderName() : entry.name }}
             </button>
           }
         }
