@@ -6,7 +6,7 @@ A Photo collage web app inspired by CollageIt! Pro, in Go / Angular.
 
 ## Features
 
-* Import Photos from [an **Immich Server**](https://immich.app/), [**Synology Photos**](https://www.synology.com/dsm/feature/photos) (DSM 7 or newer), local files
+* Import Photos from [an **Immich Server**](https://immich.app/), [**Synology Photos**](https://www.synology.com/dsm/feature/photos) (DSM 7 or newer, incl. albums shared with the account), local files
 * Page presets (A5, A4, A3, Letter, 30 × 30 cm) or custom size, DPI setting
 * **Arrange photos automatically** in several modes (grid, center mode, random heap, masonry, free placement)
 * Settings dialog per arrangement mode, quick re-roll with the same settings
@@ -39,7 +39,8 @@ The API Key needs the following permissions:
 Collageomat can import photos from **Synology Photos on DSM 7 or newer** (Photo Station / DSM 6 is not
 supported). You define a Synology Connector in Collageomat and provide the NAS URL (e.g.
 `https://nas.example.com:5001`), an account and its password. Collageomat shows the albums and folders of
-the account's **Personal Space** (no Shared Space, no albums shared with the account).
+the account's **Personal Space** and the albums that other NAS users shared with the account (tab
+"Shared with me"; no Shared Space).
 
 * DSM has no API keys: the connector logs in with account + password. 2-factor authentication is not
   supported.

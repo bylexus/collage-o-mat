@@ -32,12 +32,15 @@ func NewHandler(svc *Service) *Handler {
 func (h *Handler) RegisterRoutes(mux *http.ServeMux, requireAuth httpapi.Middleware) {
 	mux.Handle("GET /api/connectors/{id}/synology/albums", requireAuth(http.HandlerFunc(h.albums)))
 	mux.Handle("GET /api/connectors/{id}/synology/albums/{albumId}/assets", requireAuth(http.HandlerFunc(h.albumAssets)))
+	mux.Handle("GET /api/connectors/{id}/synology/shared-albums", requireAuth(http.HandlerFunc(h.sharedAlbums)))
+	mux.Handle("GET /api/connectors/{id}/synology/shared-albums/{albumId}/assets", requireAuth(http.HandlerFunc(h.sharedAlbumAssets)))
 	mux.Handle("GET /api/connectors/{id}/synology/folders/{folderId}", requireAuth(http.HandlerFunc(h.folder)))
 	mux.Handle("GET /api/connectors/{id}/synology/folders/{folderId}/assets", requireAuth(http.HandlerFunc(h.folderAssets)))
 	mux.Handle("GET /api/connectors/{id}/synology/assets/{assetId}/thumbnail", requireAuth(http.HandlerFunc(h.thumbnail)))
 }
 
-// All ids are decimal strings (the same JSON type as the Immich ids).
+// All ids are decimal strings (the same JSON type as the Immich ids). The
+// asset id of a photo of a shared album is "s:<albumId>:<itemId>".
 
 type albumResponse struct {
 	ID         string `json:"id"`
@@ -104,11 +107,13 @@ func toFolderResponse(c FolderContent) folderResponse {
 	return resp
 }
 
-func toAssetPageResponse(p ItemPage) assetPageResponse {
+// toAssetPageResponse converts a page of items. sharedAlbumID is the id of
+// the shared album of the items, 0 for items of the account's own library.
+func toAssetPageResponse(p ItemPage, sharedAlbumID int64) assetPageResponse {
 	resp := assetPageResponse{Items: make([]assetResponse, len(p.Items))}
 	for i, it := range p.Items {
 		resp.Items[i] = assetResponse{
-			ID:           formatID(it.ID),
+			ID:           assetRef{AlbumID: sharedAlbumID, ItemID: it.ID}.String(),
 			FileName:     it.Filename,
 			Width:        it.Additional.Resolution.Width,
 			Height:       it.Additional.Resolution.Height,
@@ -161,7 +166,50 @@ func (h *Handler) albumAssets(w http.ResponseWriter, r *http.Request) {
 		httpapi.WriteServiceError(w, err)
 		return
 	}
-	httpapi.WriteJSON(w, http.StatusOK, toAssetPageResponse(res))
+	httpapi.WriteJSON(w, http.StatusOK, toAssetPageResponse(res, 0))
+}
+
+func (h *Handler) sharedAlbums(w http.ResponseWriter, r *http.Request) {
+	connectorID, err := httpapi.PathID(r, "id")
+	if err != nil {
+		httpapi.WriteServiceError(w, err)
+		return
+	}
+	albums, err := h.svc.SharedAlbums(r.Context(), auth.UserID(r), connectorID)
+	if err != nil {
+		httpapi.WriteServiceError(w, err)
+		return
+	}
+	// The passphrase of the albums is not part of the response.
+	resp := make([]albumResponse, len(albums))
+	for i, a := range albums {
+		resp[i] = albumResponse{ID: formatID(a.ID), Name: a.Name, AssetCount: a.ItemCount}
+	}
+	httpapi.WriteJSON(w, http.StatusOK, resp)
+}
+
+func (h *Handler) sharedAlbumAssets(w http.ResponseWriter, r *http.Request) {
+	connectorID, err := httpapi.PathID(r, "id")
+	if err != nil {
+		httpapi.WriteServiceError(w, err)
+		return
+	}
+	albumID, err := pathInt64(r, "albumId")
+	if err != nil {
+		httpapi.WriteServiceError(w, err)
+		return
+	}
+	page, err := pageParam(r)
+	if err != nil {
+		httpapi.WriteServiceError(w, err)
+		return
+	}
+	res, err := h.svc.SharedAlbumItems(r.Context(), auth.UserID(r), connectorID, albumID, page)
+	if err != nil {
+		httpapi.WriteServiceError(w, err)
+		return
+	}
+	httpapi.WriteJSON(w, http.StatusOK, toAssetPageResponse(res, albumID))
 }
 
 func (h *Handler) folder(w http.ResponseWriter, r *http.Request) {
@@ -204,7 +252,7 @@ func (h *Handler) folderAssets(w http.ResponseWriter, r *http.Request) {
 		httpapi.WriteServiceError(w, err)
 		return
 	}
-	httpapi.WriteJSON(w, http.StatusOK, toAssetPageResponse(res))
+	httpapi.WriteJSON(w, http.StatusOK, toAssetPageResponse(res, 0))
 }
 
 func (h *Handler) thumbnail(w http.ResponseWriter, r *http.Request) {
@@ -213,12 +261,9 @@ func (h *Handler) thumbnail(w http.ResponseWriter, r *http.Request) {
 		httpapi.WriteServiceError(w, err)
 		return
 	}
-	assetID, err := pathInt64(r, "assetId")
-	if err != nil {
-		httpapi.WriteServiceError(w, err)
-		return
-	}
-	body, contentType, err := h.svc.Thumbnail(r.Context(), auth.UserID(r), connectorID, assetID, r.URL.Query().Get("key"))
+	// assetId is "<itemId>" or "s:<albumId>:<itemId>"; the service parses
+	// it.
+	body, contentType, err := h.svc.Thumbnail(r.Context(), auth.UserID(r), connectorID, r.PathValue("assetId"), r.URL.Query().Get("key"))
 	if err != nil {
 		httpapi.WriteServiceError(w, err)
 		return

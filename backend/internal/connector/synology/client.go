@@ -110,17 +110,21 @@ type Client struct {
 	password string
 	http     *http.Client
 	session  *session
+	// passphrases caches the share tokens of the albums shared with the
+	// account (shared with all clients of the same session cache entry).
+	passphrases *passphraseCache
 }
 
 // newClient returns a client for the NAS and account of cfg that uses the
-// HTTP client httpClient and the session s.
-func newClient(cfg Config, httpClient *http.Client, s *session) *Client {
+// HTTP client httpClient, the session s and the passphrase cache p.
+func newClient(cfg Config, httpClient *http.Client, s *session, p *passphraseCache) *Client {
 	return &Client{
-		baseURL:  cfg.URL,
-		account:  cfg.Account,
-		password: cfg.Password,
-		http:     httpClient,
-		session:  s,
+		baseURL:     cfg.URL,
+		account:     cfg.Account,
+		password:    cfg.Password,
+		http:        httpClient,
+		session:     s,
+		passphrases: p,
 	}
 }
 
@@ -183,13 +187,28 @@ func (c *Client) listAlbums(ctx context.Context, offset, limit int) ([]Album, er
 	return res.List, nil
 }
 
-// listItems returns at most limit items (all types) of an album or folder,
-// starting at offset. filterParam is "album_id" or "folder_id" (with the
-// wrong name the NAS ignores the filter and returns the whole library).
-// Folders give only their direct items.
-func (c *Client) listItems(ctx context.Context, filterParam string, filterID int64, offset, limit int) ([]Item, error) {
+// listSharedAlbums returns at most limit albums that other users shared
+// with the account, starting at offset (SYNO.Foto.Sharing.Misc
+// list_shared_with_me_album).
+func (c *Client) listSharedAlbums(ctx context.Context, offset, limit int) ([]SharedAlbum, error) {
+	params := apiParams(apiSharingMisc, apiSharingMiscVersion, "list_shared_with_me_album")
+	setRange(params, offset, limit)
+	var res listData[SharedAlbum]
+	if err := c.callInto(ctx, params, &res); err != nil {
+		return nil, err
+	}
+	return res.List, nil
+}
+
+// listItems returns at most limit items (all types) of an album, a folder
+// or a shared album, starting at offset. filterParam is "album_id" or
+// "folder_id" with the decimal id as filterValue, or "passphrase" with the
+// share token of a shared album (unquoted; never together with album_id,
+// that gives error 120). With a wrong name the NAS ignores the filter and
+// returns the whole library. Folders give only their direct items.
+func (c *Client) listItems(ctx context.Context, filterParam, filterValue string, offset, limit int) ([]Item, error) {
 	params := apiParams(apiBrowseItem, apiBrowseItemVersion, "list")
-	params.Set(filterParam, strconv.FormatInt(filterID, 10))
+	params.Set(filterParam, filterValue)
 	setRange(params, offset, limit)
 	params.Set("additional", `["thumbnail","resolution","orientation"]`)
 	var res listData[Item]
@@ -231,24 +250,36 @@ func (c *Client) listFolders(ctx context.Context, id int64, offset, limit int) (
 // thumbnail returns a thumbnail of the item id in the size size ("sm",
 // "m" or "xl") and its Content-Type. The caller must close the body.
 // cacheKey is the item's thumbnail cache key (the NAS does not check it;
-// it only makes the URL change when the photo changes). Thumbnails are
-// already rotated.
-func (c *Client) thumbnail(ctx context.Context, id int64, cacheKey, size string) (io.ReadCloser, string, error) {
+// it only makes the URL change when the photo changes). passphrase is the
+// share token for an item of a shared album, "" for an own item. A shared
+// item is requested with type "item" and the quoted passphrase, without
+// album_id (with album_id the NAS answers 404). Thumbnails are already
+// rotated.
+func (c *Client) thumbnail(ctx context.Context, id int64, cacheKey, size, passphrase string) (io.ReadCloser, string, error) {
 	params := apiParams(apiThumbnail, apiThumbnailVersion, "get")
 	params.Set("id", strconv.FormatInt(id, 10))
 	params.Set("cache_key", strconv.Quote(cacheKey))
-	params.Set("type", `"unit"`)
+	if passphrase != "" {
+		params.Set("type", `"item"`)
+		params.Set("passphrase", strconv.Quote(passphrase))
+	} else {
+		params.Set("type", `"unit"`)
+	}
 	params.Set("size", strconv.Quote(size))
 	return c.download(ctx, http.MethodGet, params)
 }
 
 // original returns the original file of the item id (SYNO.Foto.Download
 // with exactly one unit_id; two or more ids give a ZIP archive) and its
-// Content-Type. The caller must close the body. The file is not rotated
-// (EXIF orientation as stored).
-func (c *Client) original(ctx context.Context, id int64) (io.ReadCloser, string, error) {
+// Content-Type. The caller must close the body. passphrase is the share
+// token for an item of a shared album (sent quoted), "" for an own item.
+// The file is not rotated (EXIF orientation as stored).
+func (c *Client) original(ctx context.Context, id int64, passphrase string) (io.ReadCloser, string, error) {
 	params := apiParams(apiDownload, apiDownloadVersion, "download")
 	params.Set("unit_id", "["+strconv.FormatInt(id, 10)+"]")
+	if passphrase != "" {
+		params.Set("passphrase", strconv.Quote(passphrase))
+	}
 	return c.download(ctx, http.MethodPost, params)
 }
 

@@ -101,32 +101,66 @@ func (s *session) take() string {
 	return sid
 }
 
-// sessionCache holds one session per connector. An entry is replaced when
-// the config of the connector changes (new URL, account, password or TLS
-// option), so that a changed config always logs in again (this also ends
-// the login cooldown of the old entry).
+// passphraseCache maps the ids of the albums shared with the account to
+// their share tokens (passphrases). It is filled from the shared-album list
+// of the NAS. The tokens stay in memory on the server.
+type passphraseCache struct {
+	mu      sync.Mutex
+	byAlbum map[int64]string
+}
+
+// get returns the passphrase of the shared album albumID, if it is known.
+func (p *passphraseCache) get(albumID int64) (string, bool) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	pass, ok := p.byAlbum[albumID]
+	return pass, ok
+}
+
+// replace sets the content of the cache to the albums of a complete
+// shared-album list. Albums without id or passphrase are left out.
+func (p *passphraseCache) replace(albums []SharedAlbum) {
+	m := make(map[int64]string, len(albums))
+	for _, a := range albums {
+		if a.ID > 0 && a.Passphrase != "" {
+			m[a.ID] = a.Passphrase
+		}
+	}
+	p.mu.Lock()
+	p.byAlbum = m
+	p.mu.Unlock()
+}
+
+// sessionCache holds one session and one passphrase cache per connector.
+// An entry is replaced when the config of the connector changes (new URL,
+// account, password or TLS option), so that a changed config always logs
+// in again (this also ends the login cooldown of the old entry) and loads
+// the shared albums again.
 type sessionCache struct {
 	mu      sync.Mutex
 	entries map[uint]cachedSession
 }
 
-// cachedSession is a session together with the config it was made for.
+// cachedSession is a session and a passphrase cache together with the
+// config they were made for.
 type cachedSession struct {
-	config  Config
-	session *session
+	config      Config
+	session     *session
+	passphrases *passphraseCache
 }
 
-// forConnector returns the session of a connector for the config cfg.
-func (c *sessionCache) forConnector(connectorID uint, cfg Config) *session {
+// forConnector returns the session and the passphrase cache of a connector
+// for the config cfg.
+func (c *sessionCache) forConnector(connectorID uint, cfg Config) (*session, *passphraseCache) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	if e, ok := c.entries[connectorID]; ok && e.config == cfg {
-		return e.session
+		return e.session, e.passphrases
 	}
 	if c.entries == nil {
 		c.entries = make(map[uint]cachedSession)
 	}
-	s := &session{}
-	c.entries[connectorID] = cachedSession{config: cfg, session: s}
-	return s
+	e := cachedSession{config: cfg, session: &session{}, passphrases: &passphraseCache{}}
+	c.entries[connectorID] = e
+	return e.session, e.passphrases
 }

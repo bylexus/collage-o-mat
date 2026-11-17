@@ -4,6 +4,7 @@ import (
 	"cmp"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"mime"
@@ -42,9 +43,14 @@ const (
 
 // Item filter parameters of SYNO.Foto.Browse.Item list.
 const (
-	filterAlbum  = "album_id"
-	filterFolder = "folder_id"
+	filterAlbum      = "album_id"
+	filterFolder     = "folder_id"
+	filterPassphrase = "passphrase"
 )
+
+// sharedAssetPrefix starts the asset id of a photo of a shared album:
+// "s:<albumId>:<itemId>".
+const sharedAssetPrefix = "s:"
 
 // RootFolderID is the folder id for the root folder of the Personal Space
 // (0 is no valid Synology folder id).
@@ -104,7 +110,48 @@ func (s *Service) AlbumItems(ctx context.Context, userID, connectorID uint, albu
 	if err != nil {
 		return ItemPage{}, err
 	}
-	return itemPage(ctx, client, filterAlbum, albumID, page)
+	return itemPage(ctx, client, filterAlbum, formatID(albumID), page)
+}
+
+// SharedAlbums returns all albums that other users shared with the account,
+// sorted by name (case-insensitive). Albums without id or passphrase are
+// left out (they cannot be opened). The list also refreshes the passphrase
+// cache of the connector.
+func (s *Service) SharedAlbums(ctx context.Context, userID, connectorID uint) ([]SharedAlbum, error) {
+	client, err := s.client(ctx, userID, connectorID)
+	if err != nil {
+		return nil, err
+	}
+	albums, err := loadSharedAlbums(ctx, client)
+	if err != nil {
+		return nil, err
+	}
+	albums = slices.DeleteFunc(albums, func(a SharedAlbum) bool { return a.ID <= 0 || a.Passphrase == "" })
+	slices.SortFunc(albums, func(a, b SharedAlbum) int {
+		return cmp.Or(
+			cmp.Compare(strings.ToLower(a.Name), strings.ToLower(b.Name)),
+			cmp.Compare(a.ID, b.ID),
+		)
+	})
+	return albums, nil
+}
+
+// SharedAlbumItems returns one page (1-based) of the photos of an album
+// shared with the account. An album that is not (or no longer) shared with
+// the account gives apperr.ErrNotFound.
+func (s *Service) SharedAlbumItems(ctx context.Context, userID, connectorID uint, albumID int64, page int) (ItemPage, error) {
+	if err := checkPage(page); err != nil {
+		return ItemPage{}, err
+	}
+	client, err := s.client(ctx, userID, connectorID)
+	if err != nil {
+		return ItemPage{}, err
+	}
+	passphrase, err := sharedPassphrase(ctx, client, albumID)
+	if err != nil {
+		return ItemPage{}, err
+	}
+	return itemPage(ctx, client, filterPassphrase, passphrase, page)
 }
 
 // Folder returns the folder folderID (RootFolderID for the root folder)
@@ -156,15 +203,20 @@ func (s *Service) FolderItems(ctx context.Context, userID, connectorID uint, fol
 		}
 		folderID = root.ID
 	}
-	return itemPage(ctx, client, filterFolder, folderID, page)
+	return itemPage(ctx, client, filterFolder, formatID(folderID), page)
 }
 
 // Thumbnail returns the grid thumbnail (size "m") of an item and its
-// Content-Type. The caller must close the reader. cacheKey is the item's
-// thumbnail cache key (Item thumbnail cache_key). A response that is not an
-// image is rejected (an error of the NAS is JSON, also with HTTP 200), so
-// that the proxy never serves other content from the app's origin.
-func (s *Service) Thumbnail(ctx context.Context, userID, connectorID uint, itemID int64, cacheKey string) (io.ReadCloser, string, error) {
+// Content-Type. The caller must close the reader. assetID is an asset id
+// of the import (see parseAssetRef). cacheKey is the item's thumbnail cache
+// key (Item thumbnail cache_key). A response that is not an image is
+// rejected (an error of the NAS is JSON, also with HTTP 200), so that the
+// proxy never serves other content from the app's origin.
+func (s *Service) Thumbnail(ctx context.Context, userID, connectorID uint, assetID, cacheKey string) (io.ReadCloser, string, error) {
+	ref, err := parseAssetRef(assetID)
+	if err != nil {
+		return nil, "", err
+	}
 	if !validCacheKey(cacheKey) {
 		return nil, "", apperr.Validation("invalid thumbnail key")
 	}
@@ -172,13 +224,17 @@ func (s *Service) Thumbnail(ctx context.Context, userID, connectorID uint, itemI
 	if err != nil {
 		return nil, "", err
 	}
-	body, contentType, err := client.thumbnail(ctx, itemID, cacheKey, gridThumbnailSize)
+	passphrase, err := ref.passphrase(ctx, client)
+	if err != nil {
+		return nil, "", err
+	}
+	body, contentType, err := client.thumbnail(ctx, ref.ItemID, cacheKey, gridThumbnailSize, passphrase)
 	if err != nil {
 		return nil, "", upstream(err)
 	}
 	if mediaType, _, _ := mime.ParseMediaType(contentType); !strings.HasPrefix(mediaType, "image/") {
 		body.Close()
-		return nil, "", apperr.Upstream("the NAS returned no image for item %d (Content-Type %q)", itemID, contentType)
+		return nil, "", apperr.Upstream("the NAS returned no image for item %d (Content-Type %q)", ref.ItemID, contentType)
 	}
 	return body, contentType, nil
 }
@@ -208,7 +264,8 @@ func (s *Service) client(ctx context.Context, userID, connectorID uint) (*Client
 
 // imageSource implements photo.Source: photo.SizePreview is the "xl"
 // thumbnail, photo.SizeOriginal the original file (with the "xl" thumbnail
-// as fallback for formats the import cannot decode).
+// as fallback for formats the import cannot decode and for originals of
+// shared albums that the NAS refuses).
 type imageSource struct {
 	client *Client
 }
@@ -222,57 +279,159 @@ var originalTypes = map[string]bool{
 	"image/webp": true,
 }
 
-// Image implements photo.Source. assetID is the decimal Synology item id.
+// Image implements photo.Source. assetID is an asset id of the import (see
+// parseAssetRef). If the NAS refuses the original of a photo of a shared
+// album with a Synology API error (e.g. the account has only the "viewer"
+// role), the "xl" thumbnail is returned with Fallback set.
 func (p imageSource) Image(ctx context.Context, assetID string, size photo.ImageSize) (photo.SourceImage, error) {
-	id, err := parseAssetID(assetID)
+	ref, err := parseAssetRef(assetID)
+	if err != nil {
+		return photo.SourceImage{}, err
+	}
+	passphrase, err := ref.passphrase(ctx, p.client)
 	if err != nil {
 		return photo.SourceImage{}, err
 	}
 	if size == photo.SizeOriginal {
-		body, contentType, err := p.client.original(ctx, id)
-		if err != nil {
+		body, contentType, err := p.client.original(ctx, ref.ItemID, passphrase)
+		switch {
+		case err != nil && (!ref.shared() || !isRefusal(err)):
 			return photo.SourceImage{}, upstream(err)
+		case err == nil:
+			if mediaType, _, _ := mime.ParseMediaType(contentType); originalTypes[mediaType] {
+				return photo.SourceImage{Body: body, ContentType: contentType}, nil
+			}
+			body.Close()
 		}
-		if mediaType, _, _ := mime.ParseMediaType(contentType); originalTypes[mediaType] {
-			return photo.SourceImage{Body: body, ContentType: contentType}, nil
-		}
-		body.Close()
-		img, err := p.preview(ctx, id)
+		img, err := p.preview(ctx, ref.ItemID, passphrase)
 		img.Fallback = true
 		return img, err
 	}
-	return p.preview(ctx, id)
+	return p.preview(ctx, ref.ItemID, passphrase)
 }
 
-// preview returns the "xl" thumbnail of the item id. The thumbnail API
-// does not check the cache key (verified on the NAS; it only busts
-// caches), so a key derived from the id is sent instead of loading the
-// item for its real key.
-func (p imageSource) preview(ctx context.Context, id int64) (photo.SourceImage, error) {
-	body, contentType, err := p.client.thumbnail(ctx, id, strconv.FormatInt(id, 10)+"_0", previewThumbnailSize)
+// preview returns the "xl" thumbnail of the item id (passphrase is the
+// share token for an item of a shared album, "" for an own item). The
+// thumbnail API does not check the cache key (verified on the NAS; it only
+// busts caches), so a key derived from the id is sent instead of loading
+// the item for its real key.
+func (p imageSource) preview(ctx context.Context, id int64, passphrase string) (photo.SourceImage, error) {
+	body, contentType, err := p.client.thumbnail(ctx, id, strconv.FormatInt(id, 10)+"_0", previewThumbnailSize, passphrase)
 	if err != nil {
 		return photo.SourceImage{}, upstream(err)
 	}
 	return photo.SourceImage{Body: body, ContentType: contentType}, nil
 }
 
-// parseAssetID parses an asset id of the import: a positive decimal
-// Synology item id in canonical form (no sign, no leading zeros), so that
-// the same photo always has the same source asset id.
-func parseAssetID(assetID string) (int64, error) {
-	id, err := strconv.ParseInt(assetID, 10, 64)
-	if err != nil || id <= 0 || strconv.FormatInt(id, 10) != assetID {
-		return 0, apperr.Validation("invalid Synology asset id %q", assetID)
-	}
-	return id, nil
+// isRefusal reports whether err is a Synology API error that refuses a
+// request (e.g. no permission). Session and login errors and transport or
+// HTTP status errors are no refusal.
+func isRefusal(err error) bool {
+	var ae *APIError
+	return errors.As(err, &ae) && !ae.Login && !isSessionError(err)
 }
 
-// itemPage loads one page of the items of an album or folder. It requests
+// assetRef is a parsed asset id of the import.
+type assetRef struct {
+	// AlbumID is the id of the shared album of the photo, 0 for a photo of
+	// the account's own library.
+	AlbumID int64
+	// ItemID is the Synology item id.
+	ItemID int64
+}
+
+// shared reports whether the asset is a photo of a shared album.
+func (r assetRef) shared() bool { return r.AlbumID != 0 }
+
+// String returns the asset id: "<itemId>" for an own photo,
+// "s:<albumId>:<itemId>" for a photo of a shared album.
+func (r assetRef) String() string {
+	if r.shared() {
+		return sharedAssetPrefix + formatID(r.AlbumID) + ":" + formatID(r.ItemID)
+	}
+	return formatID(r.ItemID)
+}
+
+// passphrase returns the share token of the asset's shared album, "" for
+// an own photo.
+func (r assetRef) passphrase(ctx context.Context, client *Client) (string, error) {
+	if !r.shared() {
+		return "", nil
+	}
+	return sharedPassphrase(ctx, client, r.AlbumID)
+}
+
+// parseAssetRef parses an asset id of the import: "<itemId>" for a photo of
+// the account's own library or "s:<albumId>:<itemId>" for a photo of a
+// shared album. Ids are positive decimals in canonical form (no sign, no
+// leading zeros), so that the same photo always has the same source asset
+// id.
+func parseAssetRef(assetID string) (assetRef, error) {
+	invalid := apperr.Validation("invalid Synology asset id %q", assetID)
+	rest, shared := strings.CutPrefix(assetID, sharedAssetPrefix)
+	if !shared {
+		id, ok := parseCanonicalID(assetID)
+		if !ok {
+			return assetRef{}, invalid
+		}
+		return assetRef{ItemID: id}, nil
+	}
+	albumPart, itemPart, found := strings.Cut(rest, ":")
+	if !found {
+		return assetRef{}, invalid
+	}
+	albumID, okAlbum := parseCanonicalID(albumPart)
+	itemID, okItem := parseCanonicalID(itemPart)
+	if !okAlbum || !okItem {
+		return assetRef{}, invalid
+	}
+	return assetRef{AlbumID: albumID, ItemID: itemID}, nil
+}
+
+// parseCanonicalID parses a positive decimal id in canonical form.
+func parseCanonicalID(s string) (int64, bool) {
+	id, err := strconv.ParseInt(s, 10, 64)
+	if err != nil || id <= 0 || strconv.FormatInt(id, 10) != s {
+		return 0, false
+	}
+	return id, true
+}
+
+// loadSharedAlbums loads all albums shared with the account (all pages)
+// and refreshes the passphrase cache of the client.
+func loadSharedAlbums(ctx context.Context, client *Client) ([]SharedAlbum, error) {
+	albums, err := listAll(ctx, client.listSharedAlbums)
+	if err != nil {
+		return nil, upstream(err)
+	}
+	client.passphrases.replace(albums)
+	return albums, nil
+}
+
+// sharedPassphrase returns the share token of the album albumID that is
+// shared with the account. If the cache does not know the album, the
+// shared-album list is loaded once more. An album that is still unknown
+// gives apperr.ErrNotFound.
+func sharedPassphrase(ctx context.Context, client *Client, albumID int64) (string, error) {
+	if pass, ok := client.passphrases.get(albumID); ok {
+		return pass, nil
+	}
+	if _, err := loadSharedAlbums(ctx, client); err != nil {
+		return "", err
+	}
+	if pass, ok := client.passphrases.get(albumID); ok {
+		return pass, nil
+	}
+	return "", fmt.Errorf("shared Synology album %d: %w", albumID, apperr.ErrNotFound)
+}
+
+// itemPage loads one page of the items of an album, a folder or a shared
+// album (see Client.listItems for filterParam and filterValue). It requests
 // itemPageSize+1 items: the extra item only shows that a next page exists.
 // Only photos and Live Photos are returned, so a page can have fewer items
 // than itemPageSize even if more pages follow.
-func itemPage(ctx context.Context, client *Client, filterParam string, filterID int64, page int) (ItemPage, error) {
-	items, err := client.listItems(ctx, filterParam, filterID, (page-1)*itemPageSize, itemPageSize+1)
+func itemPage(ctx context.Context, client *Client, filterParam, filterValue string, page int) (ItemPage, error) {
+	items, err := client.listItems(ctx, filterParam, filterValue, (page-1)*itemPageSize, itemPageSize+1)
 	if err != nil {
 		return ItemPage{}, upstream(err)
 	}

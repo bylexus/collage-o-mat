@@ -26,7 +26,7 @@ import { readStoredSize, storeSize } from './import-size';
 import { withinOriginalPixelLimit } from './original-size';
 
 /** Tab of the Synology import dialog. */
-type SynologyTab = 'albums' | 'folders';
+type SynologyTab = 'albums' | 'shared' | 'folders';
 
 /** One step of the folder path from the root folder to the current folder. */
 interface FolderTrailEntry {
@@ -41,8 +41,9 @@ const ROOT_TRAIL: readonly FolderTrailEntry[] = [{ key: SYNOLOGY_ROOT_FOLDER, na
 
 /**
  * Import from Synology Photos (Personal Space) of the connector `ImportDialogData.connector`: in the
- * tab "Albums" choose an album, or in the tab "Folders" navigate the folder tree (subfolders and the
- * photos of the current folder), and select photos. Loads albums, folders and photos itself; the
+ * tab "Albums" choose an own album, in the tab "Shared with me" an album that another user shared
+ * with the account, or in the tab "Folders" navigate the folder tree (subfolders and the photos of
+ * the current folder), and select photos. Loads albums, folders and photos itself; the
  * import is done by the caller (`ImportDialogData.importPhotos`). Closes with the `ImportResult`,
  * or `undefined`.
  */
@@ -71,6 +72,9 @@ export class SynologyImportDialog {
   protected readonly tab = signal<SynologyTab>('albums');
   /** Albums of the connector; `null` while loading or not loaded yet. */
   protected readonly albums = signal<readonly SynologyAlbum[] | null>(null);
+  /** Albums shared with the account; `null` while loading or not loaded yet. */
+  protected readonly sharedAlbums = signal<readonly SynologyAlbum[] | null>(null);
+  /** Open album; it is from the list of the current tab ("Albums" or "Shared with me"). */
   protected readonly album = signal<SynologyAlbum | null>(null);
   /** Path from the root folder to the current folder (tab "Folders"). */
   protected readonly trail = signal<readonly FolderTrailEntry[]>(ROOT_TRAIL);
@@ -237,6 +241,12 @@ export class SynologyImportDialog {
     this.clearPhotos();
     if (tab === 'folders') {
       this.openFolder(this.trail());
+    } else if (tab === 'shared') {
+      if (this.sharedAlbums() === null) {
+        void this.load(this.synologyApi.sharedAlbums(connector.id), (albums) =>
+          this.sharedAlbums.set(albums),
+        );
+      }
     } else if (this.albums() === null) {
       void this.load(this.synologyApi.albums(connector.id), (albums) => this.albums.set(albums));
     }
@@ -267,9 +277,11 @@ export class SynologyImportDialog {
     const connector = this.connector;
     const album = this.album();
     const folderKey = this.trail().at(-1)?.key ?? SYNOLOGY_ROOT_FOLDER;
-    const request = album
-      ? this.synologyApi.albumAssets(connector.id, album.id, page)
-      : this.synologyApi.folderAssets(connector.id, folderKey, page);
+    const request = !album
+      ? this.synologyApi.folderAssets(connector.id, folderKey, page)
+      : this.tab() === 'shared'
+        ? this.synologyApi.sharedAlbumAssets(connector.id, album.id, page)
+        : this.synologyApi.albumAssets(connector.id, album.id, page);
     void this.load(request, (result) => {
       this.assets.update((current) => [...current, ...result.items]);
       this.nextPage.set(result.nextPage);

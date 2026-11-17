@@ -123,7 +123,7 @@ func (k *Kind) Test(ctx context.Context, stored json.RawMessage) (connector.Test
 	if err != nil {
 		return connector.TestResult{}, err
 	}
-	client := newClient(cfg, k.httpClient(cfg), &session{})
+	client := newClient(cfg, k.httpClient(cfg), &session{}, &passphraseCache{})
 	defer client.Logout(context.WithoutCancel(ctx))
 	if err := client.probeAlbums(ctx); err != nil {
 		return connector.TestResult{OK: false, Error: err.Error()}, nil
@@ -133,13 +133,15 @@ func (k *Kind) Test(ctx context.Context, stored json.RawMessage) (connector.Test
 
 // Client returns a client for a stored (decrypted) config of the connector
 // connectorID, e.g. from connector.Service.LoadConfig. Clients of the same
-// connector share one session as long as its config does not change.
+// connector share one session and one passphrase cache as long as its
+// config does not change.
 func (k *Kind) Client(connectorID uint, stored json.RawMessage) (*Client, error) {
 	cfg, err := ParseConfig(stored)
 	if err != nil {
 		return nil, err
 	}
-	return newClient(cfg, k.httpClient(cfg), k.sessions.forConnector(connectorID, cfg)), nil
+	s, p := k.sessions.forConnector(connectorID, cfg)
+	return newClient(cfg, k.httpClient(cfg), s, p), nil
 }
 
 // httpClient returns the shared HTTP client for the TLS option of cfg.

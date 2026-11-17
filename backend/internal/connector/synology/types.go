@@ -22,6 +22,9 @@ const (
 
 	apiDownload        = "SYNO.Foto.Download"
 	apiDownloadVersion = 2
+
+	apiSharingMisc        = "SYNO.Foto.Sharing.Misc"
+	apiSharingMiscVersion = 2
 )
 
 // Common error codes of the Synology Web API (DSM Login Web API Guide).
@@ -74,6 +77,19 @@ type Album struct {
 	ItemCount int    `json:"item_count"`
 	// Type is "normal" or "condition" (conditional album).
 	Type string `json:"type"`
+}
+
+// SharedAlbum is an album of another NAS user that is shared with the
+// account (subset of a SYNO.Foto.Sharing.Misc list_shared_with_me_album
+// item; the fields are not verified on a NAS yet).
+type SharedAlbum struct {
+	ID        int64  `json:"id"`
+	Name      string `json:"name"`
+	ItemCount int    `json:"item_count"`
+	// Passphrase is the share token of the album. It is needed to read the
+	// album's items, thumbnails and originals. It is a share secret: it
+	// stays on the server (never in a response, an error or a log).
+	Passphrase string `json:"passphrase"`
 }
 
 // Item types of SYNO.Foto.Browse.Item.

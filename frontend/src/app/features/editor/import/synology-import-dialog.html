@@ -35,6 +35,15 @@
       >
         Folders
       </a>
+      <a
+        mat-tab-link
+        [active]="tab() === 'shared'"
+        [disabled]="importing()"
+        (click)="chooseTab('shared')"
+        i18n="@@import.synology.tabs.shared"
+      >
+        Shared with me
+      </a>
     </nav>
   }
   <mat-tab-nav-panel #tabPanel>
@@ -167,6 +176,18 @@
         [albums]="albums"
         (selected)="chooseAlbum($event)"
       />
+    } @else if (tab() === 'shared' && sharedAlbums(); as sharedAlbums) {
+      @if (sharedAlbums.length === 0) {
+        <p class="import-message" i18n="@@import.synology.shared.empty">
+          No albums are shared with this account.
+        </p>
+      } @else {
+        <app-album-list
+          [coverUrl]="albumCoverUrl"
+          [albums]="sharedAlbums"
+          (selected)="chooseAlbum($event)"
+        />
+      }
     }
   </mat-tab-nav-panel>
 

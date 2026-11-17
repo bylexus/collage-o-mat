@@ -21,6 +21,26 @@ export class SynologyApi {
     );
   }
 
+  /** Albums of other users that are shared with the account, sorted by name. */
+  sharedAlbums(connectorId: number): Observable<SynologyAlbum[]> {
+    return this.http.get<SynologyAlbum[]>(`/api/connectors/${connectorId}/synology/shared-albums`);
+  }
+
+  /**
+   * One page of the photos of a shared album; `page` starts at 1. The asset ids have the form
+   * `s:<albumId>:<itemId>`.
+   */
+  sharedAlbumAssets(
+    connectorId: number,
+    albumId: string,
+    page: number,
+  ): Observable<SynologyAssetPage> {
+    return this.http.get<SynologyAssetPage>(
+      `/api/connectors/${connectorId}/synology/shared-albums/${encodeURIComponent(albumId)}/assets`,
+      { params: { page } },
+    );
+  }
+
   /** A folder with its direct subfolders; `folderId` is a folder id or `SYNOLOGY_ROOT_FOLDER`. */
   folder(connectorId: number, folderId: string): Observable<SynologyFolder> {
     return this.http.get<SynologyFolder>(
