@@ -3,16 +3,14 @@ import { computed, DestroyRef, inject, Injectable, signal } from '@angular/core'
 import { firstValueFrom } from 'rxjs';
 import { CollageApi } from '../../core/api/collage.api';
 import { PhotoApi } from '../../core/api/photo.api';
-import { CollageSettings, DisplayUnit, normalizeSettings } from '../../core/models/collage';
-import { SaveLayoutRequest } from '../../core/models/layout';
 import {
-  ImportResult,
-  isPlaced,
-  Photo,
-  PhotoAdjust,
-  PhotoBorder,
-  PhotoProps,
-} from '../../core/models/photo';
+  BorderSettings,
+  CollageSettings,
+  DisplayUnit,
+  normalizeSettings,
+} from '../../core/models/collage';
+import { SaveLayoutRequest } from '../../core/models/layout';
+import { ImportResult, isPlaced, Photo, PhotoAdjust, PhotoProps } from '../../core/models/photo';
 import type { Shadow } from '../../core/models/shadow';
 import { CollageText, TextProps } from '../../core/models/text';
 import { ConfirmService } from '../../shared/confirm-dialog/confirm.service';
@@ -23,7 +21,7 @@ import { AutoSaver } from './auto-saver';
 import { ExportContent } from './export/page-export';
 import { LayoutSnapshot, restoreSnapshot, takeSnapshot } from './layout-snapshot';
 import { isNeutralAdjust } from './canvas/adjusted-image';
-import { hasBorderOverride, inheritedBorder, sameBorder } from './photo-border';
+import { hasBorderOverride, ownBorder, sameOptionalBorder } from './photo-border';
 import { hasShadowOverride } from './photo-shadow';
 import { EditorSelection, sameSelection, selectedPhotoIdOf, selectedTextIdOf } from './selection';
 import { swapFrames } from './swap-frames';
@@ -41,10 +39,10 @@ export interface EditorCollage {
 /** Result of `EditorStore.load`. */
 export type EditorLoadResult = 'loaded' | 'notFound' | 'failed';
 
-/** A border shown on the canvas before it is committed (colour picker open). */
+/** An own border (or `null` = the collage default) shown on the canvas before it is committed. */
 interface BorderPreview {
   photoId: number;
-  border: PhotoBorder;
+  border: BorderSettings | null;
 }
 
 /** An own shadow (or `null` = the collage default) shown on the canvas before it is committed. */
@@ -144,9 +142,7 @@ export class EditorStore {
   });
   /** True if at least one placed photo has an own border (not the collage default). */
   readonly hasBorderOverrides = computed(() =>
-    this.photosSignal().some(
-      (photo) => isPlaced(photo.props) && hasBorderOverride(photo.props.border),
-    ),
+    this.photosSignal().some((photo) => isPlaced(photo.props) && hasBorderOverride(photo.props)),
   );
   /** True if at least one placed photo has an own shadow (not the collage default). */
   readonly hasShadowOverrides = computed(() =>
@@ -275,15 +271,15 @@ export class EditorStore {
    * Shows a border on the canvas without committing it (colour picker open). The next commit,
    * undo/redo or selection change removes the preview.
    */
-  previewPhotoBorder(id: number, border: PhotoBorder): void {
+  previewPhotoBorder(id: number, border: BorderSettings | null): void {
     this.borderPreviewSignal.set({ photoId: id, border });
   }
 
-  /** Sets the border of a placed photo; `null` values use the collage default border. */
-  setPhotoBorder(id: number, border: PhotoBorder): void {
+  /** Sets the own border of a placed photo; `null` uses the collage default border. */
+  setPhotoBorder(id: number, border: BorderSettings | null): void {
     this.borderPreviewSignal.set(null);
     this.editPlacedPhoto(id, (props) =>
-      sameBorder(props.border, border) ? null : { ...props, border },
+      sameOptionalBorder(ownBorder(props), border) ? null : { ...props, border },
     );
   }
 
@@ -294,8 +290,8 @@ export class EditorStore {
     }
     this.photosSignal.update((photos) =>
       photos.map((photo) =>
-        isPlaced(photo.props) && hasBorderOverride(photo.props.border)
-          ? { ...photo, props: { ...photo.props, border: inheritedBorder() } }
+        isPlaced(photo.props) && hasBorderOverride(photo.props)
+          ? { ...photo, props: { ...photo.props, border: null } }
           : photo,
       ),
     );
@@ -835,8 +831,8 @@ function sameOptionalShadow(a: Shadow | null, b: Shadow | null): boolean {
 
 /**
  * The arrangement frames with the `border`, `shadow` and `adjust` of the photos that are placed
- * already. A missing `shadow` stays missing (collage default), a missing `adjust` stays missing (no
- * adjustment). Frames of not placed photos are unchanged.
+ * already. A missing `border` or `shadow` stays missing (collage default), a missing `adjust` stays
+ * missing (no adjustment). Frames of not placed photos are unchanged.
  */
 function keepLook(frames: FrameMap, photos: readonly Photo[]): FrameMap {
   const propsById = new Map(photos.map((photo) => [photo.id, photo.props]));
@@ -848,7 +844,10 @@ function keepLook(frames: FrameMap, photos: readonly Photo[]): FrameMap {
       continue;
     }
     const { border, shadow, adjust } = props;
-    const look: PhotoProps = { ...frame, border };
+    const look: PhotoProps = { ...frame };
+    if (border !== undefined) {
+      look.border = border;
+    }
     if (shadow !== undefined) {
       look.shadow = shadow;
     }

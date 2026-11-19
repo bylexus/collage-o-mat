@@ -4,7 +4,9 @@ import type { KonvaEventObject } from 'konva/lib/Node';
 import { Image as KonvaImage } from 'konva/lib/shapes/Image';
 import { Rect as KonvaRect } from 'konva/lib/shapes/Rect';
 import type { NormalizedRect, PhotoProps } from '../../../core/models/photo';
+import { coverPart } from '../border-geometry';
 import { coverCrop } from '../geometry/crop';
+import type { Rect } from '../geometry/rect';
 import { clamp } from '../geometry/numbers';
 import { panCrop, zoomCrop } from '../geometry/transform';
 import type { ImageSize } from '../geometry/transform';
@@ -71,7 +73,12 @@ interface PanGesture {
 
 /**
  * Crop mode of one photo. The full source image is shown semi-transparent around the frame (lined
- * up with the frame content, rotation included) with an outline of the frame on top.
+ * up with the frame content, rotation included) with an outline of the image area on top.
+ *
+ * The image area is where `PhotoView` draws the image (`PhotoView.imageLayout`): the frame, or the
+ * inner area of a Polaroid border. With a Polaroid only the centred cover part of the stored crop is
+ * drawn there; the ghost, the pan and the wheel zoom anchor use that placement, so the crop is
+ * edited exactly as it is visible (the stored crop keeps the frame aspect).
  *
  * - Drag inside the frame pans the image; committed on release.
  * - Wheel over the frame (see `handleWheel`) zooms the crop; committed `ZOOM_COMMIT_DELAY_MS`
@@ -199,7 +206,14 @@ export class CropMode {
     if (local.x < 0 || local.y < 0 || local.x > widthMm || local.y > heightMm) {
       return false;
     }
-    if (this.zoomBy(wheelZoomFactor(deltaYPx), { x: local.x / widthMm, y: local.y / heightMm })) {
+    // Anchor: the source point under the pointer, normalized in the crop.
+    const { crop } = session;
+    const source = this.sourcePlacement(session, crop);
+    const anchor = {
+      x: ((local.x - source.x) / source.width - crop.x) / crop.width,
+      y: ((local.y - source.y) / source.height - crop.y) / crop.height,
+    };
+    if (this.zoomBy(wheelZoomFactor(deltaYPx), anchor)) {
       this.scheduleCommit();
     }
     return true;
@@ -266,9 +280,39 @@ export class CropMode {
   }
 
   /**
-   * Lines the overlay up with the frame. In frame-local mm the crop fills the frame, so the whole
-   * image is `width / crop.width` wide and starts at `-crop.x` of that width (same for y).
+   * Placement of the whole source image in frame-local mm for `crop`: the drawn part of the crop
+   * (the crop itself, or its cover part with a Polaroid) fills the view's image area. So the whole
+   * image is `area.width / part.width` wide and starts at `-part.x` of that width before the area
+   * (same for y). Without a border the area is the frame and the part is the crop.
    */
+  private sourcePlacement(session: CropSession, crop: NormalizedRect): Rect {
+    const { image: area, cover } = session.view.imageLayout();
+    let part = crop;
+    if (cover) {
+      const { widthPx, heightPx } = session.image;
+      const px = coverPart(
+        {
+          x: crop.x * widthPx,
+          y: crop.y * heightPx,
+          width: crop.width * widthPx,
+          height: crop.height * heightPx,
+        },
+        area.width,
+        area.height,
+      );
+      part = {
+        x: px.x / widthPx,
+        y: px.y / heightPx,
+        width: px.width / widthPx,
+        height: px.height / heightPx,
+      };
+    }
+    const width = area.width / part.width;
+    const height = area.height / part.height;
+    return { x: area.x - part.x * width, y: area.y - part.y * height, width, height };
+  }
+
+  /** Lines the ghost up with the drawn image and puts the outline on the image area. */
   private drawOverlay(): void {
     const session = this.session;
     if (!session) {
@@ -276,19 +320,22 @@ export class CropMode {
     }
     const { view, crop } = session;
     const frame = view.frameTransform();
-    const imageWidth = view.widthMm / crop.width;
-    const imageHeight = view.heightMm / crop.height;
+    const placement = this.sourcePlacement(session, crop);
+    const area = view.imageLayout().image;
     const source = view.loadedImage();
     this.ghost.setAttrs(frame);
     this.ghostImage.setAttrs({
       image: source ?? undefined,
       visible: source !== null,
-      x: -crop.x * imageWidth,
-      y: -crop.y * imageHeight,
-      width: imageWidth,
-      height: imageHeight,
+      ...placement,
     });
-    this.outline.setAttrs({ ...frame, width: view.widthMm, height: view.heightMm });
+    this.outline.setAttrs({
+      ...frame,
+      offsetX: frame.offsetX - area.x,
+      offsetY: frame.offsetY - area.y,
+      width: area.width,
+      height: area.height,
+    });
   }
 
   private notify(): void {
@@ -345,7 +392,10 @@ export class CropMode {
     window.addEventListener('pointercancel', this.onPanEnd);
   }
 
-  /** Pans from the start crop by the pointer movement in frame-local mm (clamping stays exact). */
+  /**
+   * Pans from the start crop by the pointer movement in frame-local mm (clamping stays exact). The
+   * crop's size in mm is taken from the drawn placement, so the image moves 1:1 with the pointer.
+   */
   private readonly onPanMove = (event: PointerEvent): void => {
     const pan = this.pan;
     const session = this.session;
@@ -353,12 +403,13 @@ export class CropMode {
       return;
     }
     const local = session.view.toLocal(this.pointerOf(event));
+    const source = this.sourcePlacement(session, pan.startCrop);
     const crop = panCrop(
       pan.startCrop,
       local.x - pan.start.x,
       local.y - pan.start.y,
-      session.view.widthMm,
-      session.view.heightMm,
+      source.width * pan.startCrop.width,
+      source.height * pan.startCrop.height,
     );
     this.gestures.markGesture();
     this.showCrop(session, crop);

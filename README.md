@@ -17,7 +17,8 @@ A Photo collage web app inspired by CollageIt! Pro, in Go / Angular.
 * Random photo order for grid and center mode
 * Swap two photos, set the centre photo
 * Background (color, gradient, image)
-* Individual photo border, border margins, paddings
+* **Photo borders** for all photos or per photo: colour border, Polaroid card (600 / i-Type, Go, Spectra formats, scaled to the frame), photo corners (album-style triangles)
+* Border margins, paddings
 * Free placement and rotation
 * Crop photos inside their frame (pan, zoom)
 * Photo adjustments (non-destructive): brightness, contrast, colour tint (e.g. sepia, greyscale)

@@ -15,7 +15,13 @@ import {
 } from '../../../core/models/collage';
 import type { Shadow } from '../../../core/models/shadow';
 import { limitValidators } from '../../../shared/number-limits';
-import { BORDER_WIDTH_LIMITS, BorderFields } from '../fields/border-fields';
+import {
+  BorderFields,
+  borderFormGroup,
+  borderFromForm,
+  borderWithPreviewColor,
+  toBorderFormValue,
+} from '../fields/border-fields';
 import { ColorField } from '../fields/color-field';
 import { NumberField } from '../fields/number-field';
 import {
@@ -170,8 +176,7 @@ import { SETTINGS_LIMITS } from './settings-limits';
       }
     }
     <app-border-fields
-      [widthControl]="form.controls.borderWidthMm"
-      [colorControl]="form.controls.borderColor"
+      [group]="form.controls.border"
       [lengthUnit]="lengthUnit()"
       (colorPreview)="previewBorderColor($event)"
       (committed)="commitBorder()"
@@ -297,8 +302,7 @@ export class AppearanceSettingsSection {
       }),
       overlayColor: [this.defaults.background.image.overlayColor],
     }),
-    borderWidthMm: [this.defaults.defaultBorder.widthMm, limitValidators(BORDER_WIDTH_LIMITS)],
-    borderColor: [this.defaults.defaultBorder.color],
+    border: borderFormGroup(this.fb, this.defaults.defaultBorder),
     shadow: shadowFormGroup(this.fb, this.defaults.defaultShadow),
   });
 
@@ -335,11 +339,11 @@ export class AppearanceSettingsSection {
       this.overlayOpacity.set(image.overlayOpacityPercent);
       this.blurMm.set(image.blurMm);
     });
-    syncFromInput(this.defaultBorder, ({ widthMm, color }) => {
-      this.form.controls.borderWidthMm.reset(widthMm);
-      this.form.controls.borderColor.setValue(color);
+    // Resets with events: the border fields follow the `type` control, the shadow fields the
+    // `enabled` control.
+    syncFromInput(this.defaultBorder, (border) => {
+      this.form.controls.border.reset(toBorderFormValue(border));
     });
-    // Resets with events: the shadow fields follow the `enabled` control.
     syncFromInput(this.defaultShadow, (shadow) => {
       this.form.controls.shadow.reset(toShadowFormValue(shadow));
     });
@@ -392,20 +396,22 @@ export class AppearanceSettingsSection {
     this.previewBackground({ gradient: { ...background.gradient, ...change } });
   }
 
+  /** Emits the default border of the form with the picker colour as a preview (only if valid). */
   protected previewBorderColor(color: string): void {
-    const { borderWidthMm } = this.form.controls;
-    if (borderWidthMm.valid) {
-      this.defaultBorderPreview.emit({ widthMm: borderWidthMm.value, color });
+    const border = borderWithPreviewColor(this.form.controls.border, this.defaultBorder(), color);
+    if (border) {
+      this.defaultBorderPreview.emit(border);
     }
   }
 
+  /** Emits the default border of the form; invalid fields are marked and nothing is emitted. */
   protected commitBorder(): void {
-    const { borderWidthMm, borderColor } = this.form.controls;
-    if (borderWidthMm.invalid) {
-      borderWidthMm.markAsTouched();
+    const border = borderFromForm(this.form.controls.border, this.defaultBorder());
+    if (!border) {
+      this.form.controls.border.markAllAsTouched();
       return;
     }
-    this.defaultBorderChange.emit({ widthMm: borderWidthMm.value, color: borderColor.value });
+    this.defaultBorderChange.emit(border);
   }
 
   /** Emits the default shadow of the form with the picker colour as a preview (only if valid). */

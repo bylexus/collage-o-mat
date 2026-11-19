@@ -13,8 +13,7 @@
   </p>
 } @else {
   <app-border-fields
-    [widthControl]="form.controls.widthMm"
-    [colorControl]="form.controls.color"
+    [group]="form.controls.border"
     [lengthUnit]="lengthUnit()"
     (colorPreview)="previewColor($event)"
     (committed)="commitBorder()"

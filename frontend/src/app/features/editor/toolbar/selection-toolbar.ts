@@ -26,7 +26,7 @@ import { MatButtonModule } from '@angular/material/button';
 import { MatIconModule } from '@angular/material/icon';
 import { MatTooltipModule } from '@angular/material/tooltip';
 import { BorderSettings } from '../../../core/models/collage';
-import { Photo, PhotoAdjust, PhotoBorder } from '../../../core/models/photo';
+import { Photo, PhotoAdjust } from '../../../core/models/photo';
 import type { Shadow } from '../../../core/models/shadow';
 import { CollageText, TextProps } from '../../../core/models/text';
 import { LengthUnit } from '../geometry/length-unit';
@@ -42,12 +42,7 @@ export type SelectionToolbarKind = 'photo' | 'text';
 
 /** Popover of a toolbar button. */
 type ToolbarPopoverId =
-  | 'photoBorder'
-  | 'photoShadow'
-  | 'photoAdjust'
-  | 'textEdit'
-  | 'textOutline'
-  | 'textShadow';
+  'photoBorder' | 'photoShadow' | 'photoAdjust' | 'textEdit' | 'textOutline' | 'textShadow';
 
 /** The open popover and the toolbar button it is connected to. */
 interface OpenPopover {
@@ -162,8 +157,8 @@ export class SelectionToolbar {
   readonly setCentre = output<void>();
   readonly delete = output<void>();
   /** Photo only: see `PhotoBorderSection`. */
-  readonly borderChange = output<PhotoBorder>();
-  readonly borderPreview = output<PhotoBorder>();
+  readonly borderChange = output<BorderSettings | null>();
+  readonly borderPreview = output<BorderSettings>();
   /** Photo only: see `PhotoShadowSection`. */
   readonly shadowChange = output<Shadow | null>();
   readonly shadowPreview = output<Shadow>();

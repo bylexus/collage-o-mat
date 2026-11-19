@@ -3,7 +3,6 @@ import type { NormalizedRect, PhotoProps } from '../../../core/models/photo';
 import { coverCrop, fullCrop, imageAspect } from '../geometry/crop';
 import { frameSide } from '../geometry/frame-size';
 import type { Rect } from '../geometry/rect';
-import { inheritedBorder } from '../photo-border';
 import type { ArrangePhoto } from './types';
 
 /** Re-exported for the strategies; defined in `geometry/frame-size.ts` (shared with the editor transforms). */
@@ -77,6 +76,6 @@ function frameProps(
     rotationDeg,
     z,
     crop,
-    border: inheritedBorder(),
+    border: null,
   };
 }

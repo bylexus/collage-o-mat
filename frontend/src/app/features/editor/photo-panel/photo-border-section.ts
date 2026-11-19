@@ -3,26 +3,31 @@ import { toSignal } from '@angular/core/rxjs-interop';
 import { NonNullableFormBuilder, ReactiveFormsModule } from '@angular/forms';
 import { MatCheckboxModule } from '@angular/material/checkbox';
 import { BorderSettings, defaultCollageSettings } from '../../../core/models/collage';
-import { isPlaced, Photo, PhotoBorder } from '../../../core/models/photo';
-import { limitValidators } from '../../../shared/number-limits';
-import { BORDER_WIDTH_LIMITS, BorderFields } from '../fields/border-fields';
+import { isPlaced, Photo } from '../../../core/models/photo';
+import {
+  BorderFields,
+  borderFormGroup,
+  borderFromForm,
+  borderWithPreviewColor,
+  toBorderFormValue,
+} from '../fields/border-fields';
 import { syncFromInput } from '../fields/sync-from-input';
 import { LengthUnit } from '../geometry/length-unit';
-import { hasBorderOverride, inheritedBorder } from '../photo-border';
+import { effectiveBorder, hasBorderOverride, sameBorder } from '../photo-border';
 
 /** Border values shown in the form for one photo. */
-interface BorderFormValue {
+interface BorderFormState {
   photoId: number;
   useDefault: boolean;
-  widthMm: number;
-  color: string;
+  /** The own border of the photo, or the default border for a photo without one. */
+  border: BorderSettings;
 }
 
 /**
- * Border of the selected photo (presentational): "Use collage default border" or an own width
- * and colour. Emits committed, valid changes (`borderChange`; field loses focus, picker closes,
- * checkbox changes, Escape) and the live border while the colour is changed in the picker
- * (`borderPreview`).
+ * Border of the selected photo (presentational): "Use collage default border" or an own full
+ * border (type and its values). Emits committed, valid changes (`borderChange`; type changes,
+ * field loses focus, picker closes, checkbox changes, Escape) and the live border while a colour
+ * is changed in the picker (`borderPreview`).
  */
 @Component({
   selector: 'app-photo-border-section',
@@ -40,89 +45,91 @@ export class PhotoBorderSection {
   /** Display unit of the lengths with the collage DPI. */
   readonly lengthUnit = input.required<LengthUnit>();
 
-  readonly borderChange = output<PhotoBorder>();
-  /** Border while the colour is changed in the picker (not committed). */
-  readonly borderPreview = output<PhotoBorder>();
+  /** Own border of the photo; `null` = use the collage default border. */
+  readonly borderChange = output<BorderSettings | null>();
+  /** Own border while a colour is changed in the picker (not committed). */
+  readonly borderPreview = output<BorderSettings>();
 
-  private readonly defaults = defaultCollageSettings();
-  protected readonly form = inject(NonNullableFormBuilder).group({
+  private readonly fb = inject(NonNullableFormBuilder);
+  protected readonly form = this.fb.group({
     useDefault: [true],
-    widthMm: [this.defaults.defaultBorder.widthMm, limitValidators(BORDER_WIDTH_LIMITS)],
-    color: [this.defaults.defaultBorder.color],
+    border: borderFormGroup(this.fb, defaultCollageSettings().defaultBorder),
   });
 
   protected readonly useDefault = toSignal(this.form.controls.useDefault.valueChanges, {
     initialValue: this.form.controls.useDefault.value,
   });
 
-  /** Changes only when the shown values change (not when the photo is moved). */
-  private readonly formValue = computed(() => borderFormValue(this.photo(), this.defaultBorder()), {
-    equal: sameFormValue,
+  /** Changes only when the shown border values change (not when the photo is moved). */
+  private readonly formState = computed(() => borderFormState(this.photo(), this.defaultBorder()), {
+    equal: sameBorderFormState,
   });
 
   constructor() {
-    syncFromInput(this.formValue, ({ useDefault, widthMm, color }) =>
-      this.form.reset({ useDefault, widthMm, color }),
+    // Resets with events: the border fields follow the `type` control.
+    syncFromInput(this.formState, ({ useDefault, border }) =>
+      this.form.reset({ useDefault, border: toBorderFormValue(border) }),
     );
   }
 
+  /**
+   * Checked: the photo uses the default border again (`null`). Unchecked: commits the shown
+   * border (the default border for a photo without an own border) as the own border.
+   */
   protected commitUseDefault(): void {
     if (this.form.controls.useDefault.value) {
-      this.borderChange.emit(inheritedBorder());
+      this.borderChange.emit(null);
     } else {
       this.commitBorder();
     }
   }
 
-  protected previewColor(color: string): void {
-    const { widthMm } = this.form.controls;
-    if (widthMm.valid) {
-      this.borderPreview.emit({ widthMm: widthMm.value, color });
-    }
-  }
-
   /**
-   * Escape: commits an own width or colour that differs from the shown values. Unchanged fields
-   * are not committed, so a partial override is not made a full one without an edit.
+   * Escape: commits the own border fields (no-op in the store if unchanged). Nothing with "Use
+   * collage default border" checked (no own fields are shown).
    */
   protected commitPending(): void {
-    const shown = this.formValue();
-    const { useDefault, widthMm, color } = this.form.getRawValue();
-    if (!useDefault && (widthMm !== shown.widthMm || color !== shown.color)) {
+    if (!this.form.controls.useDefault.value) {
       this.commitBorder();
     }
   }
 
+  /** Emits the own border with the picker colour as a preview (only if the fields are valid). */
+  protected previewColor(color: string): void {
+    const border = borderWithPreviewColor(
+      this.form.controls.border,
+      this.formState().border,
+      color,
+    );
+    if (border) {
+      this.borderPreview.emit(border);
+    }
+  }
+
+  /** Emits the own border of the form; invalid fields are marked and nothing is emitted. */
   protected commitBorder(): void {
-    const { widthMm, color } = this.form.controls;
-    if (widthMm.invalid) {
-      widthMm.markAsTouched();
+    const border = borderFromForm(this.form.controls.border, this.formState().border);
+    if (!border) {
+      this.form.controls.border.markAllAsTouched();
       return;
     }
-    this.borderChange.emit({ widthMm: widthMm.value, color: color.value });
+    this.borderChange.emit(border);
   }
 }
 
 /**
- * Form values of a photo: "use default" if the photo has no own border; the fields show the own
- * values, missing ones are filled from the default border (so a partial override is shown as an
- * own border with the default for the missing value).
+ * Border form values of a photo: "use default" if the photo has no own border; the fields show
+ * the own border, or the default border for a photo without one (the start values of an override).
  */
-function borderFormValue(photo: Photo, defaultBorder: BorderSettings): BorderFormValue {
-  const border = isPlaced(photo.props) ? photo.props.border : inheritedBorder();
+function borderFormState(photo: Photo, defaultBorder: BorderSettings): BorderFormState {
+  const { props } = photo;
   return {
     photoId: photo.id,
-    useDefault: !hasBorderOverride(border),
-    widthMm: border.widthMm ?? defaultBorder.widthMm,
-    color: border.color ?? defaultBorder.color,
+    useDefault: !isPlaced(props) || !hasBorderOverride(props),
+    border: isPlaced(props) ? effectiveBorder(props, defaultBorder) : defaultBorder,
   };
 }
 
-function sameFormValue(a: BorderFormValue, b: BorderFormValue): boolean {
-  return (
-    a.photoId === b.photoId &&
-    a.useDefault === b.useDefault &&
-    a.widthMm === b.widthMm &&
-    a.color === b.color
-  );
+function sameBorderFormState(a: BorderFormState, b: BorderFormState): boolean {
+  return a.photoId === b.photoId && a.useDefault === b.useDefault && sameBorder(a.border, b.border);
 }

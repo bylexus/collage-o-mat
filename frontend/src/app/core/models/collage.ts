@@ -41,9 +41,63 @@ export interface PageSettings extends PageSize {
   dpi: number;
 }
 
-export interface BorderSettings {
+/**
+ * Kind of the photo border: no border, a simple colour border, a Polaroid-style card or photo
+ * corners (four triangles at the frame corners).
+ */
+export type BorderType = 'none' | 'color' | 'polaroid' | 'corners';
+
+/** All border types. */
+export const BORDER_TYPES: readonly BorderType[] = ['none', 'color', 'polaroid', 'corners'];
+
+/** Pre-defined Polaroid card formats (sizes in `features/editor/border-geometry.ts`). */
+export type PolaroidFormat = 'p600' | 'go' | 'spectra';
+
+/** All Polaroid formats. */
+export const POLAROID_FORMATS: readonly PolaroidFormat[] = ['p600', 'go', 'spectra'];
+
+/** How the size of the photo corners is given: in mm, or in % of the shorter frame side. */
+export type CornerSizeMode = 'fixed' | 'relative';
+
+/** All corner size modes. */
+export const CORNER_SIZE_MODES: readonly CornerSizeMode[] = ['fixed', 'relative'];
+
+/** Values of the `color` border type: a filled border of `widthMm` inside the frame. */
+export interface ColorBorderSettings {
   widthMm: number;
   color: string;
+}
+
+/**
+ * Values of the `polaroid` border type: a card of the `format` (scaled to the frame, thick border
+ * at the bottom) in the card `color`.
+ */
+export interface PolaroidBorderSettings {
+  format: PolaroidFormat;
+  color: string;
+}
+
+/**
+ * Values of the `corners` border type: four triangles in `color` at the frame corners. The leg
+ * length is `sizeMm` (mode `fixed`) or `sizePercent` % of the shorter frame side (mode `relative`);
+ * both values are kept.
+ */
+export interface CornersBorderSettings {
+  color: string;
+  sizeMode: CornerSizeMode;
+  sizeMm: number;
+  sizePercent: number;
+}
+
+/**
+ * Photo border: the selected `type` and the values of each type (kept when the type changes, so
+ * switching back restores them). Type `none` has no values.
+ */
+export interface BorderSettings {
+  type: BorderType;
+  color: ColorBorderSettings;
+  polaroid: PolaroidBorderSettings;
+  corners: CornersBorderSettings;
 }
 
 export interface GridSettings {
@@ -324,7 +378,9 @@ export function customPageSettings(size: PageSize, dpi = DEFAULT_DPI): PageSetti
 
 /**
  * Settings of a new collage: A4 landscape, 300 DPI, white colour background (gradient white to
- * black at 180°, image without photo and with a transparent black overlay), no border, shadow off
+ * black at 180°, image without photo and with a transparent black overlay), no border (colour
+ * border values: 3 mm white; Polaroid: 600 format, white card; photo corners: black, 12 % of the
+ * shorter frame side, fixed size 10 mm), shadow off
  * (black, 40 %, blur 3 mm, offset 1.5/1.5 mm), grid mode,
  * grid and center mode in import order (random order off), heap mode with the whole image,
  * 120 % coverage, ±20 % size, ±15° rotation, masonry mode in rows with an automatic line count
@@ -339,7 +395,12 @@ export function defaultCollageSettings(): CollageSettings {
       gradient: { kind: 'linear', from: '#ffffff', to: '#000000', angleDeg: 180 },
       image: { photoId: null, overlayColor: '#000000', overlayOpacityPercent: 0, blurMm: 0 },
     },
-    defaultBorder: { widthMm: 0, color: '#ffffff' },
+    defaultBorder: {
+      type: 'none',
+      color: { widthMm: 3, color: '#ffffff' },
+      polaroid: { format: 'p600', color: '#ffffff' },
+      corners: { color: '#000000', sizeMode: 'relative', sizeMm: 10, sizePercent: 12 },
+    },
     defaultShadow: {
       enabled: false,
       color: '#000000',
@@ -459,11 +520,42 @@ function normalizeImageBackground(
   };
 }
 
+/**
+ * Border merged field by field. Without a valid `type` (e.g. the old format `{ widthMm, color }`)
+ * the defaults are used: old borders are dropped.
+ */
 function normalizeBorder(raw: unknown, defaults: BorderSettings): BorderSettings {
   const source = asRecord(raw);
+  const type = BORDER_TYPES.find((item) => item === source['type']);
+  if (!type) {
+    return {
+      ...defaults,
+      color: { ...defaults.color },
+      polaroid: { ...defaults.polaroid },
+      corners: { ...defaults.corners },
+    };
+  }
+  const color = asRecord(source['color']);
+  const polaroid = asRecord(source['polaroid']);
+  const corners = asRecord(source['corners']);
   return {
-    widthMm: numberOr(source['widthMm'], defaults.widthMm),
-    color: stringOr(source['color'], defaults.color),
+    type,
+    color: {
+      widthMm: numberOr(color['widthMm'], defaults.color.widthMm),
+      color: stringOr(color['color'], defaults.color.color),
+    },
+    polaroid: {
+      format:
+        POLAROID_FORMATS.find((item) => item === polaroid['format']) ?? defaults.polaroid.format,
+      color: stringOr(polaroid['color'], defaults.polaroid.color),
+    },
+    corners: {
+      color: stringOr(corners['color'], defaults.corners.color),
+      sizeMode:
+        CORNER_SIZE_MODES.find((item) => item === corners['sizeMode']) ?? defaults.corners.sizeMode,
+      sizeMm: numberOr(corners['sizeMm'], defaults.corners.sizeMm),
+      sizePercent: numberOr(corners['sizePercent'], defaults.corners.sizePercent),
+    },
   };
 }
 

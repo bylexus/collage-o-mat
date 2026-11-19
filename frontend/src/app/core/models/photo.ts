@@ -1,5 +1,6 @@
 /** Photo DTOs of a collage and the import from a connector. */
 
+import type { BorderSettings } from './collage';
 import type { Shadow } from './shadow';
 
 /** Photo of a collage as returned by the API. */
@@ -22,12 +23,6 @@ export interface NormalizedRect {
   y: number;
   width: number;
   height: number;
-}
-
-/** Per-photo border override; `null` values use the collage `defaultBorder`. Drawn inside the frame. */
-export interface PhotoBorder {
-  widthMm: number | null;
-  color: string | null;
 }
 
 /**
@@ -57,7 +52,13 @@ export interface PhotoProps {
   z: number;
   /** Part of the source image shown in the frame. */
   crop: NormalizedRect;
-  border: PhotoBorder;
+  /**
+   * Own border of the photo (drawn inside the frame). Missing or `null` = the collage
+   * `defaultBorder`; an object = a full own border. Photo props are not normalized on load: a value
+   * that is no valid `BorderSettings` (e.g. the old format `{ widthMm, color }`) counts as no own
+   * border (see `effectiveBorder`).
+   */
+  border?: BorderSettings | null;
   /**
    * Own drop shadow of the photo. Missing or `null` = the collage `defaultShadow`; an object = a
    * full own shadow (`enabled: false` switches the shadow off for this photo). Optional because

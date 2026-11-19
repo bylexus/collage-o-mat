@@ -322,7 +322,7 @@ library. UI language English, all texts marked for i18n (build-time Angular i18n
 | `features/editor/toolbar/` | `SelectionToolbar`: floating toolbar below the selected photo or text (anchor from `CollageRenderer`, hidden during gestures and crop mode, only the Swap button in swap mode); actions and movable CDK overlay popovers |
 | `features/editor/photo-panel/`, `text-panel/` | Popover sections of the selection toolbar (photo: border, shadow, adjustments; text: edit, outline, shadow) |
 | `features/editor/settings-panel/` | Collage settings in the right panel (the only content of the right panel) |
-| `features/editor/fields/` | Shared form fields (colour, number, `BorderFields`, `ShadowFields` + `SHADOW_LIMITS`) |
+| `features/editor/fields/` | Shared form fields (colour, number, `BorderFields` + `borderFormGroup`, `ShadowFields` + `SHADOW_LIMITS`) |
 | `features/editor/geometry/` | Pure math: crop, units (mm/pt/px), gradients, snap grid |
 | `features/editor/import/`, `upload/` | Connector import dialogs, local file upload. The editor toolbar "Import" button opens a `mat-menu` that lists the user's connectors (name + type; loaded with `ConnectorApi.list()` each time the menu opens; "Add a connector" links to the connector settings if there is none). An entry opens the dialog of the connector's type with that connector (`ImportDialogData.connector`): Immich (`import-dialog.*`: albums) or Synology (`synology-import-dialog.*`: tabs "Albums" / "Folders" / "Shared with me" / "Shared Space"; "Shared Space" is shown only if `SynologyApi.sharedSpace` returns `available: true` (checked when the dialog opens; on an error the tab is shown); folder navigation with breadcrumb, one trail per space (Personal Space, Shared Space)) or Google Photos (`google-photos-import-dialog.*`:
 phases `start` ("Open Google Photos"), `waiting` (spinner, Cancel; popup opened synchronously on the
@@ -360,8 +360,29 @@ in pt, crop as normalized rectangle (0..1) of the source image. `z` is shared be
 The exact JSON shapes are the TypeScript models in `frontend/src/app/core/models/`.
 
 Photo look: the collage settings hold `defaultBorder` and `defaultShadow`; each photo's props can override
-them (`border`: per-field `null` = default; `shadow`: missing or `null` = default, else a full own
-`Shadow`, `enabled: false` = no shadow for this photo). Texts and photos use the same `Shadow` type.
+them (`border` and `shadow`: missing or `null` = default, else a full own object). A border
+(`BorderSettings`) has a `type` (`none`, `color`, `polaroid`, `corners`) and the values of each type
+(`color`: `widthMm`, `color`; `polaroid`: `format` `p600`/`go`/`spectra`, card `color`; `corners`:
+`color`, `sizeMode` `fixed`/`relative`, `sizeMm`, `sizePercent`), kept when the type changes. A collage `defaultBorder` without a valid `type` (old format
+`{ widthMm, color }`) is normalized to the defaults (type `none`); a photo `border` that is no valid
+`BorderSettings` counts as no own border (`features/editor/photo-border.ts`: `effectiveBorder`,
+`hasBorderOverride`). `PhotoView` draws the effective border with the pure layout of
+`features/editor/border-geometry.ts` (`borderLayout`: fill rect + inner image clip + image rect). Polaroid: the card sizes are
+`POLAROID_FORMAT_SIZES`; the card is scaled to the frame (`s = min(frameW / cardW, frameH / cardH)`),
+the thick border is always at the bottom of the frame, and the image is cover-fitted into the inner
+area (the centred part of the stored crop with the inner aspect, `coverPart`; the stored crop, crop
+mode, arrange and swap do not know about the border). Photo corners: the image fills the frame (as
+`none`); four closed Konva `Line` triangles lie on top of it at the frame corners, leg = `sizeMm` or
+`sizePercent` % of the shorter frame side, clamped to half of it (`cornerLegMm`). The triangles have a
+gap g = 2.5 % of the leg to the photo (`CORNER_GAP_RATIO`): the right-angle corner is the frame corner
+moved out by g in both directions, the legs lie g outside the frame edges, so the triangles stick out
+of the frame (the page background shows in the gap). They are in the outer, not clipped photo group
+(above the clipped content), so neither they nor their shadow are cut by the frame; each has a fixed
+soft shadow (black, 35 %, blur 8 % / offset 3 % of the leg, down-right). With corners the photo group
+reports the frame as its client rect (`PhotoGroup` in `photo-view.ts`), so the selection handles,
+resize snapping and the toolbar anchor use the frame only, as for the other types. `BorderFields`
+(type select + fields of the type) is used in Appearance and in the photo border popover. An own
+`shadow` with `enabled: false` = no shadow for this photo. Texts and photos use the same `Shadow` type.
 Re-arrange sets new frames but keeps each photo's own border, shadow and adjustment.
 
 Photo adjustments: each photo's props can have `adjust` (`brightness`, `contrast` -100..100,
