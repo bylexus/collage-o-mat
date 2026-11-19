@@ -2,6 +2,7 @@
 import type Konva from 'konva/lib/Core';
 import { Transformer } from 'konva/lib/shapes/Transformer';
 import type { Box, TransformerConfig } from 'konva/lib/shapes/Transformer';
+import type { Vector2d } from 'konva/lib/types';
 import { HANDLE_FILL, SELECTION_COLOR, SELECTION_STROKE_PX } from './canvas-theme';
 import type { PressGestureTracker } from './press-gesture';
 
@@ -34,7 +35,7 @@ export interface SelectionTransformerOptions {
 
 /**
  * A `Konva.Transformer` on the selected element with the look and behaviour all element kinds
- * share: rotation handle (snaps at 0/90/180/270°), no flipping, a minimum box size, handles and
+ * share: rotation handle (snaps at 0/90/180/270°; Alt/Option held: free rotation), no flipping, a minimum box size, handles and
  * border in screen px (same size at any zoom). A transform marks the press as a gesture (no click
  * selection afterwards) and keeps the view in its gesture state from start to end.
  *
@@ -44,6 +45,8 @@ export interface SelectionTransformerOptions {
 export abstract class SelectionTransformer<V extends TransformableView> {
   protected readonly transformer: Transformer;
   protected view: V | null = null;
+  /** Alt/Option state of the latest pointer move of a transform (snapping off while held). */
+  protected altPressed = false;
 
   constructor(
     layer: Konva.Layer,
@@ -67,6 +70,14 @@ export abstract class SelectionTransformer<V extends TransformableView> {
       config.enabledAnchors = options.enabledAnchors;
     }
     this.transformer = new Transformer(config);
+    // Konva's `boundBoxFunc` gets no event. The anchor bound function gets the native event of the
+    // same pointer move and runs before the rotation snap and `boundBoxFunc`; it only reads the
+    // Alt key (rotation snaps off while held), the anchor is not bound.
+    this.transformer.anchorDragBoundFunc((_oldPos: Vector2d, newPos: Vector2d, event: unknown) => {
+      this.altPressed = isAltPressed(event);
+      this.transformer.rotationSnaps(this.altPressed ? [] : ROTATION_SNAPS_DEG);
+      return newPos;
+    });
     this.transformer.on('transformstart', () => this.onTransformStart());
     this.transformer.on('transform', () => this.onTransform());
     this.transformer.on('transformend', () => this.onTransformEnd());
@@ -168,4 +179,9 @@ export abstract class SelectionTransformer<V extends TransformableView> {
 function shrinksBelow(oldSide: number, newSide: number, min: number): boolean {
   const side = Math.abs(newSide);
   return side < min && side < Math.abs(oldSide);
+}
+
+/** True if the native event of a pointer move has the Alt (Option) key held. */
+function isAltPressed(event: unknown): boolean {
+  return typeof event === 'object' && event !== null && 'altKey' in event && event.altKey === true;
 }

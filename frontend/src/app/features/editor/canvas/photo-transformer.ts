@@ -1,7 +1,6 @@
 // Selection handles (rotate, resize) of the selected photo. Plain class without Angular.
 import type Konva from 'konva/lib/Core';
 import type { Box } from 'konva/lib/shapes/Transformer';
-import type { Vector2d } from 'konva/lib/types';
 import { MovingEdges, SnapGrid, snapResizeRect } from '../geometry/snap-grid';
 import type { FrameBox } from '../geometry/transform';
 import type { PhotoView } from './photo-view';
@@ -54,8 +53,6 @@ export class PhotoTransformer extends SelectionTransformer<PhotoView> {
   /** Aspect mode of the running transform (set from the handle at `transformstart`). */
   private keepAspect = true;
   private snapGrid: SnapGrid | null = null;
-  /** Alt/Option state of the latest pointer move of a transform. */
-  private altPressed = false;
 
   constructor(
     layer: Konva.Layer,
@@ -63,12 +60,6 @@ export class PhotoTransformer extends SelectionTransformer<PhotoView> {
     private readonly callbacks: PhotoTransformerCallbacks,
   ) {
     super(layer, gestures, { minSizeMm: MIN_FRAME_SIZE_MM });
-    // Konva's `boundBoxFunc` gets no event. The anchor bound function gets the native event of the
-    // same pointer move and runs just before it; it only reads the Alt key, the anchor is not bound.
-    this.transformer.anchorDragBoundFunc((_oldPos: Vector2d, newPos: Vector2d, event: unknown) => {
-      this.altPressed = isAltPressed(event);
-      return newPos;
-    });
   }
 
   /** The snap grid for resizing, or `null` (free resize). */
@@ -177,9 +168,4 @@ function setEdge(edges: MovingEdges, worldSide: Side): void {
   } else {
     edges.y = worldSide === 'top' ? 'start' : 'end';
   }
-}
-
-/** True if the native event of a pointer move has the Alt (Option) key held. */
-function isAltPressed(event: unknown): boolean {
-  return typeof event === 'object' && event !== null && 'altKey' in event && event.altKey === true;
 }
