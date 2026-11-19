@@ -127,12 +127,12 @@ could log the password or the plain bytes). The UI/doc text must say this honest
 10. HTTP status / error codes for "locked" and "wrong password".
 11. Metadata leak: `photos.source_asset_id` (Immich id or `sha256:<hex>` of the upload) and image size stay
     plain — acceptable? The upload hash allows to check if a known image is in the collage.
-12. Interaction with `doc/agent-plans/user-storage-quota.md`: count encrypted size (+28 bytes per file)?
+12. Interaction with `doc/agent-plans/done/user-storage-quota.md`: count encrypted size (+28 bytes per file)?
 
 ## Context for a new agent
 
 - **Read first:** `doc/architecture.md` (layering, data model, API, security); `doc/development.md`;
-  `doc/agent-plans/duplicate-collage.md` (copies photo files per collage); `doc/agent-plans/user-storage-quota.md`.
+  `doc/agent-plans/duplicate-collage.md` (copies photo files per collage); `doc/agent-plans/done/user-storage-quota.md`.
 - **Facts from the code (2026-11-14):**
   - Photo files: `DiskStorage` (`backend/internal/photo/storage.go`) with `Save` (atomic, temp + rename),
     `Open` (returns `io.ReadSeekCloser`), `Remove`, `RemoveDir`; paths relative to the photo dir, built by

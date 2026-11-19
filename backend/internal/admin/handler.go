@@ -2,6 +2,7 @@ package admin
 
 import (
 	"bytes"
+	"encoding/json"
 	"net/http"
 	"time"
 
@@ -37,18 +38,38 @@ func (h *Handler) RegisterRoutes(mux *http.ServeMux, requireAuth httpapi.Middlew
 // the avatar version (?v=) to the URL (same as the profile avatar).
 const avatarCacheControl = "private, max-age=31536000, immutable"
 
+// createRequest is the create dialog. A missing or null maxStorageBytes
+// gives the user the server default limit.
 type createRequest struct {
-	Username string `json:"username"`
-	Password string `json:"password"`
-	IsAdmin  bool   `json:"isAdmin"`
+	Username        string `json:"username"`
+	Password        string `json:"password"`
+	IsAdmin         bool   `json:"isAdmin"`
+	MaxStorageBytes *int64 `json:"maxStorageBytes"`
 }
 
-// updateRequest is the edit dialog. isAdmin and isActive are required; an
-// empty or missing newPassword keeps the password.
+// updateRequest is the edit dialog. isAdmin, isActive and maxStorageBytes
+// are required (maxStorageBytes null = server default); an empty or
+// missing newPassword keeps the password.
 type updateRequest struct {
-	IsAdmin     *bool  `json:"isAdmin"`
-	IsActive    *bool  `json:"isActive"`
-	NewPassword string `json:"newPassword"`
+	IsAdmin         *bool         `json:"isAdmin"`
+	IsActive        *bool         `json:"isActive"`
+	MaxStorageBytes nullableInt64 `json:"maxStorageBytes"`
+	NewPassword     string        `json:"newPassword"`
+}
+
+// nullableInt64 is a JSON number field that tells a missing field (Set
+// false) from null (Set true, Value nil).
+type nullableInt64 struct {
+	Set   bool
+	Value *int64
+}
+
+// UnmarshalJSON implements json.Unmarshaler. It is called only for a
+// present field, also for null.
+func (n *nullableInt64) UnmarshalJSON(b []byte) error {
+	n.Set = true
+	n.Value = nil
+	return json.Unmarshal(b, &n.Value)
 }
 
 // userResponse is a user of the admin user list; create and update return
@@ -67,6 +88,14 @@ type userResponse struct {
 	LastActiveAt *time.Time `json:"lastActiveAt"`
 	CollageCount int        `json:"collageCount"`
 	PhotoCount   int        `json:"photoCount"`
+	// UsedStorageBytes is the sum of the photo sizes of the user.
+	UsedStorageBytes int64 `json:"usedStorageBytes"`
+	// MaxStorageBytes is the own storage limit (0 = unlimited), or null if
+	// the user has the server default.
+	MaxStorageBytes *int64 `json:"maxStorageBytes"`
+	// EffectiveMaxStorageBytes is the own limit or the server default;
+	// 0 = unlimited.
+	EffectiveMaxStorageBytes int64 `json:"effectiveMaxStorageBytes"`
 }
 
 func newUserResponse(u *UserSummary) userResponse {
@@ -80,6 +109,10 @@ func newUserResponse(u *UserSummary) userResponse {
 		LastActiveAt:  u.LastActiveAt,
 		CollageCount:  u.CollageCount,
 		PhotoCount:    u.PhotoCount,
+
+		UsedStorageBytes:         u.UsedStorageBytes,
+		MaxStorageBytes:          u.MaxStorageBytes,
+		EffectiveMaxStorageBytes: u.EffectiveMaxStorageBytes,
 	}
 }
 
@@ -101,7 +134,7 @@ func (h *Handler) create(w http.ResponseWriter, r *http.Request) {
 	if !httpapi.DecodeJSON(w, r, &req) {
 		return
 	}
-	u, err := h.service.CreateUser(r.Context(), req.Username, req.Password, req.IsAdmin)
+	u, err := h.service.CreateUser(r.Context(), req.Username, req.Password, req.IsAdmin, req.MaxStorageBytes)
 	if err != nil {
 		httpapi.WriteServiceError(w, err)
 		return
@@ -119,14 +152,15 @@ func (h *Handler) update(w http.ResponseWriter, r *http.Request) {
 	if !httpapi.DecodeJSON(w, r, &req) {
 		return
 	}
-	if req.IsAdmin == nil || req.IsActive == nil {
-		httpapi.WriteError(w, http.StatusBadRequest, "isAdmin and isActive are required")
+	if req.IsAdmin == nil || req.IsActive == nil || !req.MaxStorageBytes.Set {
+		httpapi.WriteError(w, http.StatusBadRequest, "isAdmin, isActive and maxStorageBytes are required")
 		return
 	}
 	u, err := h.service.UpdateUser(r.Context(), auth.UserID(r), id, Update{
-		IsAdmin:     *req.IsAdmin,
-		IsActive:    *req.IsActive,
-		NewPassword: req.NewPassword,
+		IsAdmin:         *req.IsAdmin,
+		IsActive:        *req.IsActive,
+		MaxStorageBytes: req.MaxStorageBytes.Value,
+		NewPassword:     req.NewPassword,
 	})
 	if err != nil {
 		httpapi.WriteServiceError(w, err)

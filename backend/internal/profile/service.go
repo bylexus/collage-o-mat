@@ -1,7 +1,8 @@
 // Package profile contains the profile of the logged-in user: password
-// change and avatar. The password rules and the brute-force limiter live in
-// the auth package; profile reaches them only through the Passwords
-// interface.
+// change, avatar and storage usage. The password rules and the brute-force
+// limiter live in the auth package; profile reaches them only through the
+// Passwords interface. The storage usage comes from the quota package
+// through the Storage interface.
 package profile
 
 import (
@@ -38,6 +39,14 @@ type Passwords interface {
 	ChangePassword(ctx context.Context, userID, sessionID uint, clientIP, currentPassword, newPassword string) error
 }
 
+// Storage gives the photo storage usage of a user. The quota package
+// implements it (*quota.Service), main.go wires it.
+type Storage interface {
+	// Usage returns the used photo bytes and the effective storage limit of
+	// the user (0 = unlimited).
+	Usage(ctx context.Context, userID uint) (used, limit int64, err error)
+}
+
 // Store is the persistence the service needs (implemented by GormStore).
 type Store interface {
 	// FindAvatar returns apperr.ErrNotFound if the user has no avatar.
@@ -56,6 +65,7 @@ type Store interface {
 type Service struct {
 	store     Store
 	passwords Passwords
+	storage   Storage
 	// decoder is the server-wide limiter for image decodes (shared with
 	// the photo service).
 	decoder *imaging.DecodeLimiter
@@ -63,8 +73,8 @@ type Service struct {
 
 // NewService returns the profile service. decoder must be the same limiter
 // instance that the other image-decoding services use.
-func NewService(store Store, passwords Passwords, decoder *imaging.DecodeLimiter) *Service {
-	return &Service{store: store, passwords: passwords, decoder: decoder}
+func NewService(store Store, passwords Passwords, storage Storage, decoder *imaging.DecodeLimiter) *Service {
+	return &Service{store: store, passwords: passwords, storage: storage, decoder: decoder}
 }
 
 // ChangePassword changes the password of the user and keeps only the
@@ -73,6 +83,12 @@ func (s *Service) ChangePassword(
 	ctx context.Context, userID, sessionID uint, clientIP, currentPassword, newPassword string,
 ) error {
 	return s.passwords.ChangePassword(ctx, userID, sessionID, clientIP, currentPassword, newPassword)
+}
+
+// StorageUsage returns the used photo bytes and the effective storage
+// limit of the user (0 = unlimited).
+func (s *Service) StorageUsage(ctx context.Context, userID uint) (used, limit int64, err error) {
+	return s.storage.Usage(ctx, userID)
 }
 
 // SetAvatar sets or replaces the avatar of the user. body is an image of

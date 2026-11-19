@@ -11,11 +11,12 @@ import (
 	"strconv"
 
 	"collageomat/internal/jsoncol"
+	"collageomat/internal/quota"
 )
 
 // DuplicateResult is the result of Service.Duplicate: the new collage
-// (PhotoCount is the number of copied photos) and the number of photos that
-// were not copied because their file is missing.
+// (PhotoCount and SizeBytes are those of the copied photos) and the number
+// of photos that were not copied because their file is missing.
 type DuplicateResult struct {
 	Summary
 	SkippedPhotos int
@@ -30,8 +31,17 @@ type DuplicateResult struct {
 // A photo whose file is missing is skipped and counted in SkippedPhotos.
 // All other errors fail the whole copy: the database changes are rolled
 // back and the photo files of the new collage are removed.
+//
+// Storage limit: if the used bytes of the user plus the size of the source
+// collage's photos are more than the limit, the copy is refused before
+// anything is copied (quota.CopyError, apperr conflict). Each copied photo
+// is checked again when it is stored (see Photos.CopyAllForCollage).
 func (s *Service) Duplicate(ctx context.Context, userID, id uint, name string) (*DuplicateResult, error) {
 	name, err := validName(name)
+	if err != nil {
+		return nil, err
+	}
+	limit, err := s.checkDuplicateQuota(ctx, userID, id)
 	if err != nil {
 		return nil, err
 	}
@@ -56,7 +66,7 @@ func (s *Service) Duplicate(ctx context.Context, userID, id uint, name string) (
 		}
 		newID = c.ID
 
-		idMap, skipped, err := s.photos.CopyAllForCollage(ctx, src.ID, c.ID)
+		idMap, skipped, err := s.photos.CopyAllForCollage(ctx, src.ID, c.ID, userID, limit)
 		if err != nil {
 			return fmt.Errorf("copy photos of collage %d to collage %d: %w", src.ID, c.ID, err)
 		}
@@ -73,13 +83,17 @@ func (s *Service) Duplicate(ctx context.Context, userID, id uint, name string) (
 			return err
 		}
 
-		// Reload to return the stored settings and timestamps.
+		// Reload to return the stored settings, timestamps and photo stats.
 		copied, err := s.store.FindForUser(ctx, userID, c.ID)
 		if err != nil {
 			return err
 		}
+		stats, err := s.photos.StatsByCollages(ctx, []uint{c.ID})
+		if err != nil {
+			return fmt.Errorf("count photos of collage %d: %w", c.ID, err)
+		}
 		result = &DuplicateResult{
-			Summary:       Summary{Collage: *copied, PhotoCount: len(idMap)},
+			Summary:       summary(*copied, stats[c.ID]),
 			SkippedPhotos: skipped,
 		}
 		return nil
@@ -95,6 +109,32 @@ func (s *Service) Duplicate(ctx context.Context, userID, id uint, name string) (
 		return nil, err
 	}
 	return result, nil
+}
+
+// checkDuplicateQuota checks that a copy of the collage id of the user fits
+// into the user's storage limit and returns the limit (0 = unlimited). It
+// runs before the transaction of Duplicate, so that the reads do not make
+// the read-to-write lock upgrade window of the transaction longer. It is a
+// fast fail only; the check per photo in the transaction is the guarantee.
+func (s *Service) checkDuplicateQuota(ctx context.Context, userID, id uint) (int64, error) {
+	if _, err := s.store.FindForUser(ctx, userID, id); err != nil {
+		return 0, err
+	}
+	used, limit, err := s.quotas.Usage(ctx, userID)
+	if err != nil {
+		return 0, err
+	}
+	if limit == 0 {
+		return 0, nil
+	}
+	needed, err := s.photos.SizeByCollage(ctx, id)
+	if err != nil {
+		return 0, fmt.Errorf("size of collage %d: %w", id, err)
+	}
+	if quota.Exceeds(used, needed, limit) {
+		return 0, quota.CopyError(used, limit, needed)
+	}
+	return limit, nil
 }
 
 // copyTexts copies the texts of collage srcID into collage dstID with new

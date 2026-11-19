@@ -18,7 +18,7 @@ collageomat (one Go binary)
 Main principles:
 
 - **One static binary** (`CGO_ENABLED=0`), no separate web server. Subcommands: `serve`, `user add`,
-  `user passwd`.
+  `user passwd`, `photos recalc-size`.
 - **Frontend owns geometry.** Arrangement algorithms, crop math, rendering and export run in the browser
   (TypeScript + Konva). The backend never renders a collage.
 - **Typed key columns + JSON props.** Tables have typed columns only for identity, ownership and file data.
@@ -48,14 +48,15 @@ package-level mutable state.
 |---|---|
 | `auth` | Users, sessions (cookie token, SHA-256 hash in DB), login rate limit (`LoginLimiter`), `RequireAuth` (rejects inactive users; updates `users.last_active_at` max. once per hour), `RequireAdmin` (403 for non-admins, used after `RequireAuth`), `auth.UserID(r)`, `auth.SessionID(r)`. `PasswordChanger` (implements `profile.Passwords`, uses the same `LoginLimiter` instance as the login). Declares `AvatarVersions` (implemented by `profile.Service`) for the user DTO. Older code, no store/service split |
 | `collage` | Collages, texts, layout save (one transaction) |
-| `photo` | Photo rows and files, connector import (preview: stored as downloaded; original: `process.go` calls `imaging`, no scaling; `SourcesByType` in `sources.go` picks the `Sources` of the connector type), local upload (`process.go`: calls `imaging`, long edge ≤ 2560 px), file serving |
+| `photo` | Photo rows and files, connector import (preview: stored as downloaded; original: `process.go` calls `imaging`, no scaling; `SourcesByType` in `sources.go` picks the `Sources` of the connector type), local upload (`process.go`: calls `imaging`, long edge ≤ 2560 px), file serving. Stores the file size in `photos.size_bytes` and checks the storage limit when a photo is stored (see [Storage quota](#storage-quota)); `RecalcSizes` (`recalc.go`) for the CLI `photos recalc-size` |
 | `connector` | Connectors per user, `Kind` registry (strategy per connector type), config encrypted with `secretbox` |
 | `connector/immich` | Immich HTTP client, album/asset listing, thumbnail proxy |
 | `connector/synology` | Synology Photos (DSM 7) Web API client with session cache, album/folder/item listing (Personal Space, shared albums, Shared Space), thumbnail proxy, import source. See [Synology connector](#synology-connector) |
 | `connector/googlephotos` | Google Photos Picker API: OAuth sign-in per import (`golang.org/x/oauth2`), in-memory token cache and picks (selections), picker session client, thumbnail proxy, import source. See [Google Photos connector](#google-photos-connector) |
-| `profile` | Profile of the session user: password change (through the `Passwords` interface), avatar (upload → `imaging` square ≤ 500×500 JPEG, store, serve, delete) |
-| `admin` | User management for admins (`/api/admin/users...`): list with usage counts, create, update (admin/active flags, new password), delete with all data. Rules: an admin cannot change, set the password of or delete the own account; at least one active admin always remains (checked in the same transaction). Deactivate and new password delete the user's sessions. Delete: each collage through `collage.Service.Delete` (rows + photo directory), then the `users` row (FK cascade). Interfaces: `Collages` (`*collage.Service`), `Usage` (`collage.UserUsage`), `Avatars` (`*profile.Service`) |
-| `settings` | System-wide settings (`/api/admin/settings`): typed `Settings` struct, one `system_settings` row per field (key = JSON name), defaults in `Defaults()`, rules in `validate()`. New setting = new field, no migration. `maxUserStorageBytes` (default 2·10⁹, 0 = unlimited) is stored but not enforced yet |
+| `profile` | Profile of the session user: password change (through the `Passwords` interface), avatar (upload → `imaging` square ≤ 500×500 JPEG, store, serve, delete), own storage usage (through the `Storage` interface, `*quota.Service`) |
+| `admin` | User management for admins (`/api/admin/users...`): list with usage counts and storage usage, create, update (admin/active flags, own storage limit, new password), delete with all data. Rules: an admin cannot change (except the own storage limit), set the password of or delete the own account; at least one active admin always remains (checked in the same transaction). Deactivate and new password delete the user's sessions. Delete: each collage through `collage.Service.Delete` (rows + photo directory), then the `users` row (FK cascade). Interfaces: `Collages` (`*collage.Service`), `Usage` (`collage.UserUsage`), `Quotas` (`*quota.Service`), `Avatars` (`*profile.Service`) |
+| `settings` | System-wide settings (`/api/admin/settings`): typed `Settings` struct, one `system_settings` row per field (key = JSON name), defaults in `Defaults()`, rules in `validate()`. New setting = new field, no migration. `maxUserStorageBytes` (default 2·10⁹, 0 = unlimited) is the server default storage limit per user (see [Storage quota](#storage-quota)) |
+| `quota` | Storage limit per user: effective limit (`users.max_storage_bytes` or the server default), usage (`Usage`, `UsedBytesAllUsers`), pure helpers (`Exceeds`, `Full`, `Effective`, `FormatBytes`) and the 409 errors (`FullError`, `PhotoError`, `CopyError`). No handler. Does not import `photo`, `collage`, `admin` or `profile`; they import it only for the helpers and get `*quota.Service` through own interfaces (`photo.Quotas`, `collage.Quotas`, `admin.Quotas`, `profile.Storage`). Interfaces: `Store` (own `GormStore` on `users`), `UsedBytes` (`photo.GormStore`), `Settings` (`*settings.Service`) |
 
 Rules:
 
@@ -113,6 +114,27 @@ Rules:
   (`internal/photo/sources.go`) with a map connector type → `Sources` (`immich.Service`,
   `synology.Service`, `googlephotos.Service`). It loads the connector, picks the `Sources` of its type
   (unknown type → validation error) and delegates. It is in `photo` because `connector` cannot import `photo` (import cycle).
+
+### Storage quota
+
+- Each user may store only a limited sum of photo file bytes (`photos.size_bytes` of all collages of the
+  user). Avatars do not count. Limit = `users.max_storage_bytes` if set, else the system setting
+  `maxUserStorageBytes`; 0 = unlimited in both places. Sizes are decimal (1 GB = 10⁹ bytes).
+- `size_bytes` = bytes of the stored file: uploads and imports set the size of the written data, a collage
+  duplicate sets the bytes really copied. Rows from before this column have 0 until
+  `collageomat photos recalc-size` sets them from the files on disk.
+- **Guarantee:** `photo.GormStore.CreateWithFile` (one transaction, used by upload, import and duplicate):
+  insert the row → write the file → save `file_name` + `size_bytes` → sum `size_bytes` of the user (join
+  `collages.user_id`) → over the limit: roll back (the file is removed by the cleanup) and return
+  `quota.PhotoError`. The transaction holds the SQLite write lock when it reads the sum, so parallel
+  uploads or import workers cannot both pass the check.
+- **Pre-checks (fast fail only):** import refuses before any download if the user is at or over the
+  limit (`quota.FullError`); duplicate refuses before any copy if used + size of the source collage is
+  over the limit (`quota.CopyError`). A photo that does not fit stops an import like any other error;
+  photos imported before stay. A duplicate stays all-or-nothing.
+- **Error:** `apperr.Conflict` → 409, e.g. `{"error": "storage limit reached: 1.95 GB of 2 GB used, the
+  photo needs 3.1 MB"}`. The frontend shows the server message.
+- Lowering a limit below the used bytes keeps the existing photos; only new photos are refused.
 
 ### Synology connector
 
@@ -333,9 +355,9 @@ duplicates), `error` (message, "Try again", "Show picked photos" if photos are p
 deletes all its picks). All dialogs share the generic presentational components `AssetGrid<T extends SourceAsset>` (`asset-grid.ts`, thumbnail URL as function input) and (Immich, Synology) `AlbumList<T extends SourceAlbum>` (`album-list.ts`), `import-size.ts` (preview/original choice in localStorage) and `original-size.ts` |
 | `src/app/features/connectors/` | Connector settings page ("Add connector" menu per type), connector dialog, one config form per type (`immich-config-form.ts`, `synology-config-form.ts`, `google-photos-config-form.ts`: client ID, client secret, read-only redirect URI of the current origin with copy button), `connector-types.ts`; the connector card shows the URL (Immich, Synology) or the client ID (Google Photos) |
 | `features/editor/export/` | PNG/JPG export dialog |
-| `src/app/features/admin/` | Admin page (tab nav): Users tab (table with avatar, flags, last activity date (`DatePipe 'mediumDate'`, `—` if none), counts; create, edit and type-username delete dialogs), Settings tab (storage limit in GB, 1 GB = 10⁹ bytes) |
-| `src/app/features/profile/` | Profile page: info (username, Admin badge, member since), avatar card (upload, remove), change password card |
-| `src/app/shared/` | `ConfirmDialog`, `NotificationService`, `errorMessage(err)`, `UserAvatar` (round avatar image or first letter of the username) |
+| `src/app/features/admin/` | Admin page (tab nav): Users tab (table with avatar, flags, last activity date (`DatePipe 'mediumDate'`, `—` if none), counts, storage "used / max" (red when full, "(default)" without own limit); create, edit and type-username delete dialogs; create and edit set an own storage limit or the server default (`storage-limit.ts`)), Settings tab (server default storage limit in GB, 1 GB = 10⁹ bytes) |
+| `src/app/features/profile/` | Profile page: info (username, Admin badge, member since, storage usage), avatar card (upload, remove), change password card |
+| `src/app/shared/` | `ConfirmDialog`, `NotificationService`, `errorMessage(err)`, `UserAvatar` (round avatar image or first letter of the username), `storage-size.ts` (GB conversion and formatting, 1 GB = 10⁹ bytes) |
 
 Rules: only `core/api` services use `HttpClient`. Page components load data and hold state; dialogs and
 presentational components use `input()`/`output()` and do no API calls.
@@ -346,14 +368,14 @@ All tables have `created_at`, `updated_at`. JSON columns are `TEXT`.
 
 | Table | Columns |
 |---|---|
-| `users` | `id`, `username` unique, `password_hash` (bcrypt), `is_admin`, `is_active` (DB default `true`), `last_active_at` (nullable; set on login and max. once per hour on authenticated requests by `RequireAuth`, without a change of `updated_at`) |
+| `users` | `id`, `username` unique, `password_hash` (bcrypt), `is_admin`, `is_active` (DB default `true`), `last_active_at` (nullable; set on login and max. once per hour on authenticated requests by `RequireAuth`, without a change of `updated_at`), `max_storage_bytes` (nullable; own storage limit, 0 = unlimited, NULL = server default) |
 | `system_settings` | `key` PK, `value` JSON |
 | `sessions` | `id`, `token_hash` unique, `user_id` FK, `expires_at` |
 | `user_avatars` | `user_id` PK + FK (`ON DELETE CASCADE`), `data` BLOB (JPEG, square, ≤ 500×500 px), `mime_type`. Own table, because `RequireAuth` loads the `users` row on each request |
 | `collages` | `id`, `user_id` FK, `name`, `settings` JSON |
 | `collage_texts` | `id` (UUID from frontend), `collage_id` FK, `props` JSON |
 | `connectors` | `id`, `user_id` FK, `type` (`immich`, `synology`, `googlephotos`), `name`, `config` (encrypted JSON) |
-| `photos` | `id`, `collage_id` FK, `connector_id` (NULL for uploads), `source_asset_id` (Immich id, Synology item id, `s:<albumId>:<itemId>` for a Synology shared album photo, `t:<itemId>` for a Synology Shared Space photo, Google media item id, or `sha256:<hex>`), `file_name`, `mime_type`, `width_px`, `height_px`, `props` JSON |
+| `photos` | `id`, `collage_id` FK, `connector_id` (NULL for uploads), `source_asset_id` (Immich id, Synology item id, `s:<albumId>:<itemId>` for a Synology shared album photo, `t:<itemId>` for a Synology Shared Space photo, Google media item id, or `sha256:<hex>`), `file_name`, `size_bytes` (bytes of the stored file, default 0), `mime_type`, `width_px`, `height_px`, `props` JSON |
 
 Units: page and element geometry in mm (frame centre `cxMm/cyMm`, rotation around the centre), font size
 in pt, crop as normalized rectangle (0..1) of the source image. `z` is shared between photos and texts.
@@ -400,19 +422,20 @@ background image always shows the original photo.
 | POST | `/api/auth/login` | Login, sets the session cookie (public) |
 | POST | `/api/auth/logout` | Logout |
 | GET | `/api/auth/me` | Session user (`id`, `username`, `isAdmin`, `createdAt`, `avatarVersion` = unix ms of the last avatar change or `null`); the login response has the same shape |
+| GET | `/api/profile/storage` | Own storage usage `{usedBytes, limitBytes}` (`limitBytes` = effective limit, 0 = unlimited) |
 | PUT | `/api/profile/password` | Change the own password (`currentPassword`, `newPassword`) → 204 |
 | PUT, DELETE | `/api/profile/avatar` | Set the avatar (raw image body, max 10 MiB, max 60 MP), remove it → user DTO |
 | GET | `/api/profile/avatar?v=<avatarVersion>` | Own avatar JPEG (immutable cache), 404 if not set |
-| GET, POST | `/api/admin/users` | Admin: list users (`isActive`, `collageCount`, `photoCount` added to the user DTO), create (`username`, `password`, `isAdmin`) → 201 |
-| PATCH, DELETE | `/api/admin/users/{id}` | Admin: update (`isAdmin`, `isActive` required, `newPassword` optional), delete with all data → 204; rule violations → 409 |
+| GET, POST | `/api/admin/users` | Admin: list users (`isActive`, `collageCount`, `photoCount`, `usedStorageBytes`, `maxStorageBytes` (own limit or `null`), `effectiveMaxStorageBytes` added to the user DTO), create (`username`, `password`, `isAdmin`, optional `maxStorageBytes`: missing or `null` = server default) → 201 |
+| PATCH, DELETE | `/api/admin/users/{id}` | Admin: update (`isAdmin`, `isActive`, `maxStorageBytes` required (number ≥ 0 or `null` = server default), `newPassword` optional), delete with all data → 204; rule violations → 409 |
 | GET | `/api/admin/users/{id}/avatar?v=<avatarVersion>` | Admin: avatar JPEG of any user |
 | GET, PUT | `/api/admin/settings` | Admin: system settings (`maxUserStorageBytes`) |
-| GET, POST | `/api/collages` | List, create |
+| GET, POST | `/api/collages` | List, create; a list entry (also the create, rename and duplicate result) has `id`, `name`, `settings`, `photoCount`, `sizeBytes` (sum of `photos.size_bytes`), `updatedAt` |
 | GET, PATCH, DELETE | `/api/collages/{id}` | Load full collage, rename, delete (rows + photo dir) |
-| POST | `/api/collages/{id}/duplicate` | Copy the collage (settings with remapped photo ids, photo rows + files, texts with new ids) in one transaction; skips photos with a missing file (`skippedPhotos`) |
+| POST | `/api/collages/{id}/duplicate` | Copy the collage (settings with remapped photo ids, photo rows + files, texts with new ids) in one transaction; skips photos with a missing file (`skippedPhotos`); over the storage limit → 409 |
 | PUT | `/api/collages/{id}/layout` | Save settings + photo props + texts in one transaction |
-| POST | `/api/collages/{id}/import` | Import connector assets (Immich, Synology or Google Photos; `connectorId`, `assetIds`, `size` = `"preview"` (default) or `"original"`) → `photos`, `skipped`, `previewFallbacks` (original requests that were answered with the preview) |
-| POST | `/api/collages/{id}/uploads` | Upload one local image (raw body) |
+| POST | `/api/collages/{id}/import` | Import connector assets (Immich, Synology or Google Photos; `connectorId`, `assetIds`, `size` = `"preview"` (default) or `"original"`) → `photos`, `skipped`, `previewFallbacks` (original requests that were answered with the preview); over the storage limit → 409 (photos imported before stay) |
+| POST | `/api/collages/{id}/uploads` | Upload one local image (raw body); over the storage limit → 409 |
 | GET | `/api/collages/{id}/photos/{photoId}/file` | Image bytes (immutable cache) |
 | DELETE | `/api/collages/{id}/photos/{photoId}` | Delete photo row and file |
 | GET, POST | `/api/connectors` | List, create |

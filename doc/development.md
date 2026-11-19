@@ -30,6 +30,13 @@ make dev-down    # stop and remove the dev container
 | `make user-add USERNAME=<name> [ADMIN=1]` | Create a user (asks for the password) |
 | `make user-passwd USERNAME=<name>` | Set a new password (logs the user out) |
 
+CLI commands without a make target (run in `backend/`):
+
+| Command | Effect |
+|---|---|
+| `go run ./cmd/collageomat photos recalc-size --username <name>` | Set `photos.size_bytes` of the user's photos from the files on disk. Prints per user: updated, unchanged, missing files (row not changed, warning on stderr), used / limit. May run while the server runs |
+| `go run ./cmd/collageomat photos recalc-size --all` | Same for all users |
+
 Normal workflow: run `make backend-run` and `make frontend-serve` in two shells, open
 http://localhost:4200. After `make build`, `./bin/collageomat serve` serves the full app on
 http://localhost:8080.

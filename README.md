@@ -28,6 +28,7 @@ A Photo collage web app inspired by CollageIt! Pro, in Go / Angular.
 * Undo/redo and auto-save
 * Duplicate a collage (full, independent copy with all photos and texts)
 * Export final image to png, jpg
+* **Storage quota per user**: server-wide default (2 GB) set by the admin, own limit per user; usage shown in the admin user list, on the profile page and per collage
 * **single-binary server**: just deploy one single binary to your server / container!
 
 ## Connect an [Immich](https://immich.app/) server

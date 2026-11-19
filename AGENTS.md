@@ -19,7 +19,7 @@ photo files in a data directory. The prod artifact is one Docker image.
 | Path | Content |
 |---|---|
 | `backend/cmd/collageomat/` | `main.go` (composition root, `serve`), `user.go` (`user add/passwd` CLI) |
-| `backend/internal/<domain>/` | One package per domain: `auth`, `collage`, `photo`, `connector`, `connector/immich` |
+| `backend/internal/<domain>/` | One package per domain: `auth`, `collage`, `photo`, `quota`, `connector`, `connector/immich` |
 | `backend/internal/{httpapi,apperr,db,jsoncol,config,secretbox,web}` | Shared building blocks |
 | `frontend/src/app/core/` | API services (only place with `HttpClient`), DTO models, auth |
 | `frontend/src/app/features/` | Pages: `login`, `collages`, `connectors`, `editor` (canvas, arrange, export, ...) |

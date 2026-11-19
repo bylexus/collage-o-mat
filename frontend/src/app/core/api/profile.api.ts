@@ -1,9 +1,9 @@
 import { HttpClient, HttpHeaders } from '@angular/common/http';
 import { inject, Injectable } from '@angular/core';
 import { Observable } from 'rxjs';
-import { User } from '../models/user';
+import { StorageUsage, User } from '../models/user';
 
-/** HTTP calls of `/api/profile` (own password and avatar). Holds no state. */
+/** HTTP calls of `/api/profile` (own password, avatar and storage usage). Holds no state. */
 @Injectable({ providedIn: 'root' })
 export class ProfileApi {
   private readonly http = inject(HttpClient);
@@ -29,6 +29,11 @@ export class ProfileApi {
   /** Removes the own avatar (also when none is set). Returns the updated user. */
   deleteAvatar(): Observable<User> {
     return this.http.delete<User>('/api/profile/avatar');
+  }
+
+  /** Own photo storage usage and the limit that applies (0 = unlimited). */
+  storage(): Observable<StorageUsage> {
+    return this.http.get<StorageUsage>('/api/profile/storage');
   }
 
   /** URL of the own avatar image; the version is the cache buster (`User.avatarVersion`). */

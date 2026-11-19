@@ -1,8 +1,8 @@
 // Package admin contains the user management of the admin section: list,
-// create, edit (admin role, active flag, new password) and delete users.
-// The users and sessions tables belong to the auth package; the collages,
-// photos and avatars of a user are reached only through the interfaces
-// Collages, Usage and Avatars.
+// create, edit (admin role, active flag, new password, storage limit) and
+// delete users. The users and sessions tables belong to the auth package;
+// the collages, photos, storage usage and avatars of a user are reached
+// only through the interfaces Collages, Usage, Quotas and Avatars.
 package admin
 
 import (
@@ -14,6 +14,7 @@ import (
 	"collageomat/internal/auth"
 	"collageomat/internal/collage"
 	"collageomat/internal/profile"
+	"collageomat/internal/quota"
 )
 
 const (
@@ -22,6 +23,7 @@ const (
 	msgSelfPassword = "you cannot set your own password here; use the Profile page"
 	msgSelfDelete   = "you cannot delete your own account"
 	msgLastAdmin    = "at least one active admin must remain"
+	msgMaxStorage   = "maxStorageBytes must be 0 (unlimited) or more"
 )
 
 // Store is the persistence the service needs (implemented by GormStore).
@@ -32,8 +34,9 @@ type Store interface {
 	UsernameExists(ctx context.Context, username string) (bool, error)
 	CreateUser(ctx context.Context, u *auth.User) error
 	// UpdateUser returns apperr.ErrNotFound if the user does not exist. An
-	// empty passwordHash keeps the password.
-	UpdateUser(ctx context.Context, id uint, isAdmin, isActive bool, passwordHash string) error
+	// empty passwordHash keeps the password; a nil maxStorageBytes sets the
+	// server default (NULL).
+	UpdateUser(ctx context.Context, id uint, isAdmin, isActive bool, maxStorageBytes *int64, passwordHash string) error
 	DeleteSessions(ctx context.Context, userID uint) error
 	// DeleteUser returns apperr.ErrNotFound if the user does not exist.
 	DeleteUser(ctx context.Context, id uint) error
@@ -57,6 +60,18 @@ type Usage interface {
 	CountsByUser(ctx context.Context) (collages, photos map[uint]int, err error)
 }
 
+// Quotas gives the storage usage of the user list and the server default
+// limit. The quota package implements it (*quota.Service), main.go wires
+// it.
+type Quotas interface {
+	// UsedBytesAllUsers returns the used photo bytes per user id. Users
+	// without photos may be missing (0 bytes).
+	UsedBytesAllUsers(ctx context.Context) (map[uint]int64, error)
+	// DefaultLimit returns the server default storage limit in bytes;
+	// 0 = unlimited.
+	DefaultLimit(ctx context.Context) (int64, error)
+}
+
 // Avatars gives the avatar of any user. The profile package implements it
 // (*profile.Service), main.go wires it.
 type Avatars interface {
@@ -72,20 +87,29 @@ type Transactor interface {
 	InTx(ctx context.Context, fn func(ctx context.Context) error) error
 }
 
-// UserSummary is a user with its avatar version and usage counts (list
-// entry; create and update return it too).
+// UserSummary is a user with its avatar version, usage counts and storage
+// usage (list entry; create and update return it too). The own limit is
+// User.MaxStorageBytes.
 type UserSummary struct {
 	auth.User
 	// AvatarVersion is nil if the user has no avatar.
 	AvatarVersion *int64
 	CollageCount  int
 	PhotoCount    int
+	// UsedStorageBytes is the sum of the photo sizes of the user.
+	UsedStorageBytes int64
+	// EffectiveMaxStorageBytes is the own limit or, if none is set, the
+	// server default; 0 = unlimited.
+	EffectiveMaxStorageBytes int64
 }
 
 // Update is the new state of a user (edit dialog).
 type Update struct {
 	IsAdmin  bool
 	IsActive bool
+	// MaxStorageBytes is the own storage limit in bytes (0 = unlimited);
+	// nil sets the server default.
+	MaxStorageBytes *int64
 	// NewPassword is the new password; empty keeps the password.
 	NewPassword string
 }
@@ -99,17 +123,20 @@ type Service struct {
 	store    Store
 	collages Collages
 	usage    Usage
+	quotas   Quotas
 	avatars  Avatars
 	tx       Transactor
 }
 
 // NewService returns the admin service.
-func NewService(store Store, collages Collages, usage Usage, avatars Avatars, tx Transactor) *Service {
-	return &Service{store: store, collages: collages, usage: usage, avatars: avatars, tx: tx}
+func NewService(
+	store Store, collages Collages, usage Usage, quotas Quotas, avatars Avatars, tx Transactor,
+) *Service {
+	return &Service{store: store, collages: collages, usage: usage, quotas: quotas, avatars: avatars, tx: tx}
 }
 
-// ListUsers returns all users with avatar versions and counts, ordered by
-// username.
+// ListUsers returns all users with avatar versions, counts and storage
+// usage, ordered by username.
 func (s *Service) ListUsers(ctx context.Context) ([]UserSummary, error) {
 	users, err := s.store.ListUsers(ctx)
 	if err != nil {
@@ -119,29 +146,45 @@ func (s *Service) ListUsers(ctx context.Context) ([]UserSummary, error) {
 	if err != nil {
 		return nil, fmt.Errorf("count usage of users: %w", err)
 	}
+	used, def, err := s.storage(ctx)
+	if err != nil {
+		return nil, err
+	}
 	out := make([]UserSummary, len(users))
 	for i, u := range users {
 		version, err := s.avatars.AvatarVersion(ctx, u.ID)
 		if err != nil {
 			return nil, fmt.Errorf("avatar version of user %d: %w", u.ID, err)
 		}
-		out[i] = UserSummary{User: u, AvatarVersion: version, CollageCount: collages[u.ID], PhotoCount: photos[u.ID]}
+		out[i] = UserSummary{
+			User: u, AvatarVersion: version, CollageCount: collages[u.ID], PhotoCount: photos[u.ID],
+			UsedStorageBytes: used[u.ID], EffectiveMaxStorageBytes: quota.Effective(u.MaxStorageBytes, def),
+		}
 	}
 	return out, nil
 }
 
-// CreateUser creates a new active user. An invalid username or password
-// gives an apperr validation error, an existing username apperr.Conflict.
-func (s *Service) CreateUser(ctx context.Context, username, password string, isAdmin bool) (*UserSummary, error) {
+// CreateUser creates a new active user. maxStorageBytes is the own storage
+// limit (0 = unlimited) or nil for the server default. An invalid username,
+// password or limit gives an apperr validation error, an existing username
+// apperr.Conflict.
+func (s *Service) CreateUser(
+	ctx context.Context, username, password string, isAdmin bool, maxStorageBytes *int64,
+) (*UserSummary, error) {
 	name, err := auth.NormalizeUsername(username)
 	if err != nil {
 		return nil, apperr.Validation("%s", err.Error())
+	}
+	if err := validateMaxStorage(maxStorageBytes); err != nil {
+		return nil, err
 	}
 	hash, err := hashValidPassword(password)
 	if err != nil {
 		return nil, err
 	}
-	u := auth.User{Username: name, PasswordHash: hash, IsAdmin: isAdmin, IsActive: true}
+	u := auth.User{
+		Username: name, PasswordHash: hash, IsAdmin: isAdmin, IsActive: true, MaxStorageBytes: maxStorageBytes,
+	}
 	err = s.tx.InTx(ctx, func(ctx context.Context) error {
 		exists, err := s.store.UsernameExists(ctx, name)
 		if err != nil {
@@ -155,17 +198,25 @@ func (s *Service) CreateUser(ctx context.Context, username, password string, isA
 	if err != nil {
 		return nil, err
 	}
-	return &UserSummary{User: u}, nil
+	def, err := s.quotas.DefaultLimit(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("default storage limit: %w", err)
+	}
+	return &UserSummary{User: u, EffectiveMaxStorageBytes: quota.Effective(u.MaxStorageBytes, def)}, nil
 }
 
-// UpdateUser sets the admin and active flags and, if given, a new password
-// of the user id in one transaction. Deactivating the user or setting a new
+// UpdateUser sets the admin and active flags, the own storage limit and,
+// if given, a new password of the user id in one transaction. An admin may
+// change their own storage limit. Deactivating the user or setting a new
 // password deletes all sessions of the user. Errors: apperr.ErrNotFound
 // for an unknown user, apperr.Conflict for a self-protection rule or if no
 // active admin would remain, an apperr validation error for an invalid
-// password.
+// password or limit.
 func (s *Service) UpdateUser(ctx context.Context, actorID, id uint, upd Update) (*UserSummary, error) {
 	self := actorID == id
+	if err := validateMaxStorage(upd.MaxStorageBytes); err != nil {
+		return nil, err
+	}
 	var hash string
 	if upd.NewPassword != "" {
 		if self {
@@ -187,7 +238,7 @@ func (s *Service) UpdateUser(ctx context.Context, actorID, id uint, upd Update) 
 		if self && upd.IsActive != u.IsActive {
 			return apperr.Conflict(msgSelfActive)
 		}
-		if err := s.store.UpdateUser(ctx, id, upd.IsAdmin, upd.IsActive, hash); err != nil {
+		if err := s.store.UpdateUser(ctx, id, upd.IsAdmin, upd.IsActive, upd.MaxStorageBytes, hash); err != nil {
 			return err
 		}
 		if !upd.IsActive || hash != "" {
@@ -269,11 +320,32 @@ func (s *Service) summary(ctx context.Context, id uint) (*UserSummary, error) {
 	if err != nil {
 		return nil, fmt.Errorf("count usage of users: %w", err)
 	}
+	used, def, err := s.storage(ctx)
+	if err != nil {
+		return nil, err
+	}
 	version, err := s.avatars.AvatarVersion(ctx, id)
 	if err != nil {
 		return nil, fmt.Errorf("avatar version of user %d: %w", id, err)
 	}
-	return &UserSummary{User: *u, AvatarVersion: version, CollageCount: collages[id], PhotoCount: photos[id]}, nil
+	return &UserSummary{
+		User: *u, AvatarVersion: version, CollageCount: collages[id], PhotoCount: photos[id],
+		UsedStorageBytes: used[id], EffectiveMaxStorageBytes: quota.Effective(u.MaxStorageBytes, def),
+	}, nil
+}
+
+// storage returns the used photo bytes per user id and the server default
+// storage limit (read once per call).
+func (s *Service) storage(ctx context.Context) (used map[uint]int64, def int64, err error) {
+	used, err = s.quotas.UsedBytesAllUsers(ctx)
+	if err != nil {
+		return nil, 0, fmt.Errorf("storage usage of users: %w", err)
+	}
+	def, err = s.quotas.DefaultLimit(ctx)
+	if err != nil {
+		return nil, 0, fmt.Errorf("default storage limit: %w", err)
+	}
+	return used, def, nil
 }
 
 // ensureActiveAdmin returns apperr.Conflict if no active admin is left. Call
@@ -285,6 +357,15 @@ func (s *Service) ensureActiveAdmin(ctx context.Context) error {
 	}
 	if n == 0 {
 		return apperr.Conflict(msgLastAdmin)
+	}
+	return nil
+}
+
+// validateMaxStorage returns an apperr validation error for a negative own
+// storage limit; nil (server default) is valid.
+func validateMaxStorage(maxStorageBytes *int64) error {
+	if maxStorageBytes != nil && *maxStorageBytes < 0 {
+		return apperr.Validation(msgMaxStorage)
 	}
 	return nil
 }

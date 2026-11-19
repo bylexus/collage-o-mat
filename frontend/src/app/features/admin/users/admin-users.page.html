@@ -69,7 +69,12 @@
     </ng-container>
 
     <ng-container matColumnDef="collageCount">
-      <th mat-header-cell *matHeaderCellDef class="number-cell" i18n="@@admin.users.column.collages">
+      <th
+        mat-header-cell
+        *matHeaderCellDef
+        class="number-cell"
+        i18n="@@admin.users.column.collages"
+      >
         Collages
       </th>
       <td mat-cell *matCellDef="let row" class="number-cell">{{ row.collageCount }}</td>
@@ -80,6 +85,23 @@
         Photos
       </th>
       <td mat-cell *matCellDef="let row" class="number-cell">{{ row.photoCount }}</td>
+    </ng-container>
+
+    <ng-container matColumnDef="storage">
+      <th mat-header-cell *matHeaderCellDef class="number-cell" i18n="@@admin.users.column.storage">
+        Storage
+      </th>
+      <td
+        mat-cell
+        *matCellDef="let row"
+        class="number-cell storage-cell"
+        [class.storage-full]="isStorageFull(row)"
+      >
+        {{ storageText(row) }}
+        @if (row.maxStorageBytes === null) {
+          <span class="storage-default" i18n="@@admin.users.storageDefault">(default)</span>
+        }
+      </td>
     </ng-container>
 
     <ng-container matColumnDef="actions">

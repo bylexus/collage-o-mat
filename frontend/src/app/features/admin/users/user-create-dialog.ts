@@ -9,6 +9,7 @@ import { MatInputModule } from '@angular/material/input';
 import { MatProgressSpinnerModule } from '@angular/material/progress-spinner';
 import { CreateUserRequest } from '../../../core/models/admin';
 import { errorMessage } from '../../../shared/error-message';
+import { formatStorageLimit } from '../../../shared/storage-size';
 import {
   matchesPassword,
   PASSWORD_MAX_BYTES,
@@ -17,9 +18,17 @@ import {
   USERNAME_MAX_CHARS,
   usernameRules,
 } from './password-validators';
+import {
+  applyStorageDefault,
+  storageLimitRequest,
+  storageLimitRules,
+  storageLimitValues,
+} from './storage-limit';
 
 /** Input of the create user dialog. */
 export interface UserCreateDialogData {
+  /** Current server default of the storage limit in bytes (0 = unlimited). */
+  defaultStorageBytes: number;
   /**
    * Creates the user (done by the page). A rejected promise keeps the dialog open and shows the
    * error; on success the dialog closes with `true`.
@@ -27,7 +36,9 @@ export interface UserCreateDialogData {
   save: (request: CreateUserRequest) => Promise<unknown>;
 }
 
-/** "New user" dialog: username, password + repeat, admin role. New users are active. */
+/**
+ * "New user" dialog: username, password + repeat, admin role, storage limit. New users are active.
+ */
 @Component({
   selector: 'app-user-create-dialog',
   imports: [
@@ -102,6 +113,27 @@ export interface UserCreateDialogData {
 
         <mat-checkbox formControlName="isAdmin" i18n="@@admin.user.isAdmin">Admin</mat-checkbox>
 
+        <mat-checkbox formControlName="useDefaultStorage" i18n="@@admin.user.useDefaultStorage"
+          >Use server default ({{ defaultLimit }})</mat-checkbox
+        >
+        <mat-form-field>
+          <mat-label i18n="@@admin.user.storageLimit">Storage limit (GB)</mat-label>
+          <input
+            matInput
+            type="number"
+            formControlName="storageLimitGb"
+            min="0"
+            step="any"
+            required
+          />
+          <mat-hint i18n="@@admin.user.storageLimitHint">0 = unlimited</mat-hint>
+          @if (form.controls.storageLimitGb.hasError('required')) {
+            <mat-error i18n="@@admin.user.storageLimitRequired">Enter a value</mat-error>
+          } @else if (form.controls.storageLimitGb.hasError('min')) {
+            <mat-error i18n="@@admin.user.storageLimitMin">Enter 0 or more</mat-error>
+          }
+        </mat-form-field>
+
         @if (error(); as message) {
           <p class="dialog-error" role="alert">{{ message }}</p>
         }
@@ -129,6 +161,7 @@ export class UserCreateDialog {
   protected readonly usernameMaxChars = USERNAME_MAX_CHARS;
   protected readonly minChars = PASSWORD_MIN_CHARS;
   protected readonly maxBytes = PASSWORD_MAX_BYTES;
+  protected readonly defaultLimit = formatStorageLimit(this.data.defaultStorageBytes);
   protected readonly saving = signal(false);
   protected readonly error = signal<string | null>(null);
 
@@ -137,9 +170,18 @@ export class UserCreateDialog {
     password: ['', [Validators.required, passwordRules]],
     repeatPassword: ['', [Validators.required, matchesPassword('password')]],
     isAdmin: [false],
+    useDefaultStorage: [true],
+    storageLimitGb: [
+      storageLimitValues(null, this.data.defaultStorageBytes).storageLimitGb,
+      storageLimitRules,
+    ],
   });
 
   constructor() {
+    this.applyStorageDefault();
+    this.form.controls.useDefaultStorage.valueChanges
+      .pipe(takeUntilDestroyed())
+      .subscribe(() => this.applyStorageDefault());
     // The repeat check depends on the password: check it again when the password changes.
     this.form.controls.password.valueChanges
       .pipe(takeUntilDestroyed())
@@ -151,11 +193,17 @@ export class UserCreateDialog {
       this.form.markAllAsTouched();
       return;
     }
-    const { username, password, isAdmin } = this.form.getRawValue();
+    const { username, password, isAdmin, useDefaultStorage, storageLimitGb } =
+      this.form.getRawValue();
     this.setSaving(true);
     this.error.set(null);
     try {
-      await this.data.save({ username: username.trim(), password, isAdmin });
+      await this.data.save({
+        username: username.trim(),
+        password,
+        isAdmin,
+        maxStorageBytes: storageLimitRequest(useDefaultStorage, storageLimitGb),
+      });
       this.ref.close(true);
     } catch (err) {
       this.error.set(errorMessage(err));
@@ -170,6 +218,11 @@ export class UserCreateDialog {
       this.form.disable();
     } else {
       this.form.enable();
+      this.applyStorageDefault();
     }
+  }
+
+  private applyStorageDefault(): void {
+    applyStorageDefault(this.form.controls, this.data.defaultStorageBytes);
   }
 }

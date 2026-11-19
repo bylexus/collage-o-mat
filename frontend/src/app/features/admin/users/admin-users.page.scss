@@ -72,6 +72,20 @@ app-user-avatar {
   text-align: right;
 }
 
+.storage-cell {
+  white-space: nowrap;
+}
+
+.storage-full {
+  color: var(--mat-sys-error);
+}
+
+.storage-default {
+  margin-left: 4px;
+  color: var(--mat-sys-on-surface-variant);
+  font: var(--mat-sys-body-small);
+}
+
 .actions-cell {
   width: 1%;
   white-space: nowrap;

@@ -81,6 +81,16 @@ func (s *DiskStorage) Open(relPath string) (io.ReadSeekCloser, error) {
 	return f, nil
 }
 
+// Size returns the size of the file relPath in bytes. A missing file gives
+// an error that matches fs.ErrNotExist.
+func (s *DiskStorage) Size(relPath string) (int64, error) {
+	fi, err := s.root.Stat(relPath)
+	if err != nil {
+		return 0, fmt.Errorf("stat %q: %w", relPath, err)
+	}
+	return fi.Size(), nil
+}
+
 // Remove deletes the file relPath. A missing file is not an error.
 func (s *DiskStorage) Remove(relPath string) error {
 	if err := s.root.Remove(relPath); err != nil && !errors.Is(err, fs.ErrNotExist) {

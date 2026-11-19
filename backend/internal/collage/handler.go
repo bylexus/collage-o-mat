@@ -59,7 +59,9 @@ type summaryResponse struct {
 	Name       string       `json:"name"`
 	Settings   jsoncol.JSON `json:"settings"`
 	PhotoCount int          `json:"photoCount"`
-	UpdatedAt  time.Time    `json:"updatedAt"`
+	// SizeBytes is the sum of the stored photo file sizes.
+	SizeBytes int64     `json:"sizeBytes"`
+	UpdatedAt time.Time `json:"updatedAt"`
 }
 
 // duplicateResponse is the new collage of a duplicate plus the number of
@@ -84,6 +86,7 @@ func toSummaryResponse(s Summary) summaryResponse {
 		Name:       s.Name,
 		Settings:   s.Settings,
 		PhotoCount: s.PhotoCount,
+		SizeBytes:  s.SizeBytes,
 		UpdatedAt:  s.UpdatedAt,
 	}
 }

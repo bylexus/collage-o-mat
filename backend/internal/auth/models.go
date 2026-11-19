@@ -20,8 +20,13 @@ type User struct {
 	// (column last_active_at, nullable). RequireAuth updates it at most once
 	// per activityInterval. NULL: no activity recorded yet.
 	LastActiveAt *time.Time
-	CreatedAt    time.Time
-	UpdatedAt    time.Time
+	// MaxStorageBytes is the own photo storage limit of the user in bytes
+	// (column max_storage_bytes, nullable); 0 = unlimited. NULL: the user
+	// has the server default (settings.Settings.MaxUserStorageBytes). See
+	// the quota package.
+	MaxStorageBytes *int64
+	CreatedAt       time.Time
+	UpdatedAt       time.Time
 }
 
 // TableName sets the table name.

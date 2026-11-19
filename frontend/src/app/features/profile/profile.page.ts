@@ -1,5 +1,5 @@
 import { DatePipe } from '@angular/common';
-import { Component, ElementRef, inject, signal, viewChild } from '@angular/core';
+import { Component, computed, ElementRef, inject, signal, viewChild } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import {
   AbstractControl,
@@ -19,9 +19,10 @@ import { MatProgressSpinnerModule } from '@angular/material/progress-spinner';
 import { firstValueFrom } from 'rxjs';
 import { ProfileApi } from '../../core/api/profile.api';
 import { AuthService } from '../../core/auth.service';
-import { User } from '../../core/models/user';
+import { StorageUsage, User } from '../../core/models/user';
 import { errorMessage } from '../../shared/error-message';
 import { NotificationService } from '../../shared/notification.service';
+import { formatGb } from '../../shared/storage-size';
 import { UserAvatar } from '../../shared/user-avatar';
 
 /** Image types the server accepts as avatar. */
@@ -32,7 +33,7 @@ const AVATAR_MAX_BYTES = 10 * 1024 * 1024;
 const PASSWORD_MIN_CHARS = 8;
 const PASSWORD_MAX_BYTES = 72;
 
-/** Profile page of the logged-in user: info, avatar and password change. */
+/** Profile page of the logged-in user: info, storage usage, avatar and password change. */
 @Component({
   selector: 'app-profile-page',
   imports: [
@@ -61,6 +62,22 @@ export class ProfilePage {
   protected readonly maxBytes = PASSWORD_MAX_BYTES;
   protected readonly avatarBusy = signal(false);
   protected readonly passwordBusy = signal(false);
+  /** Own storage usage; `null` while loading or if it could not be loaded (then not shown). */
+  private readonly storage = signal<StorageUsage | null>(null);
+
+  /** "1.23 GB of 2 GB used" or "1.23 GB used (no limit)"; `null` = show nothing. */
+  protected readonly storageText = computed(() => {
+    const storage = this.storage();
+    if (!storage) {
+      return null;
+    }
+    const used = formatGb(storage.usedBytes);
+    if (storage.limitBytes <= 0) {
+      return $localize`:@@profile.storage.unlimited:${used}:used: used (no limit)`;
+    }
+    const limit = formatGb(storage.limitBytes);
+    return $localize`:@@profile.storage.used:${used}:used: of ${limit}:limit: used`;
+  });
 
   protected readonly form = inject(NonNullableFormBuilder).group({
     currentPassword: ['', Validators.required],
@@ -69,10 +86,20 @@ export class ProfilePage {
   });
 
   constructor() {
+    void this.loadStorage();
     // The repeat check depends on the new password: check it again when the new password changes.
     this.form.controls.newPassword.valueChanges
       .pipe(takeUntilDestroyed())
       .subscribe(() => this.form.controls.repeatPassword.updateValueAndValidity());
+  }
+
+  /** Loads the storage usage; an error only hides the text (it is not important enough). */
+  private async loadStorage(): Promise<void> {
+    try {
+      this.storage.set(await firstValueFrom(this.api.storage()));
+    } catch {
+      this.storage.set(null);
+    }
   }
 
   protected chooseFile(): void {

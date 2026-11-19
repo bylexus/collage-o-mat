@@ -12,11 +12,13 @@ import { CollageSummary, pageLabel } from '../../core/models/collage';
 import { ConfirmService } from '../../shared/confirm-dialog/confirm.service';
 import { errorMessage } from '../../shared/error-message';
 import { NotificationService } from '../../shared/notification.service';
+import { formatStorageSize } from '../../shared/storage-size';
 import { CollageDialogs } from './collage-dialogs.service';
 
-/** A list row: the collage plus its display text for the page. */
+/** A list row: the collage plus its display texts for the page and the stored size. */
 interface CollageRow extends CollageSummary {
   pageLabel: string;
+  sizeLabel: string;
 }
 
 /** Start page: the user's collages with create, rename, duplicate and delete. */
@@ -48,6 +50,7 @@ export class CollagesPage {
     this.collages().map((c) => ({
       ...c,
       pageLabel: pageLabel(c.settings.page, c.settings.displayUnit),
+      sizeLabel: formatStorageSize(c.sizeBytes),
     })),
   );
   protected readonly columns = ['name', 'page', 'photoCount', 'updatedAt', 'actions'];

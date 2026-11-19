@@ -28,6 +28,7 @@ import (
 	"collageomat/internal/imaging"
 	"collageomat/internal/photo"
 	"collageomat/internal/profile"
+	"collageomat/internal/quota"
 	"collageomat/internal/secretbox"
 	"collageomat/internal/settings"
 	"collageomat/internal/web"
@@ -43,6 +44,8 @@ Commands:
   serve                                   start the HTTP server
   user add --username <name> [--admin]    create a user (asks for the password)
   user passwd --username <name>           set a new password (asks for it, logs the user out)
+  photos recalc-size --username <name> | --all
+                                          set the stored photo sizes from the files on disk
 `
 
 func main() {
@@ -63,6 +66,8 @@ func run(args []string) error {
 		return runServe(args[1:])
 	case "user":
 		return runUser(args[1:])
+	case "photos":
+		return runPhotos(args[1:])
 	case "help", "-h", "--help":
 		fmt.Fprint(os.Stdout, usage)
 		return nil
@@ -97,10 +102,14 @@ func runServe(args []string) error {
 	loginLimiter := auth.NewLoginLimiter(time.Now)
 	// One limiter for all image decodes of the server (photos and avatars).
 	decoder := imaging.NewDecodeLimiter(maxConcurrentDecodes)
+	// The settings and quota services are created here because the profile
+	// service needs the storage usage (profile.Storage).
+	settingsSvc := settings.NewService(settings.NewGormStore(gdb))
+	quotaSvc := quota.NewService(quota.NewGormStore(gdb), photo.NewGormStore(gdb), settingsSvc)
 	// The profile service is created before the auth handler: it gives the
 	// avatar version of the user DTO (auth.AvatarVersions).
 	profileSvc := profile.NewService(
-		profile.NewGormStore(gdb), auth.NewPasswordChanger(gdb, loginLimiter), decoder,
+		profile.NewGormStore(gdb), auth.NewPasswordChanger(gdb, loginLimiter), quotaSvc, decoder,
 	)
 	authHandler, err := auth.NewHandler(
 		gdb, auth.CookieOptions{Name: cfg.CookieName, Secure: cfg.CookieSecure}, loginLimiter, profileSvc,
@@ -115,7 +124,9 @@ func runServe(args []string) error {
 	}
 	defer photoFiles.Close()
 
-	domainModules, err := newDomainModules(cfg.Secret, gdb, photoFiles, decoder, profileSvc, authHandler.RequireAdmin)
+	domainModules, err := newDomainModules(
+		cfg.Secret, gdb, photoFiles, decoder, settingsSvc, quotaSvc, profileSvc, authHandler.RequireAdmin,
+	)
 	if err != nil {
 		return err
 	}
@@ -179,11 +190,13 @@ func models() []any {
 // admin, settings).
 // Connector configs are encrypted with a key derived from secret; photo
 // files are stored in photoFiles; decoder is the server-wide image decode
-// limiter; profileSvc is created earlier because the auth handler needs it
-// too; requireAdmin protects the admin routes (behind requireAuth).
+// limiter; settingsSvc, quotaSvc and profileSvc are created earlier because
+// the auth handler needs profileSvc too and profileSvc needs quotaSvc;
+// requireAdmin protects the admin routes (behind requireAuth).
 func newDomainModules(
 	secret string, gdb *gorm.DB, photoFiles *photo.DiskStorage, decoder *imaging.DecodeLimiter,
-	profileSvc *profile.Service, requireAdmin httpapi.Middleware,
+	settingsSvc *settings.Service, quotaSvc *quota.Service, profileSvc *profile.Service,
+	requireAdmin httpapi.Middleware,
 ) ([]httpapi.Module, error) {
 	immichKind := immich.NewKind(nil)
 	synologyKind := synology.NewKind()
@@ -200,17 +213,17 @@ func newDomainModules(
 	photoStore := photo.NewGormStore(gdb)
 	collageStore := collage.NewGormStore(gdb)
 	collagePhotos := photo.NewCollagePhotos(photoStore, photoFiles)
-	collageSvc := collage.NewService(collageStore, collagePhotos, tx)
+	collageSvc := collage.NewService(collageStore, collagePhotos, quotaSvc, tx)
 	photoSources := photo.NewSourcesByType(connectorSvc, map[string]photo.Sources{
 		immich.Type:       immichSvc,
 		synology.Type:     synologySvc,
 		googlephotos.Type: googlePhotosSvc,
 	})
-	photoSvc := photo.NewService(photoStore, photoFiles, collageSvc, photoSources, decoder)
+	photoSvc := photo.NewService(photoStore, photoFiles, collageSvc, photoSources, quotaSvc, decoder)
 	adminSvc := admin.NewService(
-		admin.NewGormStore(gdb), collageSvc, collage.NewUserUsage(collageStore, collagePhotos), profileSvc, tx,
+		admin.NewGormStore(gdb), collageSvc, collage.NewUserUsage(collageStore, collagePhotos), quotaSvc,
+		profileSvc, tx,
 	)
-	settingsSvc := settings.NewService(settings.NewGormStore(gdb))
 
 	return []httpapi.Module{
 		collage.NewHandler(collageSvc),

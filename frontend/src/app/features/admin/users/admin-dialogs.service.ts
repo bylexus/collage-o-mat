@@ -1,7 +1,7 @@
 import { inject, Injectable } from '@angular/core';
 import { MatDialog, MatDialogConfig } from '@angular/material/dialog';
 import { firstValueFrom } from 'rxjs';
-import { AdminUser, CreateUserRequest } from '../../../core/models/admin';
+import { AdminUser } from '../../../core/models/admin';
 import { UserCreateDialog, UserCreateDialogData } from './user-create-dialog';
 import { UserDeleteDialog, UserDeleteDialogData } from './user-delete-dialog';
 import { UserEditDialog, UserEditDialogData, UserEditDialogResult } from './user-edit-dialog';
@@ -17,10 +17,10 @@ export class AdminDialogs {
   private readonly dialog = inject(MatDialog);
 
   /** Resolves `true` if the user was created. */
-  async create(save: (request: CreateUserRequest) => Promise<unknown>): Promise<boolean> {
+  async create(data: UserCreateDialogData): Promise<boolean> {
     const ref = this.dialog.open<UserCreateDialog, UserCreateDialogData, boolean>(
       UserCreateDialog,
-      { ...DIALOG_SIZE, data: { save } },
+      { ...DIALOG_SIZE, data },
     );
     return (await firstValueFrom(ref.afterClosed())) === true;
   }

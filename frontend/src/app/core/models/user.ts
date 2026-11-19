@@ -8,3 +8,11 @@ export interface User {
   /** Version of the avatar (unix ms of its last change), `null` if the user has no avatar. */
   avatarVersion: number | null;
 }
+
+/** Photo storage of the logged-in user (`/api/profile/storage`). */
+export interface StorageUsage {
+  /** Sum of the stored photo file sizes, in bytes. */
+  usedBytes: number;
+  /** Limit that applies, in bytes; 0 = unlimited. */
+  limitBytes: number;
+}

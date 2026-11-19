@@ -18,6 +18,7 @@ import (
 	"collageomat/internal/collage"
 	"collageomat/internal/imaging"
 	"collageomat/internal/jsoncol"
+	"collageomat/internal/quota"
 )
 
 const (
@@ -32,9 +33,14 @@ const (
 // Store is the persistence the Service needs (implemented by GormStore).
 type Store interface {
 	// CreateWithFile inserts p, calls writeFile with p.ID set (writeFile sets
-	// p.FileName and writes the file) and saves p.FileName, all database
-	// steps in one transaction.
-	CreateWithFile(ctx context.Context, p *Photo, writeFile func(p *Photo) error) error
+	// p.FileName, writes the file and may set p.SizeBytes) and saves
+	// p.FileName and p.SizeBytes, all database steps in one transaction.
+	// If q.Limit > 0 and the user's photos (with p) are larger than
+	// q.Limit, it rolls back and returns a quota.PhotoError (apperr
+	// conflict).
+	CreateWithFile(ctx context.Context, p *Photo, q Quota, writeFile func(p *Photo) error) error
+	// SizeByCollage returns the sum of the photo sizes of a collage.
+	SizeByCollage(ctx context.Context, collageID uint) (int64, error)
 	// FindInCollage returns apperr.ErrNotFound if the photo does not exist
 	// or belongs to another collage.
 	FindInCollage(ctx context.Context, collageID, id uint) (*Photo, error)
@@ -43,7 +49,9 @@ type Store interface {
 	// UploadExists reports whether the collage has an uploaded photo (no
 	// connector) with the source asset ID.
 	UploadExists(ctx context.Context, collageID uint, sourceAssetID string) (bool, error)
-	CountByCollages(ctx context.Context, collageIDs []uint) (map[uint]int, error)
+	// StatsByCollages returns the number and the size sum of the photos per
+	// collage id; collages without photos are missing in the map.
+	StatsByCollages(ctx context.Context, collageIDs []uint) (map[uint]CollageStats, error)
 	// CountAllByCollage returns the number of photos of every collage that
 	// has photos (all users).
 	CountAllByCollage(ctx context.Context) (map[uint]int, error)
@@ -60,9 +68,30 @@ type FileStorage interface {
 	// Save writes r to relPath atomically.
 	Save(relPath string, r io.Reader) error
 	Open(relPath string) (io.ReadSeekCloser, error)
+	// Size returns the size of the file relPath in bytes; a missing file
+	// gives an error that matches fs.ErrNotExist.
+	Size(relPath string) (int64, error)
 	// Remove and RemoveDir ignore missing files.
 	Remove(relPath string) error
 	RemoveDir(relDir string) error
+}
+
+// Quota is the storage limit check of Store.CreateWithFile: the owner of
+// the collage and the owner's effective limit in bytes (0 = unlimited).
+type Quota struct {
+	UserID uint
+	Limit  int64
+}
+
+// Quotas gives the storage limit and usage of a user (implemented by
+// *quota.Service).
+type Quotas interface {
+	// Limit returns the effective storage limit of the user in bytes;
+	// 0 = unlimited.
+	Limit(ctx context.Context, userID uint) (int64, error)
+	// Usage returns the used photo bytes and the effective limit of the
+	// user.
+	Usage(ctx context.Context, userID uint) (used, limit int64, err error)
 }
 
 // Collages checks that a collage belongs to the user (implemented by
@@ -147,19 +176,23 @@ type Service struct {
 	files    FileStorage
 	collages Collages
 	sources  Sources
+	quotas   Quotas
 	// decoder limits the uploads that are decoded and processed at the
 	// same time (server-wide, shared with other packages).
 	decoder *imaging.DecodeLimiter
 }
 
-// NewService returns a photo service. decoder is the server-wide limiter
-// for image decodes.
-func NewService(store Store, files FileStorage, collages Collages, sources Sources, decoder *imaging.DecodeLimiter) *Service {
+// NewService returns a photo service. quotas gives the storage limit of
+// the users; decoder is the server-wide limiter for image decodes.
+func NewService(
+	store Store, files FileStorage, collages Collages, sources Sources, quotas Quotas, decoder *imaging.DecodeLimiter,
+) *Service {
 	return &Service{
 		store:    store,
 		files:    files,
 		collages: collages,
 		sources:  sources,
+		quotas:   quotas,
 		decoder:  decoder,
 	}
 }
@@ -175,10 +208,23 @@ func NewService(store Store, files FileStorage, collages Collages, sources Sourc
 // the asset; downloads that are already running are finished. Photos that
 // were imported before the error stay in the collage (a repeated request
 // skips them).
+//
+// Storage limit: if the user is already at or over the limit, the import
+// is refused before any download (quota.FullError). Each photo is checked
+// when it is stored (see Store.CreateWithFile); the first photo that does
+// not fit stops the import like any other error (quota.PhotoError).
 func (s *Service) Import(ctx context.Context, userID, collageID, connectorID uint, assetIDs []string, size ImageSize) (ImportResult, error) {
 	if _, err := s.collages.Get(ctx, userID, collageID); err != nil {
 		return ImportResult{}, err
 	}
+	used, limit, err := s.quotas.Usage(ctx, userID)
+	if err != nil {
+		return ImportResult{}, err
+	}
+	if quota.Full(used, limit) {
+		return ImportResult{}, quota.FullError(used, limit)
+	}
+	q := Quota{UserID: userID, Limit: limit}
 	if connectorID == 0 {
 		return ImportResult{}, apperr.Validation("connectorId is required")
 	}
@@ -203,15 +249,15 @@ func (s *Service) Import(ctx context.Context, userID, collageID, connectorID uin
 	}
 	todo := slices.DeleteFunc(ids, func(id string) bool { return skip[id] })
 
-	photos, fallbacks, err := s.importAll(ctx, src, collageID, connectorID, todo, size)
+	photos, fallbacks, err := s.importAll(ctx, src, q, collageID, connectorID, todo, size)
 	slices.SortFunc(photos, func(a, b Photo) int { return cmp.Compare(a.ID, b.ID) })
 	return ImportResult{Photos: photos, Skipped: len(existing), PreviewFallbacks: fallbacks}, err
 }
 
-// importAll imports the assets with importWorkers parallel workers. It
-// returns the imported photos, the number of preview fallbacks among them
-// and the first error.
-func (s *Service) importAll(ctx context.Context, src Source, collageID, connectorID uint, assetIDs []string, size ImageSize) ([]Photo, int, error) {
+// importAll imports the assets with importWorkers parallel workers, each
+// photo checked against q. It returns the imported photos, the number of
+// preview fallbacks among them and the first error.
+func (s *Service) importAll(ctx context.Context, src Source, q Quota, collageID, connectorID uint, assetIDs []string, size ImageSize) ([]Photo, int, error) {
 	var (
 		mu        sync.Mutex
 		photos    = make([]Photo, 0, len(assetIDs))
@@ -236,7 +282,7 @@ func (s *Service) importAll(ctx context.Context, src Source, collageID, connecto
 				if isClosed(failed) {
 					continue
 				}
-				p, fallback, err := s.importOne(ctx, src, collageID, connectorID, assetID, size)
+				p, fallback, err := s.importOne(ctx, src, q, collageID, connectorID, assetID, size)
 				if err != nil {
 					fail(assetError(assetID, err))
 					continue
@@ -264,31 +310,34 @@ feed:
 }
 
 // importOne downloads and checks the image of one asset in the given size,
-// then creates the photo row and file together. fallback is true if the
-// source delivered the preview instead of the original.
-func (s *Service) importOne(ctx context.Context, src Source, collageID, connectorID uint, assetID string, size ImageSize) (p Photo, fallback bool, err error) {
+// then creates the photo row and file together (checked against q).
+// fallback is true if the source delivered the preview instead of the
+// original.
+func (s *Service) importOne(ctx context.Context, src Source, q Quota, collageID, connectorID uint, assetID string, size ImageSize) (p Photo, fallback bool, err error) {
 	img, fallback, err := s.download(ctx, src, assetID, size)
 	if err != nil {
 		return Photo{}, false, err
 	}
-	p, err = s.createPhoto(ctx, collageID, &connectorID, assetID, img)
+	p, err = s.createPhoto(ctx, q, collageID, &connectorID, assetID, img)
 	return p, fallback, err
 }
 
-// createPhoto creates the photo row and its file together. connectorID is
-// nil for uploads. If a step fails, neither the row nor the file is left.
-func (s *Service) createPhoto(ctx context.Context, collageID uint, connectorID *uint, sourceAssetID string, img preview) (Photo, error) {
+// createPhoto creates the photo row and its file together, checked against
+// the storage limit q (see Store.CreateWithFile). connectorID is nil for
+// uploads. If a step fails, neither the row nor the file is left.
+func (s *Service) createPhoto(ctx context.Context, q Quota, collageID uint, connectorID *uint, sourceAssetID string, img preview) (Photo, error) {
 	p := Photo{
 		CollageID:     collageID,
 		ConnectorID:   connectorID,
 		SourceAssetID: sourceAssetID,
+		SizeBytes:     int64(len(img.data)),
 		MimeType:      img.mimeType,
 		WidthPx:       img.width,
 		HeightPx:      img.height,
 		Props:         jsoncol.JSON("{}"),
 	}
 	written := false
-	err := s.store.CreateWithFile(ctx, &p, func(p *Photo) error {
+	err := s.store.CreateWithFile(ctx, &p, q, func(p *Photo) error {
 		p.FileName = fileName(collageID, p.ID, img.ext)
 		if err := s.files.Save(p.FileName, bytes.NewReader(img.data)); err != nil {
 			return err
@@ -313,9 +362,15 @@ func (s *Service) createPhoto(ctx context.Context, collageID uint, connectorID *
 // (ImportResult.Skipped = 1).
 //
 // A body larger than MaxUploadBytes gives an error that matches
-// apperr.ErrTooLarge; bad image data gives an apperr validation error.
+// apperr.ErrTooLarge; bad image data gives an apperr validation error. A
+// photo that does not fit into the user's storage limit gives a
+// quota.PhotoError (apperr conflict).
 func (s *Service) Upload(ctx context.Context, userID, collageID uint, contentType string, body io.Reader) (ImportResult, error) {
 	if _, err := s.collages.Get(ctx, userID, collageID); err != nil {
+		return ImportResult{}, err
+	}
+	limit, err := s.quotas.Limit(ctx, userID)
+	if err != nil {
 		return ImportResult{}, err
 	}
 	format, err := imaging.Format(contentType)
@@ -338,7 +393,7 @@ func (s *Service) Upload(ctx context.Context, userID, collageID uint, contentTyp
 	if err != nil {
 		return ImportResult{}, err
 	}
-	p, err := s.createPhoto(ctx, collageID, nil, assetID, img)
+	p, err := s.createPhoto(ctx, Quota{UserID: userID, Limit: limit}, collageID, nil, assetID, img)
 	if err != nil {
 		return ImportResult{}, fmt.Errorf("store upload in collage %d: %w", collageID, err)
 	}

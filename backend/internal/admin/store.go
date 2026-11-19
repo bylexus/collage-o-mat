@@ -66,11 +66,17 @@ func (s *GormStore) CreateUser(ctx context.Context, u *auth.User) error {
 	return nil
 }
 
-// UpdateUser sets the admin and active flags (and UpdatedAt) of the user
-// id. A non-empty passwordHash also replaces the password hash. A map
-// update is used, so that false values are written.
-func (s *GormStore) UpdateUser(ctx context.Context, id uint, isAdmin, isActive bool, passwordHash string) error {
-	fields := map[string]any{"is_admin": isAdmin, "is_active": isActive}
+// UpdateUser sets the admin and active flags, the own storage limit (nil
+// = NULL = server default) and UpdatedAt of the user id. A non-empty
+// passwordHash also replaces the password hash. A map update is used, so
+// that false and NULL values are written.
+func (s *GormStore) UpdateUser(
+	ctx context.Context, id uint, isAdmin, isActive bool, maxStorageBytes *int64, passwordHash string,
+) error {
+	fields := map[string]any{"is_admin": isAdmin, "is_active": isActive, "max_storage_bytes": nil}
+	if maxStorageBytes != nil {
+		fields["max_storage_bytes"] = *maxStorageBytes
+	}
 	if passwordHash != "" {
 		fields["password_hash"] = passwordHash
 	}

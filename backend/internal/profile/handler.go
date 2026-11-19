@@ -25,6 +25,7 @@ func (h *Handler) RegisterRoutes(mux *http.ServeMux, requireAuth httpapi.Middlew
 	mux.Handle("PUT /api/profile/avatar", requireAuth(http.HandlerFunc(h.setAvatar)))
 	mux.Handle("DELETE /api/profile/avatar", requireAuth(http.HandlerFunc(h.deleteAvatar)))
 	mux.Handle("GET /api/profile/avatar", requireAuth(http.HandlerFunc(h.avatar)))
+	mux.Handle("GET /api/profile/storage", requireAuth(http.HandlerFunc(h.storage)))
 }
 
 // avatarCacheControl lets the browser keep the avatar: the frontend adds
@@ -48,6 +49,24 @@ func (h *Handler) changePassword(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
+}
+
+// storageResponse is the photo storage usage of the logged-in user.
+type storageResponse struct {
+	UsedBytes int64 `json:"usedBytes"`
+	// LimitBytes is the effective limit (own or server default);
+	// 0 = unlimited.
+	LimitBytes int64 `json:"limitBytes"`
+}
+
+// storage answers with the storage usage of the logged-in user.
+func (h *Handler) storage(w http.ResponseWriter, r *http.Request) {
+	used, limit, err := h.service.StorageUsage(r.Context(), auth.UserID(r))
+	if err != nil {
+		httpapi.WriteServiceError(w, err)
+		return
+	}
+	httpapi.WriteJSON(w, http.StatusOK, storageResponse{UsedBytes: used, LimitBytes: limit})
 }
 
 // setAvatar sets the avatar of the logged-in user from the raw request body

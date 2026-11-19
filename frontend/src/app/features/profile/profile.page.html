@@ -8,9 +8,14 @@
           <span class="admin-badge" i18n="@@profile.adminBadge">Admin</span>
         }
       </h1>
-      <p class="page-subtitle" i18n="@@profile.memberSince">
-        Member since {{ user.createdAt | date: 'longDate' }}
-      </p>
+      <div class="page-subtitle">
+        <span i18n="@@profile.memberSince"
+          >Member since {{ user.createdAt | date: 'longDate' }}</span
+        >
+        @if (storageText(); as text) {
+          <span>{{ text }}</span>
+        }
+      </div>
     </div>
   </header>
 

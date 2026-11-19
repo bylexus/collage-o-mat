@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"io/fs"
 	"log/slog"
 	"path"
@@ -28,9 +29,22 @@ func NewCollagePhotos(store Store, files FileStorage) *CollagePhotos {
 	return &CollagePhotos{store: store, files: files}
 }
 
-// CountByCollages implements collage.Photos.
-func (c *CollagePhotos) CountByCollages(ctx context.Context, collageIDs []uint) (map[uint]int, error) {
-	return c.store.CountByCollages(ctx, collageIDs)
+// StatsByCollages implements collage.Photos.
+func (c *CollagePhotos) StatsByCollages(ctx context.Context, collageIDs []uint) (map[uint]collage.PhotoStats, error) {
+	stats, err := c.store.StatsByCollages(ctx, collageIDs)
+	if err != nil {
+		return nil, err
+	}
+	out := make(map[uint]collage.PhotoStats, len(stats))
+	for id, st := range stats {
+		out[id] = collage.PhotoStats{Count: st.Count, SizeBytes: st.SizeBytes}
+	}
+	return out, nil
+}
+
+// SizeByCollage implements collage.Photos.
+func (c *CollagePhotos) SizeByCollage(ctx context.Context, collageID uint) (int64, error) {
+	return c.store.SizeByCollage(ctx, collageID)
 }
 
 // CountAllByCollage implements collage.Photos.
@@ -81,12 +95,16 @@ func (c *CollagePhotos) DeleteAllForCollage(ctx context.Context, collageID uint)
 // srcCollageID to dstCollageID, id ascending. Each copy is a new row with
 // the same connector, source asset ID, MIME type, size and props, and a
 // stream copy of the file at fileName(dst, newID, ext of the source file).
+// SizeBytes of the copy is the number of bytes copied. Each copy is checked
+// against the storage limit of userID (limit in bytes, 0 = unlimited; see
+// Store.CreateWithFile): a copy that does not fit gives a quota.PhotoError
+// (apperr conflict).
 //
 // A photo whose source file does not exist (fs.ErrNotExist) is skipped with
 // a warning in the log and counted. Every other error stops the copy and is
 // returned; the files written before are not removed (the caller removes the
 // destination collage's photo directory with DeleteAllForCollage).
-func (c *CollagePhotos) CopyAllForCollage(ctx context.Context, srcCollageID, dstCollageID uint) (map[uint]uint, int, error) {
+func (c *CollagePhotos) CopyAllForCollage(ctx context.Context, srcCollageID, dstCollageID, userID uint, limit int64) (map[uint]uint, int, error) {
 	photos, err := c.store.ListByCollage(ctx, srcCollageID)
 	if err != nil {
 		return nil, 0, err
@@ -94,7 +112,7 @@ func (c *CollagePhotos) CopyAllForCollage(ctx context.Context, srcCollageID, dst
 	idMap := make(map[uint]uint, len(photos))
 	skipped := 0
 	for i := range photos {
-		newID, ok, err := c.copyPhoto(ctx, &photos[i], dstCollageID)
+		newID, ok, err := c.copyPhoto(ctx, &photos[i], dstCollageID, Quota{UserID: userID, Limit: limit})
 		if err != nil {
 			return nil, 0, err
 		}
@@ -107,10 +125,10 @@ func (c *CollagePhotos) CopyAllForCollage(ctx context.Context, srcCollageID, dst
 	return idMap, skipped, nil
 }
 
-// copyPhoto copies src (row and file) into the collage dstCollageID and
-// returns the new photo id. It returns ok == false (and no error) if the
+// copyPhoto copies src (row and file) into the collage dstCollageID,
+// checked against the storage limit q, and returns the new photo id. It returns ok == false (and no error) if the
 // source file does not exist.
-func (c *CollagePhotos) copyPhoto(ctx context.Context, src *Photo, dstCollageID uint) (newID uint, ok bool, err error) {
+func (c *CollagePhotos) copyPhoto(ctx context.Context, src *Photo, dstCollageID uint, q Quota) (newID uint, ok bool, err error) {
 	in, err := c.files.Open(src.FileName)
 	if errors.Is(err, fs.ErrNotExist) {
 		slog.Warn("duplicate collage: photo file missing, photo skipped",
@@ -132,15 +150,29 @@ func (c *CollagePhotos) copyPhoto(ctx context.Context, src *Photo, dstCollageID 
 		Props:         src.Props,
 	}
 	ext := path.Ext(src.FileName)
-	err = c.store.CreateWithFile(ctx, &p, func(p *Photo) error {
+	err = c.store.CreateWithFile(ctx, &p, q, func(p *Photo) error {
 		p.FileName = fileName(dstCollageID, p.ID, ext)
-		if err := c.files.Save(p.FileName, in); err != nil {
+		counter := &countingReader{r: in}
+		if err := c.files.Save(p.FileName, counter); err != nil {
 			return fmt.Errorf("copy file of photo %d: %w", src.ID, err)
 		}
+		p.SizeBytes = counter.n
 		return nil
 	})
 	if err != nil {
 		return 0, false, err
 	}
 	return p.ID, true, nil
+}
+
+// countingReader counts the bytes read from r.
+type countingReader struct {
+	r io.Reader
+	n int64
+}
+
+func (c *countingReader) Read(b []byte) (int, error) {
+	n, err := c.r.Read(b)
+	c.n += int64(n)
+	return n, err
 }

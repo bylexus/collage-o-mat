@@ -55,6 +55,12 @@
   text-align: right;
 }
 
+.size-hint {
+  color: var(--mat-sys-on-surface-variant);
+  font: var(--mat-sys-body-small);
+  white-space: nowrap;
+}
+
 .actions-cell {
   width: 1%;
   white-space: nowrap;

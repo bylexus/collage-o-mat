@@ -47,9 +47,13 @@ type Store interface {
 // The photo package implements it (photo.CollagePhotos); the collage package
 // does not import the photo package (dependency inversion).
 type Photos interface {
-	// CountByCollages returns the number of photos per collage id. Collages
-	// without photos may be missing in the map (count 0).
-	CountByCollages(ctx context.Context, collageIDs []uint) (map[uint]int, error)
+	// StatsByCollages returns the number and the size of the photos per
+	// collage id. Collages without photos may be missing in the map (zero
+	// value).
+	StatsByCollages(ctx context.Context, collageIDs []uint) (map[uint]PhotoStats, error)
+	// SizeByCollage returns the sum of the photo sizes of a collage in
+	// bytes.
+	SizeByCollage(ctx context.Context, collageID uint) (int64, error)
 	// CountAllByCollage returns the number of photos per collage id of all
 	// collages (all users). Collages without photos may be missing.
 	CountAllByCollage(ctx context.Context) (map[uint]int, error)
@@ -67,10 +71,22 @@ type Photos interface {
 	// CopyAllForCollage copies all photos of srcCollageID (rows with their
 	// props, and their files) into dstCollageID. It returns the map old photo
 	// id -> new photo id and the number of photos that were skipped because
-	// their source file does not exist. Every other error stops the copy;
+	// their source file does not exist. Each copy is checked against the
+	// storage limit of userID (limit in bytes, 0 = unlimited); a copy that
+	// does not fit gives an apperr conflict. Every error stops the copy;
 	// files that were already written stay on disk (remove them with
 	// DeleteAllForCollage of dstCollageID).
-	CopyAllForCollage(ctx context.Context, srcCollageID, dstCollageID uint) (idMap map[uint]uint, skipped int, err error)
+	CopyAllForCollage(
+		ctx context.Context, srcCollageID, dstCollageID, userID uint, limit int64,
+	) (idMap map[uint]uint, skipped int, err error)
+}
+
+// Quotas gives the storage usage and limit of a user (implemented by
+// *quota.Service).
+type Quotas interface {
+	// Usage returns the used photo bytes and the effective storage limit of
+	// the user in bytes (0 = unlimited).
+	Usage(ctx context.Context, userID uint) (used, limit int64, err error)
 }
 
 // Transactor runs fn in one database transaction: all store and Photos
@@ -116,10 +132,19 @@ type Layout struct {
 	Texts    []TextData
 }
 
-// Summary is a collage with the number of its photos (list entry).
+// PhotoStats is the number of photos of a collage and the sum of their
+// sizes in bytes.
+type PhotoStats struct {
+	Count     int
+	SizeBytes int64
+}
+
+// Summary is a collage with the number and the stored size of its photos
+// (list entry).
 type Summary struct {
 	Collage
 	PhotoCount int
+	SizeBytes  int64
 }
 
 // Detail is a collage with its photos and texts (editor view).
@@ -134,16 +159,18 @@ type Detail struct {
 type Service struct {
 	store  Store
 	photos Photos
+	quotas Quotas
 	tx     Transactor
 }
 
-// NewService returns a collage service.
-func NewService(store Store, photos Photos, tx Transactor) *Service {
-	return &Service{store: store, photos: photos, tx: tx}
+// NewService returns a collage service. quotas gives the storage limit for
+// Duplicate.
+func NewService(store Store, photos Photos, quotas Quotas, tx Transactor) *Service {
+	return &Service{store: store, photos: photos, quotas: quotas, tx: tx}
 }
 
-// List returns the collages of the user with photo counts, most recently
-// updated first.
+// List returns the collages of the user with photo counts and sizes, most
+// recently updated first.
 func (s *Service) List(ctx context.Context, userID uint) ([]Summary, error) {
 	collages, err := s.store.ListByUser(ctx, userID)
 	if err != nil {
@@ -153,13 +180,13 @@ func (s *Service) List(ctx context.Context, userID uint) ([]Summary, error) {
 	for i, c := range collages {
 		ids[i] = c.ID
 	}
-	counts, err := s.photos.CountByCollages(ctx, ids)
+	stats, err := s.photos.StatsByCollages(ctx, ids)
 	if err != nil {
 		return nil, fmt.Errorf("count photos of collages: %w", err)
 	}
 	summaries := make([]Summary, len(collages))
 	for i, c := range collages {
-		summaries[i] = Summary{Collage: c, PhotoCount: counts[c.ID]}
+		summaries[i] = summary(c, stats[c.ID])
 	}
 	return summaries, nil
 }
@@ -217,11 +244,17 @@ func (s *Service) Rename(ctx context.Context, userID, id uint, name string) (*Su
 	if err := s.store.UpdateName(ctx, c, name); err != nil {
 		return nil, err
 	}
-	counts, err := s.photos.CountByCollages(ctx, []uint{c.ID})
+	stats, err := s.photos.StatsByCollages(ctx, []uint{c.ID})
 	if err != nil {
 		return nil, fmt.Errorf("count photos of collage %d: %w", c.ID, err)
 	}
-	return &Summary{Collage: *c, PhotoCount: counts[c.ID]}, nil
+	sum := summary(*c, stats[c.ID])
+	return &sum, nil
+}
+
+// summary returns the list entry of collage c with the photo stats st.
+func summary(c Collage, st PhotoStats) Summary {
+	return Summary{Collage: c, PhotoCount: st.Count, SizeBytes: st.SizeBytes}
 }
 
 // Delete deletes the collage with all its photos and texts (the texts by

@@ -8,7 +8,7 @@ import { AdminUser, CreateUserRequest, SystemSettings, UpdateUserRequest } from 
 export class AdminApi {
   private readonly http = inject(HttpClient);
 
-  /** All users with their collage and photo counts, ordered by username. */
+  /** All users with their collage and photo counts and storage usage, ordered by username. */
   listUsers(): Observable<AdminUser[]> {
     return this.http.get<AdminUser[]>('/api/admin/users');
   }
@@ -19,7 +19,7 @@ export class AdminApi {
   }
 
   /**
-   * Changes admin role, active flag and (optional) password in one request. Fails with 409 for the
+   * Changes admin role, active flag, storage limit and (optional) password in one request. Fails with 409 for the
    * own account or if no active admin would remain.
    */
   updateUser(id: number, request: UpdateUserRequest): Observable<AdminUser> {

@@ -10,18 +10,27 @@ import { MatInputModule } from '@angular/material/input';
 import { MatProgressSpinnerModule } from '@angular/material/progress-spinner';
 import { AdminUser, UpdateUserRequest } from '../../../core/models/admin';
 import { errorMessage } from '../../../shared/error-message';
+import { formatStorageLimit } from '../../../shared/storage-size';
 import {
   matchesPassword,
   PASSWORD_MAX_BYTES,
   PASSWORD_MIN_CHARS,
   passwordRules,
 } from './password-validators';
+import {
+  applyStorageDefault,
+  storageLimitRequest,
+  storageLimitRules,
+  storageLimitValues,
+} from './storage-limit';
 
 /** Input of the edit user dialog. */
 export interface UserEditDialogData {
   user: AdminUser;
   /** The user is the logged-in admin: admin role, active flag, password and delete are locked. */
   isSelf: boolean;
+  /** Current server default of the storage limit in bytes (0 = unlimited). */
+  defaultStorageBytes: number;
   /**
    * Saves the changes (done by the page). A rejected promise keeps the dialog open and shows the
    * error; on success the dialog closes with `'saved'`.
@@ -37,7 +46,9 @@ export interface UserEditDialogData {
 /** Result of the edit user dialog; `undefined` on cancel. */
 export type UserEditDialogResult = 'saved' | 'deleted';
 
-/** Edit dialog of a user: admin role, active flag, new password (optional), delete. */
+/**
+ * Edit dialog of a user: admin role, active flag, storage limit, new password (optional), delete.
+ */
 @Component({
   selector: 'app-user-edit-dialog',
   imports: [
@@ -56,15 +67,38 @@ export type UserEditDialogResult = 'saved' | 'deleted';
       <mat-dialog-content class="dialog-fields">
         @if (data.isSelf) {
           <p class="dialog-hint" i18n="@@admin.edit.selfHint">
-            This is your own account. You cannot change your admin role or active state or delete
-            it here. Change your password on the Profile page.
+            This is your own account. You cannot change your admin role or active state or delete it
+            here. Change your password on the Profile page.
           </p>
         }
 
         <div class="checkboxes">
           <mat-checkbox formControlName="isAdmin" i18n="@@admin.user.isAdmin">Admin</mat-checkbox>
-          <mat-checkbox formControlName="isActive" i18n="@@admin.user.isActive">Active</mat-checkbox>
+          <mat-checkbox formControlName="isActive" i18n="@@admin.user.isActive"
+            >Active</mat-checkbox
+          >
         </div>
+
+        <mat-checkbox formControlName="useDefaultStorage" i18n="@@admin.user.useDefaultStorage"
+          >Use server default ({{ defaultLimit }})</mat-checkbox
+        >
+        <mat-form-field>
+          <mat-label i18n="@@admin.user.storageLimit">Storage limit (GB)</mat-label>
+          <input
+            matInput
+            type="number"
+            formControlName="storageLimitGb"
+            min="0"
+            step="any"
+            required
+          />
+          <mat-hint i18n="@@admin.user.storageLimitHint">0 = unlimited</mat-hint>
+          @if (form.controls.storageLimitGb.hasError('required')) {
+            <mat-error i18n="@@admin.user.storageLimitRequired">Enter a value</mat-error>
+          } @else if (form.controls.storageLimitGb.hasError('min')) {
+            <mat-error i18n="@@admin.user.storageLimitMin">Enter 0 or more</mat-error>
+          }
+        </mat-form-field>
 
         @if (!data.isSelf) {
           <p class="dialog-hint" i18n="@@admin.edit.passwordHint">
@@ -141,18 +175,30 @@ export class UserEditDialog {
 
   protected readonly minChars = PASSWORD_MIN_CHARS;
   protected readonly maxBytes = PASSWORD_MAX_BYTES;
+  protected readonly defaultLimit = formatStorageLimit(this.data.defaultStorageBytes);
   protected readonly saving = signal(false);
   protected readonly error = signal<string | null>(null);
+
+  private readonly storageStart = storageLimitValues(
+    this.data.user.maxStorageBytes,
+    this.data.defaultStorageBytes,
+  );
 
   protected readonly form = inject(NonNullableFormBuilder).group({
     isAdmin: [this.data.user.isAdmin],
     isActive: [this.data.user.isActive],
+    useDefaultStorage: [this.storageStart.useDefaultStorage],
+    storageLimitGb: [this.storageStart.storageLimitGb, storageLimitRules],
     newPassword: ['', passwordRules],
     repeatPassword: ['', matchesPassword('newPassword')],
   });
 
   constructor() {
     this.lockOwnAccount();
+    this.applyStorageDefault();
+    this.form.controls.useDefaultStorage.valueChanges
+      .pipe(takeUntilDestroyed())
+      .subscribe(() => this.applyStorageDefault());
     // The repeat check depends on the new password: check it again when the new password changes.
     this.form.controls.newPassword.valueChanges
       .pipe(takeUntilDestroyed())
@@ -164,8 +210,13 @@ export class UserEditDialog {
       this.form.markAllAsTouched();
       return;
     }
-    const { isAdmin, isActive, newPassword } = this.form.getRawValue();
-    const request: UpdateUserRequest = { isAdmin, isActive };
+    const { isAdmin, isActive, useDefaultStorage, storageLimitGb, newPassword } =
+      this.form.getRawValue();
+    const request: UpdateUserRequest = {
+      isAdmin,
+      isActive,
+      maxStorageBytes: storageLimitRequest(useDefaultStorage, storageLimitGb),
+    };
     if (!this.data.isSelf && newPassword !== '') {
       request.newPassword = newPassword;
     }
@@ -198,7 +249,12 @@ export class UserEditDialog {
     } else {
       this.form.enable();
       this.lockOwnAccount();
+      this.applyStorageDefault();
     }
+  }
+
+  private applyStorageDefault(): void {
+    applyStorageDefault(this.form.controls, this.data.defaultStorageBytes);
   }
 
   /** The own account: admin role and active flag cannot be changed here. */

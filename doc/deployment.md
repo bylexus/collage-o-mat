@@ -59,6 +59,7 @@ docker run -d --name collageomat -p 8080:8080 \
 
 docker exec -it collageomat /app/collageomat user add --username <name> --admin
 docker exec -it collageomat /app/collageomat user passwd --username <name>
+docker exec -it collageomat /app/collageomat photos recalc-size --all   # or --username <name>
 ```
 
 - Put a TLS reverse proxy in front. Set `-e COLLAGEOMAT_COOKIE_SECURE=false` only for plain HTTP, else
@@ -83,3 +84,14 @@ docker run --rm -p 8080:8080 -e COLLAGEOMAT_SECRET=x -e COLLAGEOMAT_COOKIE_SECUR
 2. Recreate the container with the same volume and secret.
 3. The database schema is migrated at start (GORM `AutoMigrate`). Make a backup of the data volume
    (`collageomat.db` + `photos/`) before an upgrade; there is no down-migration.
+
+Version notes:
+
+- **Storage quota (first version with `photos.size_bytes`):** after the update, run once:
+
+  ```sh
+  docker exec -it collageomat /app/collageomat photos recalc-size --all
+  ```
+
+  It sets the size of all existing photos from the files on disk. Until then, old photos count as 0 bytes
+  in the storage limit. It may run while the server runs.

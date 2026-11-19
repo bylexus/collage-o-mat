@@ -10,9 +10,7 @@ import { AdminApi } from '../../../core/api/admin.api';
 import { SystemSettings } from '../../../core/models/admin';
 import { errorMessage } from '../../../shared/error-message';
 import { NotificationService } from '../../../shared/notification.service';
-
-/** Bytes per GB in the UI (decimal unit, same as the plan: 1 GB = 10^9 bytes). */
-const BYTES_PER_GB = 1_000_000_000;
+import { bytesToGb, gbToBytes } from '../../../shared/storage-size';
 
 /** Admin tab "Settings": system-wide settings (storage limit per user). */
 @Component({
@@ -64,7 +62,7 @@ export class AdminSettingsPage {
       return;
     }
     const gb = this.form.controls.maxUserStorageGb.value;
-    const settings: SystemSettings = { maxUserStorageBytes: Math.round(gb * BYTES_PER_GB) };
+    const settings: SystemSettings = { maxUserStorageBytes: gbToBytes(gb) };
     this.saving.set(true);
     this.form.disable();
     try {
@@ -83,6 +81,6 @@ export class AdminSettingsPage {
   }
 
   private apply(settings: SystemSettings): void {
-    this.form.reset({ maxUserStorageGb: settings.maxUserStorageBytes / BYTES_PER_GB });
+    this.form.reset({ maxUserStorageGb: bytesToGb(settings.maxUserStorageBytes) });
   }
 }

@@ -17,7 +17,8 @@ import (
 // Defaults and its rules in validate. No DB migration is needed.
 type Settings struct {
 	// MaxUserStorageBytes is the photo storage limit per user in bytes;
-	// 0 = unlimited. It is not enforced yet.
+	// 0 = unlimited. It is the default for users without an own limit (see
+	// the quota package).
 	MaxUserStorageBytes int64 `json:"maxUserStorageBytes"`
 }
 

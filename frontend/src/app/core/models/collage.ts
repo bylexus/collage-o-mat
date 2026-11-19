@@ -250,6 +250,8 @@ export interface CollageSummary {
   name: string;
   settings: CollageSettings;
   photoCount: number;
+  /** Sum of the stored photo file sizes in bytes. */
+  sizeBytes: number;
   /** ISO 8601 timestamp. */
   updatedAt: string;
 }

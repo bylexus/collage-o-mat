@@ -33,7 +33,10 @@ type Photo struct {
 	SourceAssetID string `gorm:"size:200;not null;uniqueIndex:idx_photos_source,priority:3"`
 	// FileName is the path of the file relative to the photo directory,
 	// e.g. "12/345.jpg".
-	FileName  string       `gorm:"size:255;not null"`
+	FileName string `gorm:"size:255;not null"`
+	// SizeBytes is the size of the stored file in bytes. Rows from before
+	// this column have 0 until "collageomat photos recalc-size" sets it.
+	SizeBytes int64        `gorm:"not null;default:0"`
 	MimeType  string       `gorm:"size:50;not null"`
 	WidthPx   int          `gorm:"not null"`
 	HeightPx  int          `gorm:"not null"`
