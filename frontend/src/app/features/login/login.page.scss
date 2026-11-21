@@ -127,8 +127,19 @@
 
 .login-copyright {
   display: block;
-  padding-bottom: 4px;
   text-align: center;
+}
+
+.login-contact {
+  margin: 4px 0 0;
+  padding-bottom: 4px;
+  color: var(--mat-sys-on-surface-variant);
+  font: var(--mat-sys-body-small);
+  text-align: center;
+
+  a {
+    color: inherit;
+  }
 }
 
 .login-spinner {
